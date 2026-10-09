@@ -1,0 +1,18 @@
+# ArchAI VR share service. Deploy:  npx wrangler deploy   (from this folder)
+# The upload key is a secret:        npx wrangler secret put UPLOAD_KEY
+name = "archai-vr-share"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "archai-vr"
+
+[vars]
+VIEWER_URL = "https://hussein5645.github.io/SJP-VR/"
+
+# Account sessions (the `archai` database of workers/archai-cloud): who may publish tours.
+[[d1_databases]]
+binding = "DB"
+database_name = "archai"
+database_id = "72f97293-d2be-4f24-be36-7217032c5810"

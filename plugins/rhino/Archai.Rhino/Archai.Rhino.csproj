@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ArchAI in Rhino: an ArchAI panel and commands (ArchaiSend, ArchaiOpenAir, ArchaiVR). Rhino 8;
+       .NET Framework 4.8 builds load in both of Rhino 8's runtimes. -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <TargetExt>.rhp</TargetExt>
+    <AssemblyName>ArchAI</AssemblyName>
+    <RootNamespace>Archai.Rhino</RootNamespace>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <RhinoDir Condition="'$(RhinoDir)' == ''">C:\Program Files\Rhino 8\System</RhinoDir>
+    <Title>ArchAI</Title>
+    <Company>ArchAI</Company>
+    <Description>Send models to ArchAI, open .AIR files and walk through models in VR.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\dotnet\Archai.Plugins.Core\Archai.Plugins.Core.csproj" />
+    <EmbeddedResource Include="..\..\icons\png\*.png" LogicalName="archai.%(Filename)%(Extension)" Link="Icons\%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\icons\png\*.ico" LogicalName="archai.%(Filename)%(Extension)" Link="Icons\%(Filename)%(Extension)" />
+    <Reference Include="RhinoCommon"><HintPath>$(RhinoDir)\RhinoCommon.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Rhino.UI"><HintPath>$(RhinoDir)\Rhino.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Eto"><HintPath>$(RhinoDir)\Eto.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+  </ItemGroup>
+  <Target Name="CheckRhinoReferences" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(RhinoDir)\RhinoCommon.dll')" Text="RhinoCommon missing in $(RhinoDir). Set RhinoDir to a Rhino 8 System folder." />
+  </Target>
+</Project>

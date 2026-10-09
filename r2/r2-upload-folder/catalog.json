@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "source": "cloudflare-r2:archai-assets",
+  "folders": [
+    "Architecture/Circulation/Railings",
+    "Architecture/Circulation/Ramps",
+    "Architecture/Circulation/Stairs",
+    "Architecture/Envelope/Curtain Walls",
+    "Architecture/Envelope/Facade Elements",
+    "Architecture/Envelope/Screens",
+    "Architecture/Openings/Doors",
+    "Architecture/Openings/Windows",
+    "Architecture/Structure/Columns",
+    "Architecture/Structure/Stairs",
+    "Architecture/Structure/Walls",
+    "Draw/Annotations",
+    "Draw/Hatches",
+    "Draw/Line Types",
+    "Draw/North Arrows",
+    "Draw/Patterns",
+    "Draw/Scale Bars",
+    "Draw/Symbols",
+    "Equip/Bathroom Fixtures",
+    "Equip/Electrical",
+    "Equip/Fire Safety",
+    "Equip/HVAC",
+    "Equip/Kitchen Equipment",
+    "Equip/Plumbing",
+    "Equip/Specialty Equipment",
+    "Furnish/Bathroom",
+    "Furnish/Beds",
+    "Furnish/Kitchen",
+    "Furnish/Lighting",
+    "Furnish/Seating",
+    "Furnish/Storage",
+    "Furnish/Tables",
+    "Personal/Favorites",
+    "Personal/Generated",
+    "Personal/Imported",
+    "Personal/My Assets",
+    "Populate/Animals",
+    "Populate/People",
+    "Populate/Plants",
+    "Populate/Vehicles",
+    "Site/Context Buildings",
+    "Site/Fences & Gates",
+    "Site/Landscape",
+    "Site/Parking",
+    "Site/Roads",
+    "Site/Street Furniture"
+  ],
+  "packages": [
+    {
+      "key": "Furnish/Beds/platform-bed.cai"
+    }
+  ],
+  "system": [
+    {
+      "tool": "column",
+      "key": "system/column/column-steel-i-section.cai"
+    },
+    {
+      "tool": "door",
+      "key": "system/door/door-double-swing-1800.cai"
+    },
+    {
+      "tool": "railing",
+      "key": "system/railing/railing-glass-panel.cai"
+    },
+    {
+      "tool": "stair",
+      "key": "system/stair/stair-closed-riser.cai"
+    },
+    {
+      "tool": "wall",
+      "key": "system/wall/wall-presets-masonry.cai"
+    },
+    {
+      "tool": "window",
+      "key": "system/window/window-casement-1200.cai"
+    }
+  ]
+}

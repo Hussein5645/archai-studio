@@ -1,0 +1,331 @@
+.toolbarContainer {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Clear of the zoom / snap chip at the bottom right (a large UI scale widens the toolbar):
+     past that it scrolls sideways. */
+  max-width: calc(100% - 420px);
+  z-index: 20;
+  pointer-events: none;
+}
+
+.toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-md);
+  overflow-x: auto;
+  scrollbar-width: none;
+  pointer-events: auto;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.toolbar::-webkit-scrollbar { display: none; }
+
+.sectionWrap {
+  display: flex;
+  align-items: center;
+}
+
+.more {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  min-width: 22px;
+  padding: 0 4px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+
+.more:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.more[data-active='true'] {
+  background: var(--accent);
+  color: var(--text-inverse);
+}
+
+.build[data-running='true']:not([data-active='true']) {
+  color: #15803d;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.separator {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.build {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  height: 34px;
+  padding: 0 3px 0 7px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.build:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.build[data-active='true'] {
+  background: var(--accent);
+  color: var(--text-inverse);
+}
+
+.status {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+}
+
+.statusButton {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.statusButton:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.boardLevel {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 2px;
+  padding: 0 1px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.boardLevel[data-raised='true'] .statusButton {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.statusButton[data-on='true'] {
+  color: var(--accent);
+}
+
+.hint {
+  position: absolute;
+  left: 50%;
+  bottom: 68px;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  background: var(--bg-panel-translucent);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 20;
+}
+
+/* ---- Touch Mode Adjustments ---- */
+
+:global(html[data-touch='true']) .toolbarContainer {
+  bottom: 20px;
+  gap: 8px;
+}
+
+:global(html[data-touch='true']) .toolbar {
+  padding: 6px 8px;
+  gap: 4px;
+}
+
+:global(html[data-touch='true']) .aiToolBox {
+  padding: 6px 8px;
+}
+
+:global(html[data-touch='true']) .build {
+  height: 40px;
+  padding: 0 5px 0 9px;
+  font-size: var(--text-md);
+}
+
+:global(html[data-touch='true']) .status {
+  padding: 4px;
+  bottom: 20px;
+}
+
+:global(html[data-touch='true']) .statusButton {
+  height: 34px;
+  padding: 0 10px;
+  font-size: var(--text-md);
+}
+
+:global(html[data-touch='true']) .hint {
+  bottom: 78px;
+  font-size: var(--text-md);
+  padding: 8px 14px;
+}
+
+/* On tablet-sized touch screens the wider toolbar would run under the zoom/grid chip, so the
+   chip moves up and the toolbar keeps the full width (it scrolls sideways with a finger). */
+@media (max-width: 1100px) {
+  :global(html[data-touch='true']) .status {
+    bottom: 84px;
+  }
+  :global(html[data-touch='true']) .hint {
+    bottom: 140px;
+  }
+  :global(html[data-touch='true']) .toolbar {
+    max-width: calc(100% - 24px);
+  }
+  /* The chip has moved up: the toolbar may use the full width. */
+  :global(html[data-touch='true']) .toolbarContainer {
+    max-width: calc(100% - 24px);
+  }
+}
+
+/* Options bar of the drafting / modify tools, above the tool hint position. */
+.optionsBar {
+  position: absolute;
+  left: 50%;
+  bottom: 68px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  z-index: 21;
+  max-width: calc(100% - 24px);
+  overflow-x: auto;
+}
+
+.optionsTitle {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.optionCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.optionValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.optionValue input {
+  width: 72px;
+}
+
+.optionButton {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  padding: 3px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+:global(html[data-touch='true']) .optionsBar {
+  bottom: 78px;
+}
+
+/* Annotation options: colour swatches and pen sizes. */
+.swatches {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  padding: 0;
+  cursor: pointer;
+}
+
+.swatch[data-active='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sizeDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius);
+  padding: 0;
+  cursor: pointer;
+}
+
+.sizeDot span {
+  display: block;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.sizeDot:hover {
+  background: var(--bg-hover);
+}
+
+.sizeDot[data-active='true'] {
+  background: var(--accent-soft, var(--bg-hover));
+  outline: 1px solid var(--accent);
+}
+
+:global(html[data-touch='true']) .swatch {
+  width: 28px;
+  height: 28px;
+}
+
+:global(html[data-touch='true']) .sizeDot {
+  width: 34px;
+  height: 34px;
+}

@@ -1,0 +1,21 @@
+export type {
+  ArchaiDocument,
+  AssetDefinition,
+  BlobRecord,
+  Element,
+  ElementKind,
+  GroupElement,
+  ImageDefinition,
+  ImageElement,
+  InstanceElement,
+  JsonValue,
+  LineElement,
+  RectElement,
+  SizedElement,
+  Style,
+  TemplateDefinition,
+  TextElement,
+  Unit,
+  Workspace,
+} from './schema';
+export type { ElementTable } from './query';

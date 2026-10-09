@@ -1,0 +1,24 @@
+.backdrop { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15, 15, 20, 0.45); backdrop-filter: blur(4px); }
+.dialog { width: 100%; max-width: 860px; max-height: calc(100vh / var(--ui-scale, 1) - 32px); display: flex; flex-direction: column; overflow: hidden; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+.header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.header > :first-child { flex: 1; max-width: 360px; }
+.badge { padding: 2px 8px; border-radius: 999px; background: var(--bg-active); color: var(--text-muted); font-size: 11px; }
+.close { display: grid; place-items: center; margin-left: auto; padding: 4px; border-radius: var(--radius-sm); color: var(--text-muted); }
+.close:hover { background: var(--bg-hover); color: var(--text); }
+.body { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 16px; min-height: 0; padding: 16px; overflow: auto; }
+.previewColumn { display: flex; flex-direction: column; gap: 8px; }
+.preview { aspect-ratio: 1; border: 1px solid var(--border); border-radius: var(--radius-md, 8px); background: linear-gradient(#f6f7f9, #e3e5ea); overflow: hidden; }
+.note { margin: 0; font-size: 11px; line-height: 1.4; color: var(--text-muted); }
+.fields { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fields h4 { margin: 8px 0 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.fields h4:first-child { margin-top: 0; }
+.maps { display: flex; flex-direction: column; gap: 4px; }
+.mapRow { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.mapRow > span { flex: 1; color: var(--text); }
+.mapRow button, .inline { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 12px; }
+.mapRow button:hover, .inline:hover { background: var(--bg-hover); }
+.footer { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.footer button { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 12px; }
+.footer button:hover { background: var(--bg-hover); }
+.footer .done { margin-left: auto; border-color: var(--accent); background: var(--accent); color: #fff; }
+@media (max-width: 640px) { .body { grid-template-columns: 1fr; } }

@@ -1,0 +1,60 @@
+import { describe, expect, it } from 'vitest';
+import { createTestApp, run } from '@/test/harness';
+import { analysisOf, viewAnalysis } from '@/analysis/model';
+
+describe('analysis per view', async () => {
+  it('runs different kinds concurrently and replaces only overlapping views', async () => {
+    const app = createTestApp();
+    const a = run<string>(app, 'create-view3d');
+    const b = run<string>(app, 'create-view3d');
+    const sun = run<string>(app, 'create-analysis-origin', { kind: 'sun' });
+    const wind = run<string>(app, 'create-analysis-origin', { kind: 'wind' });
+    for (const viewId of [a, b]) run(app, 'link-analysis-view', { id: sun, viewId, linked: true });
+    run(app, 'link-analysis-view', { id: wind, viewId: b, linked: true });
+    run(app, 'run-analysis', { id: sun });
+    run(app, 'run-analysis', { id: wind });
+    let doc = app.store.getState().doc;
+    expect(viewAnalysis(doc, a)?.kind).toBe('sun');
+    expect(viewAnalysis(doc, b)?.kind).toBe('wind');
+    expect(analysisOf(doc.elements[sun])?.views).toEqual([a, b]);
+    run(app, 'stop-analysis', { id: wind });
+    doc = app.store.getState().doc;
+    expect(viewAnalysis(doc, a)?.kind).toBe('sun');
+    expect(viewAnalysis(doc, b)).toBeNull();
+    await app.executor.dispatch('undo');
+    expect(viewAnalysis(app.store.getState().doc, b)?.kind).toBe('wind');
+  });
+  it('transfers ownership when linking a running analysis and updates sun time live', async () => {
+    const app = createTestApp();
+    const a = run<string>(app, 'create-view3d');
+    const b = run<string>(app, 'create-view3d');
+    const sun = run<string>(app, 'create-analysis-origin', { kind: 'sun' });
+    const wind = run<string>(app, 'create-analysis-origin', { kind: 'wind' });
+    run(app, 'link-analysis-view', { id: sun, viewId: a, linked: true });
+    run(app, 'link-analysis-view', { id: wind, viewId: b, linked: true });
+    run(app, 'run-analysis', { id: sun });
+    run(app, 'run-analysis', { id: wind });
+    run(app, 'link-analysis-view', { id: sun, viewId: b, linked: true });
+    expect(viewAnalysis(app.store.getState().doc, b)?.kind).toBe('sun');
+    expect(analysisOf(app.store.getState().doc.elements[wind])?.active).toBe(false);
+    const before = viewAnalysis(app.store.getState().doc, a);
+    run(app, 'update-analysis', { id: sun, patch: { date: '2026-06-21', time: '10:30' } });
+    expect(viewAnalysis(app.store.getState().doc, a)).not.toEqual(before);
+    expect(analysisOf(app.store.getState().doc.elements[sun])?.active).toBe(true);
+  });
+  it('moves a source in all three axes, updates the running spec and undoes atomically', async () => {
+    const app = createTestApp();
+    const view = run<string>(app, 'create-view3d');
+    const noise = run<string>(app, 'create-analysis-origin', { kind: 'noise' });
+    const emitter = run<string>(app, 'create-noise-emitter', { originId: noise, x: 1000, y: 2000, height: 1500 });
+    run(app, 'link-analysis-view', { id: noise, viewId: view, linked: true });
+    run(app, 'run-analysis', { id: noise });
+    const before = viewAnalysis(app.store.getState().doc, view);
+    run(app, 'move-noise-emitters', { ids: [emitter], dx: 200, dy: 300, dz: 400 });
+    const after = viewAnalysis(app.store.getState().doc, view);
+    expect(after?.kind).toBe('noise');
+    if (after?.kind === 'noise') expect(after.emitters[0]).toMatchObject({ id: emitter, x: 1200, z: 2300, y: 1900 });
+    await app.executor.dispatch('undo');
+    expect(viewAnalysis(app.store.getState().doc, view)).toEqual(before);
+  });
+});

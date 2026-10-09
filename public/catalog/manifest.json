@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "source": "archai-dev-catalog",
+  "folders": [
+    "Furnish/Seating",
+    "Furnish/Tables",
+    "Furnish/Storage",
+    "Furnish/Beds",
+    "Furnish/Kitchen",
+    "Furnish/Bathroom",
+    "Furnish/Lighting",
+    "Equip/Kitchen Equipment",
+    "Equip/Bathroom Fixtures",
+    "Equip/Electrical",
+    "Equip/HVAC",
+    "Equip/Plumbing",
+    "Equip/Fire Safety",
+    "Equip/Specialty Equipment",
+    "Populate/People",
+    "Populate/Vehicles",
+    "Populate/Plants",
+    "Populate/Animals",
+    "Site/Landscape",
+    "Site/Roads",
+    "Site/Parking",
+    "Site/Fences & Gates",
+    "Site/Street Furniture",
+    "Site/Context Buildings",
+    "Draw/Symbols",
+    "Draw/Hatches",
+    "Draw/Patterns",
+    "Draw/Line Types",
+    "Draw/Annotations",
+    "Draw/North Arrows",
+    "Draw/Scale Bars"
+  ],
+  "assets": [
+    {
+      "path": "Furnish/Seating/sofa-2-seat",
+      "name": "Sofa, 2 seats",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 1800,
+        "height": 900
+      },
+      "tags": [
+        "sofa",
+        "couch"
+      ]
+    },
+    {
+      "path": "Furnish/Seating/armchair",
+      "name": "Armchair",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 900,
+        "height": 900
+      }
+    },
+    {
+      "path": "Furnish/Tables/dining-table-6",
+      "name": "Dining table, 6 seats",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 1800,
+        "height": 1000
+      }
+    },
+    {
+      "path": "Furnish/Tables/coffee-table",
+      "name": "Coffee table",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 1200,
+        "height": 600
+      }
+    },
+    {
+      "path": "Furnish/Storage/wardrobe",
+      "name": "Wardrobe",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 1200,
+        "height": 600
+      }
+    },
+    {
+      "path": "Furnish/Beds/double-bed",
+      "name": "Double bed",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 1600,
+        "height": 2000
+      }
+    },
+    {
+      "path": "Furnish/Beds/single-bed",
+      "name": "Single bed",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 900,
+        "height": 2000
+      }
+    },
+    {
+      "path": "Furnish/Kitchen/kitchen-counter",
+      "name": "Kitchen counter",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 2400,
+        "height": 600
+      }
+    },
+    {
+      "path": "Furnish/Bathroom/bathtub",
+      "name": "Bathtub",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 1700,
+        "height": 750
+      }
+    },
+    {
+      "path": "Furnish/Bathroom/wc",
+      "name": "WC",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 400,
+        "height": 700
+      }
+    },
+    {
+      "path": "Furnish/Bathroom/washbasin",
+      "name": "Washbasin",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 600,
+        "height": 450
+      }
+    },
+    {
+      "path": "Furnish/Lighting/pendant-lamp",
+      "name": "Pendant lamp",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 400,
+        "height": 400
+      }
+    },
+    {
+      "path": "Equip/Kitchen Equipment/fridge",
+      "name": "Fridge",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 700,
+        "height": 700
+      }
+    },
+    {
+      "path": "Equip/Electrical/distribution-board",
+      "name": "Distribution board",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 600,
+        "height": 250
+      }
+    },
+    {
+      "path": "Populate/People/person-standing",
+      "name": "Person, standing",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 600,
+        "height": 400
+      }
+    },
+    {
+      "path": "Populate/Vehicles/car",
+      "name": "Car",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 1800,
+        "height": 4500
+      }
+    },
+    {
+      "path": "Populate/Plants/tree-medium",
+      "name": "Tree, medium",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 3000,
+        "height": 3000
+      }
+    },
+    {
+      "path": "Site/Street Furniture/bench",
+      "name": "Bench",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 1800,
+        "height": 500
+      }
+    },
+    {
+      "path": "Draw/North Arrows/north-arrow",
+      "name": "North arrow",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 600,
+        "height": 900
+      }
+    },
+    {
+      "path": "Draw/Scale Bars/scale-bar-5m",
+      "name": "Scale bar, 5 m",
+      "image": "2d.png",
+      "model": null,
+      "size": {
+        "width": 5000,
+        "height": 300
+      }
+    }
+  ]
+}

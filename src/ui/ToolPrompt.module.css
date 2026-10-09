@@ -1,0 +1,81 @@
+.prompt {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 6px 8px 6px 6px;
+  border-radius: var(--radius-lg, 10px);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md, 0 4px 14px rgba(20, 22, 30, 0.14));
+  font-size: var(--text-sm);
+  pointer-events: auto;
+}
+
+.phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+  color: #fff;
+  background: #2563eb;
+  white-space: nowrap;
+}
+
+.prompt[data-phase='select'] {
+  border-color: #f59e0b;
+}
+
+.prompt[data-phase='select'] .phase {
+  background: #d97706;
+}
+
+.prompt[data-phase='pick'] .phase {
+  background: #0d9488;
+}
+
+.text {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.done,
+.cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  padding: 3px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.done:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.cancel {
+  padding: 3px 5px;
+  color: var(--text-muted);
+}

@@ -1,0 +1,34 @@
+/* Board map (1:1) and the shared tile / boundary pieces used by the map editor dialog. */
+.overlay { position: absolute; box-sizing: border-box; overflow: hidden; transform-origin: 0 0; pointer-events: none; }
+.boardMap { position: absolute; box-sizing: border-box; overflow: hidden; transform-origin: 0 0; pointer-events: none; background: #e5e7eb; outline: 2px solid #6b7280; outline-offset: -2px; contain: strict; }
+.boardMap[data-selected='true'] { outline-color: var(--accent-line, #2563eb); }
+.view { position: absolute; overflow: hidden; }
+.tiles { position: absolute; inset: 0; overflow: hidden; }
+.tiles img { position: absolute; max-width: none; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.boundary { position: absolute; left: 0; top: 0; overflow: visible; touch-action: none; }
+.vertex { pointer-events: auto; fill: #fff; stroke: #2563eb; stroke-width: 2.5; cursor: grab; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35)); }
+.vertex:hover, .vertex[data-selected='true'] { fill: #2563eb; stroke: #fff; }
+.vertex[data-closer='true'] { fill: #dbeafe; stroke-width: 3; cursor: pointer; }
+.midpoint { pointer-events: auto; fill: rgba(255, 255, 255, 0.55); stroke: #2563eb; stroke-width: 1.5; stroke-dasharray: 2 2; cursor: copy; }
+.midpoint:hover { fill: #fff; stroke-dasharray: none; }
+.edgeLabel { font: 600 11px var(--font, system-ui); fill: #1e3a8a; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; pointer-events: none; user-select: none; }
+.pin { position: absolute; transform: translate(-50%, -100%); color: #dc2626; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35)); pointer-events: none; }
+.chip { position: absolute; padding: 4px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.93); font: 600 12px var(--font, system-ui); color: #1f2328; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); }
+.label { left: 8px; top: 8px; max-width: calc(100% - 80px); }
+.north { right: 8px; top: 8px; }
+.scale { left: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 2px; font-weight: 500; }
+.scale i { display: block; height: 5px; border: 2px solid #1f2328; border-top: 0; }
+.attribution { position: absolute; right: 0; bottom: 0; padding: 1px 6px; background: rgba(255, 255, 255, 0.85); font: 10px var(--font, system-ui); color: #333; pointer-events: auto; }
+.attribution a { color: #0969da; }
+.actions { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); max-width: calc(100% - 16px); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; pointer-events: auto; padding: 4px; border-radius: 8px; background: rgba(255, 255, 255, 0.95); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); font: 12px var(--font, system-ui); color: #1f2328; }
+.actions button, .actions select, .boundaryPanel button { min-height: 28px; padding: 3px 10px; border: 1px solid #d0d7de; border-radius: 6px; background: #fff; color: #1f2328; font: inherit; cursor: pointer; }
+.actions button[data-on='true'], .boundaryPanel button[data-primary] { background: #2563eb; border-color: #2563eb; color: #fff; }
+.actions button:disabled, .boundaryPanel button:disabled { opacity: 0.5; cursor: default; }
+.boundaryPanel { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; min-width: 260px; max-width: calc(100% - 24px); border-radius: 10px; background: rgba(255, 255, 255, 0.97); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22); font: 12px var(--font, system-ui); color: #1f2328; pointer-events: auto; }
+.boundaryPanel small { color: #57606a; }
+.boundaryPanel div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.floatingActions { position: absolute; z-index: 5; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 32px); overflow-x: auto; white-space: nowrap; pointer-events: auto; padding: 5px; border-radius: 10px; background: var(--bg-panel, #fff); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16); border: 1px solid var(--border, #e5e7eb); font: 12px var(--font, system-ui); color: var(--text, #1f2328); }
+.floatingActions label { display: inline-flex; align-items: center; gap: 4px; }
+.floatingActions button, .floatingActions select { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 10px; border: 1px solid var(--border, #d0d7de); border-radius: 6px; background: var(--bg-app, #fff); color: inherit; font: inherit; cursor: pointer; }
+.floatingActions button:disabled { opacity: 0.5; cursor: default; }
+.divider { width: 1px; align-self: stretch; margin: 2px 2px; background: var(--border, #d0d7de); }

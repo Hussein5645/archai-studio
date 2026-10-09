@@ -1,0 +1,7 @@
+node_modules
+dist
+dist-electron
+playwright-report
+test-results
+package-lock.json
+public/catalog

@@ -1,0 +1,41 @@
+.library { display: flex; flex-direction: column; gap: 8px; padding: 2px 2px 8px; }
+.bar { display: flex; align-items: center; gap: 4px; }
+.primary { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: var(--radius-sm); background: var(--accent); color: #fff; font-size: var(--text-sm); font-weight: 500; margin-right: auto; }
+.primary:hover { filter: brightness(1.05); }
+.iconButton { display: grid; place-items: center; width: 26px; height: 26px; border-radius: var(--radius-sm); color: var(--text-muted); }
+.iconButton:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.iconButton:disabled { opacity: 0.4; }
+.search { height: 26px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text); font: inherit; font-size: var(--text-sm); }
+.heading { margin: 6px 2px 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.hint, .empty { margin: 0 2px; font-size: 11px; line-height: 1.4; color: var(--text-muted); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
+.tile { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 4px; border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--text); cursor: grab; text-align: left; }
+.tile:hover { background: var(--bg-hover); }
+.tile[data-active='true'] { border-color: var(--accent); background: var(--accent-soft); }
+.tile[data-edited='true'] .name::after { content: ' •'; color: var(--accent); }
+.name { overflow: hidden; font-size: 11px; line-height: 1.25; white-space: nowrap; text-overflow: ellipsis; }
+.swatch { display: block; aspect-ratio: 1; width: 100%; border-radius: 4px; background-size: cover; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); }
+.swatch[data-size='small'] { width: 22px; height: 22px; flex: 0 0 22px; }
+.tabs { display: flex; gap: 2px; padding: 2px; border-radius: var(--radius-sm); background: var(--bg-input); }
+.tabs button { flex: 1; height: 24px; border-radius: 4px; color: var(--text-muted); font-size: 12px; }
+.tabs button[aria-selected='true'] { background: var(--bg-panel); color: var(--text); font-weight: 500; box-shadow: var(--shadow-sm); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chips button { height: 22px; padding: 0 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); font-size: 11px; }
+.chips button[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.secondary { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 12px; }
+.secondary:hover:not(:disabled) { background: var(--bg-hover); }
+.secondary:disabled { opacity: 0.45; }
+.link { padding: 0; color: var(--accent); font: inherit; text-decoration: underline; }
+.swatch { position: relative; }
+.swatch .spin { position: absolute; inset: 0; margin: auto; color: #fff; filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.6)); animation: spin 1s linear infinite; }
+.added { position: absolute; top: 3px; right: 3px; padding: 1px; border-radius: 999px; background: var(--success, #1f9d55); color: #fff; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.inHand { display: flex; align-items: center; gap: 8px; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); font-size: var(--text-sm); }
+.inHand > span:nth-child(2) { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.inHand button { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 12px; }
+.inHand button[data-active='true'] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.cardImage { position: relative; display: block; aspect-ratio: 1; border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-panel); }
+.cardImage img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cardImage .spin { position: absolute; inset: 0; margin: auto; color: #fff; filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.6)); }
+.swatch[data-size='card'] { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; box-shadow: none; }

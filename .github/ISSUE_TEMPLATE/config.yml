@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ask for an ArchAI account
+    url: mailto:mklkoklpp@gmail.com?subject=ArchAI%20account%20request
+    about: Accounts for the ArchAI cloud (online projects, libraries, VR links) are by invitation for now.
+  - name: Report a security problem
+    url: mailto:mklkoklpp@gmail.com?subject=ArchAI%20security
+    about: Please report security problems privately, not as a public issue (see SECURITY.md).

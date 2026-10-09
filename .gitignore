@@ -1,0 +1,21 @@
+node_modules/
+dist/
+dist-electron/
+release/
+playwright-report/
+test-results/
+*.tsbuildinfo
+.vite/
+.DS_Store
+Thumbs.db
+*.log
+.env.local
+.env.*.local
+
+# Reference material kept locally (not redistributable)
+.claude/Ref/
+# Old build output folders
+release-*/
+# Local wrangler state and secrets
+.wrangler/
+.dev.vars

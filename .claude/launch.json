@@ -1,0 +1,79 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "archai-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "archai-web-5174",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174"
+      ],
+      "port": 5174
+    },
+    {
+      "name": "archai-web-tablet",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5174"
+      ],
+      "port": 5174
+    },
+    {
+      "name": "archai-cloud-local",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd workers/archai-cloud && npx wrangler dev --local --port 8787"
+      ],
+      "port": 8787
+    },
+    {
+      "name": "archai-web-local-cloud",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set VITE_CLOUD_URL=/__cloud&& set ARCHAI_LOCAL_CLOUD=http://127.0.0.1:8787&& npx vite --port 5175 --strictPort"
+      ],
+      "port": 5175
+    },
+    {
+      "name": "archai-web-local-cloud-2",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set VITE_CLOUD_URL=/__cloud&& set ARCHAI_LOCAL_CLOUD=http://127.0.0.1:8787&& npx vite --port 5176 --strictPort"
+      ],
+      "port": 5176
+    },
+    {
+      "name": "archai-preview-build",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "preview",
+        "--port",
+        "4173",
+        "--strictPort"
+      ],
+      "port": 4173
+    }
+  ]
+}

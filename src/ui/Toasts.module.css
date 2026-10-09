@@ -1,0 +1,43 @@
+.host {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 70;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 480px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--text);
+  color: var(--text-inverse);
+  font-size: var(--text-sm);
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+}
+
+.toast[data-kind='error'] {
+  background: var(--danger);
+}
+
+.toast[data-kind='success'] {
+  background: var(--success);
+}
+
+.dismiss {
+  color: inherit;
+  opacity: 0.7;
+  font-size: var(--text-xs);
+}
+
+.dismiss:hover {
+  opacity: 1;
+}

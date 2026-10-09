@@ -1,0 +1,11 @@
+.dialog { width: min(1100px, 96vw); max-height: 94dvh; padding: 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-panel); color: var(--text); overflow: auto; }
+.dialog::backdrop { background: #11182788; }
+.dialog header, .dialog footer, .tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dialog header > div, .dialog footer > div { flex: 1; }
+.dialog p { margin: 6px 0; color: var(--text-muted); font-size: 13px; }
+.dialog button, .dialog select { min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-app); color: var(--text); cursor: pointer; }
+.dialog button[aria-pressed='true'], .dialog footer > button:last-child { background: var(--accent); color: white; }
+.dialog button:disabled { opacity: .45; cursor: default; }
+.tools { padding: 10px 0; }
+.canvas { position: relative; width: 100%; height: min(50dvh, 520px); min-height: 220px; touch-action: none; overflow: hidden; }
+.canvas > div { pointer-events: none; }

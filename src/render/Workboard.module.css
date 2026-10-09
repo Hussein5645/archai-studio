@@ -1,0 +1,171 @@
+.board {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: default;
+  outline: none;
+}
+
+.board[data-tool='hand'],
+.board[data-panning='true'] {
+  cursor: grab;
+}
+
+.board[data-panning='true']:active {
+  cursor: grabbing;
+}
+
+.board[data-tool='rect'],
+.board[data-tool='line'],
+.board[data-tool='text'],
+.board[data-tool='image'],
+.board[data-tool='measure'],
+.board[data-tool='catalog'],
+.board[data-tool='view3d'],
+.board[data-tool='section'],
+.board[data-tool='paper'],
+.board[data-tool='ai-portal'],
+.board[data-tool^='arch:'],
+.board[data-tool^='annotate:'] {
+  cursor: crosshair;
+}
+
+.board[data-tool='annotate:eraser'] {
+  cursor: cell;
+}
+
+.board[data-cursor='move'] {
+  cursor: move;
+}
+
+.board[data-cursor='ew'] {
+  cursor: ew-resize;
+}
+
+.board[data-cursor='ns'] {
+  cursor: ns-resize;
+}
+
+.board[data-cursor='nwse'] {
+  cursor: nwse-resize;
+}
+
+.board[data-cursor='nesw'] {
+  cursor: nesw-resize;
+}
+
+.board[data-cursor='rotate'] {
+  cursor: alias;
+}
+
+.board[data-cursor='text'] {
+  cursor: text;
+}
+
+.world,
+.paintLayer,
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.paintLayer {
+  display: block;
+}
+
+.world text {
+  font-family: var(--font);
+  white-space: pre;
+}
+
+/* Board display styles: images follow the walls (line-art or grey). */
+.world[data-view-style='hidden-line'] image:not([data-styled]) {
+  filter: grayscale(1) contrast(1.5) brightness(1.15);
+}
+
+.world[data-view-style='shaded'] image:not([data-styled]) {
+  filter: grayscale(1) contrast(0.9);
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.emptyCard {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  line-height: 1.7;
+}
+
+.emptyCard strong {
+  display: block;
+  color: var(--text);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.textEditor {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 1px solid var(--accent-line);
+  outline-offset: 2px;
+  background: transparent;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.3;
+  font-family: var(--font);
+  white-space: pre-wrap;
+  word-break: break-word;
+  transform-origin: 0 0;
+  pointer-events: auto;
+}
+
+.dropping {
+  box-shadow: inset 0 0 0 2px var(--accent-line);
+}
+
+.doorFlipControls {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.doorFlipControls > g > rect {
+  fill: var(--bg-panel);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  filter: drop-shadow(0 2px 4px rgba(20, 22, 30, 0.16));
+}
+
+.doorFlipControls > g > svg {
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.doorFlipControls > g:hover > rect {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+}
+
+.doorFlipControls > g:hover > svg {
+  color: var(--accent);
+}
+
+/* A view a sheet frame renders through: mounted for its renderer, never seen or hit. */
+.hiddenPortal {
+  visibility: hidden;
+  pointer-events: none;
+}

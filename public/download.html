@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Download ArchAI</title>
+    <style>
+      :root {
+        --bg: #f7f7f8;
+        --card: #ffffff;
+        --border: #e4e4e7;
+        --text: #18181b;
+        --text-muted: #71717a;
+        --accent: #2563eb;
+        --accent-hover: #1d4ed8;
+        --radius: 12px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+      .wrap {
+        max-width: 820px;
+        margin: 0 auto;
+        padding: 48px 20px 80px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 32px;
+      }
+      .brand .logo {
+        width: 32px;
+        height: 32px;
+        object-fit: contain;
+      }
+      .brand span {
+        font-weight: 700;
+        font-size: 18px;
+      }
+      h1 {
+        font-size: 30px;
+        margin: 0 0 8px;
+      }
+      p.lede {
+        color: var(--text-muted);
+        margin: 0 0 28px;
+        font-size: 15px;
+      }
+      /* Tabs */
+      .tabs {
+        display: inline-flex;
+        gap: 4px;
+        padding: 4px;
+        background: #ececee;
+        border-radius: 10px;
+        margin-bottom: 24px;
+      }
+      .tabs button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-muted);
+        padding: 8px 18px;
+        border-radius: 7px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .tabs button[aria-selected='true'] {
+        background: var(--card);
+        color: var(--text);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      }
+      .tabs button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .tabs .count {
+        font-size: 11px;
+        background: #e0e7ff;
+        color: #4338ca;
+        padding: 1px 7px;
+        border-radius: 999px;
+      }
+      [role='tabpanel'][hidden] {
+        display: none;
+      }
+      .panel-intro {
+        color: var(--text-muted);
+        font-size: 14px;
+        margin: 0 0 18px;
+        line-height: 1.5;
+      }
+      /* Cards */
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px 24px;
+        margin-bottom: 14px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+      .card .app {
+        width: 52px;
+        height: 52px;
+        flex: none;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+        color: #fff;
+        font-size: 19px;
+        letter-spacing: -0.5px;
+        position: relative;
+      }
+      .card .app svg {
+        width: 28px;
+        height: 28px;
+      }
+      .card .app.logo {
+        background: #fff;
+        border: 1px solid var(--border);
+      }
+      .card .app img.brand {
+        width: 34px;
+        height: 34px;
+        object-fit: contain;
+      }
+      .card .app img.second {
+        position: absolute;
+        left: -6px;
+        bottom: -6px;
+        width: 22px;
+        height: 22px;
+        padding: 2px;
+        border-radius: 7px;
+        background: #fff;
+        border: 2px solid var(--card);
+      }
+      .card .app .mark {
+        position: absolute;
+        right: -6px;
+        bottom: -6px;
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+        background: #1f2126;
+        border: 2px solid var(--card);
+        display: grid;
+        place-items: center;
+      }
+      .card .app .mark img {
+        width: 13px;
+        height: 13px;
+        filter: invert(1);
+      }
+      .card .info {
+        flex: 1;
+        min-width: 0;
+      }
+      .card .info h2 {
+        font-size: 17px;
+        margin: 0 0 4px;
+      }
+      .card .info p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      .card .meta {
+        margin-top: 8px;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .badge {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #4338ca;
+      }
+      .badge.beta {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      .badge.feature {
+        background: #f0fdf4;
+        color: #166534;
+      }
+      details {
+        margin-top: 8px;
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      details summary {
+        cursor: pointer;
+        color: var(--accent);
+        font-weight: 600;
+        width: fit-content;
+      }
+      details ol {
+        margin: 8px 0 0;
+        padding-left: 18px;
+        line-height: 1.6;
+      }
+      code {
+        font-size: 12px;
+        background: #f4f4f5;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--accent);
+        color: #fff;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 14px;
+        padding: 10px 18px;
+        border-radius: 8px;
+        white-space: nowrap;
+        transition: background 0.15s ease;
+        flex: none;
+      }
+      .btn:hover {
+        background: var(--accent-hover);
+      }
+      .btn.secondary {
+        background: #fff;
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .btn.secondary:hover {
+        background: #f4f4f5;
+      }
+      .btn svg {
+        width: 15px;
+        height: 15px;
+      }
+      .note {
+        font-size: 13px;
+        color: var(--text-muted);
+        background: #fff;
+        border: 1px dashed var(--border);
+        border-radius: var(--radius);
+        padding: 14px 18px;
+        line-height: 1.5;
+      }
+      footer {
+        margin-top: 40px;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+      footer a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      footer a:hover {
+        text-decoration: underline;
+      }
+      @media (max-width: 600px) {
+        .card {
+          flex-wrap: wrap;
+        }
+        .card .btn {
+          width: 100%;
+          justify-content: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
+      </symbol>
+    </svg>
+    <div class="wrap">
+      <div class="brand">
+        <img class="logo" src="/brand/archai-mark.png" alt="" aria-hidden="true" />
+        <span>ArchAI</span>
+      </div>
+
+      <h1>Download ArchAI</h1>
+      <p class="lede">The native app for your desktop or Android device, and ArchAI plugins for the modelling and rendering software you already use.</p>
+
+      <div class="tabs" role="tablist" aria-label="Downloads">
+        <button role="tab" id="tab-apps" aria-controls="apps" aria-selected="true">Apps</button>
+        <button role="tab" id="tab-plugins" aria-controls="plugins" aria-selected="false">Plugins <span class="count">7</span></button>
+      </div>
+
+      <!-- ===================== Native apps ===================== -->
+      <section role="tabpanel" id="apps" aria-labelledby="tab-apps">
+        <p class="panel-intro">ArchAI as an installed app. Your projects stay in sync with the web version.</p>
+
+        <div class="card">
+          <div class="app" style="background: #1f2126" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="#fff"><path d="M3 5.5 10.5 4.4v7.1H3zM11.5 4.3 21 3v8.5h-9.5zM3 12.5h7.5v7.1L3 18.5zM11.5 12.5H21V21l-9.5-1.3z" /></svg>
+          </div>
+          <div class="info">
+            <h2>ArchAI for Windows</h2>
+            <p>ArchAI-Setup-0.2.2.13.exe · Windows installer · includes <b>ArchAI Render</b> (real-time and path-traced rendering with sun, skies, materials and entourage), the <b>live link</b> with the plugins, and with an ArchAI account (by invitation: email mklkoklpp@gmail.com) <b>online projects you edit together</b> (live cursors, invite links) and libraries of 90 models and 93 scanned materials</p>
+            <div class="meta">
+              <span class="badge">v0.2.2.13</span>
+              <span class="badge beta">Beta</span>
+              <span class="badge">Windows 10/11 · x64</span>
+            </div>
+          </div>
+          <a class="btn" href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-Setup-0.2.2.13.exe" target="_blank" rel="noopener noreferrer">
+            <svg><use href="#download" /></svg>
+            Download
+          </a>
+        </div>
+
+        <div class="card">
+          <div class="app" style="background: #3ddc84" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="#fff"><path d="M17.6 9.48 19.44 6.3a.38.38 0 0 0-.66-.38l-1.86 3.22a11.5 11.5 0 0 0-9.84 0L5.22 5.92a.38.38 0 1 0-.66.38L6.4 9.48A10.8 10.8 0 0 0 1 18h22a10.8 10.8 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z" /></svg>
+          </div>
+          <div class="info">
+            <h2>ArchAI for Android</h2>
+            <p>ArchAI-0.2.2.13.apk · tablets and phones; also runs on Meta Quest (VR modelling is coming)</p>
+            <div class="meta">
+              <span class="badge">v0.2.2.13</span>
+              <span class="badge beta">Beta</span>
+              <span class="badge">Android 12+</span>
+            </div>
+          </div>
+          <a class="btn" href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-0.2.2.13.apk" target="_blank" rel="noopener noreferrer">
+            <svg><use href="#download" /></svg>
+            Download
+          </a>
+        </div>
+
+        <div class="card">
+          <div class="app" style="background: #2563eb" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c-3 3.2-3 14.8 0 18M12 3c3 3.2 3 14.8 0 18" /></svg>
+          </div>
+          <div class="info">
+            <h2>ArchAI on the web</h2>
+            <p>Nothing to install: works in any modern browser, including the Meta Quest Browser.</p>
+            <div class="meta"><span class="badge">Always up to date</span></div>
+          </div>
+          <a class="btn secondary" href="./">Open ArchAI</a>
+        </div>
+      </section>
+
+      <!-- ===================== Plugins ===================== -->
+      <section role="tabpanel" id="plugins" aria-labelledby="tab-plugins" hidden>
+        <p class="panel-intro">
+          Each plugin adds an <b>ArchAI</b> tab, panel or menu to the app with four actions: <b>Send to ArchAI</b> (save the model as an
+          <code>.AIR</code> file to open in ArchAI), <b>Live link</b> (keep the app and the ArchAI desktop app in sync while you work: your
+          edits appear in ArchAI a moment later, and ArchAI's model comes back into the app; it starts ArchAI and opens a project for the model by itself), <b>Open .AIR</b> (bring an ArchAI design in), and
+          <b>Open in VR</b> (walk through the model in a VR headset or any browser from a short link).
+        </p>
+
+        <div class="card">
+          <div class="app logo"><img class="brand" src="/brand/apps/revit.svg" alt="Autodesk Revit" /><span class="mark"><img src="/brand/archai-mark.png" alt="" /></span></div>
+          <div class="info">
+            <h2>ArchAI in Revit</h2>
+            <p>Native exchange: walls with layers, doors, windows, floors, levels and rooms become native elements both ways. Camera views and rooms become VR stops.</p>
+            <div class="meta">
+              <span class="badge">Revit 2024–2027</span>
+              <span class="badge feature">Send · Live link · Open .AIR · VR</span>
+              <span class="badge beta">Beta</span>
+            </div>
+            <details>
+              <summary>How to install</summary>
+              <ol>
+                <li>Close Revit and run the setup; it finds your Revit versions.</li>
+                <li>Start Revit: the <b>ArchAI</b> tab appears on the ribbon.</li>
+              </ol>
+            </details>
+          </div>
+          <a class="btn" href="https://pub-c7e9dfac353641459603485335c5537d.r2.dev/ArchAI-Revit-Setup-0.4.0-beta.1.exe" target="_blank" rel="noopener noreferrer">
+            <svg><use href="#download" /></svg>
+            Download
+          </a>
+        </div>
+
+        <div class="card">
+          <div class="app logo"><img class="brand" src="/brand/apps/autocad.svg" alt="AutoCAD" /><span class="mark"><img src="/brand/archai-mark.png" alt="" /></span></div>
+          <div class="info">
+            <h2>ArchAI in AutoCAD</h2>
+            <p>3D solids, surfaces, meshes and blocks go to ArchAI with their colours; .AIR files come in as one block per element on a layer per level.</p>
+            <div class="meta">
+              <span class="badge">AutoCAD 2025+</span>
+              <span class="badge feature">Send · Live link · Open .AIR · VR</span>
+              <span class="badge beta">Beta</span>
+            </div>
+            <details>
+              <summary>How to install</summary>
+              <ol>
+                <li>Unzip and copy the <code>ArchAI.bundle</code> folder to <code>%AppData%\Autodesk\ApplicationPlugins</code>.</li>
+                <li>Start AutoCAD: the <b>ArchAI</b> ribbon tab appears (or type <code>ARCHAIVR</code>).</li>
+              </ol>
+            </details>
+          </div>
+          <a class="btn" href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/plugins/ArchAI-AutoCAD-0.4.0.zip" target="_blank" rel="noopener noreferrer">
+            <svg><use href="#download" /></svg>
+            Download
+          </a>
+        </div>
+
+        <div class="card">
+          <div class="app logo"><img class="brand" src="/brand/apps/rhino.svg" alt="Rhinoceros" /><span class="mark"><img src="/brand/archai-mark.png" alt="" /></span></div>
+          <div class="info">
+            <h2>ArchAI in Rhino</h2>
+            <p>Polysurfaces, SubDs, meshes and blocks with their render materials. An ArchAI panel; named perspective views become VR stops.</p>
+            <div class="meta">
+              <span class="badge">Rhino 8 · Windows</span>
+              <span class="badge feature">Send · Live link · Open .AIR · VR</span>
+              <span class="badge beta">Beta</span>
+            </div>
+            <details>
+              <summary>How to install</summary>
+              <ol>
+                <li>Unzip, then drag <code>ArchAI.rhp</code> onto the Rhino window (keep the other files next to it).</li>
+                <li>Open the <b>ArchAI</b> panel from Panels, or type <code>ArchAI</code>.</li>
+              </ol>
+            </details>
+          </div>
+          <a class="btn" href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/plugins/ArchAI-Rhino-0.4.0.zip" target="_blank" rel="noopener noreferrer">
+            <svg><use href="#download" /></svg>
+            Download
+          </a>
+        </div>
+
+        <div class="card">
+          <div class="app logo"><img class="brand" src="/brand/apps/sketchup.svg" alt="SketchUp" /><span class="mark"><img src="/brand/archai-mark.png" alt="" /></span></div>
+          <div class="info">
+            <h2>ArchAI in SketchUp</h2>
+            <p>Groups and components go to ArchAI with their materials; .AIR files come in as groups with a tag per level. Scenes become VR stops.</p>
+            <div class="meta">
+              <span class="badge">SketchUp 2021+</span>
+              <span class="badge feature">Send · Live link · Open .AIR · VR</span>
+              <span class="badge beta">Beta</span>
+            </div>
+            <details>
+              <summary>How to install</summary>
+              <ol>
+                <li>In SketchUp: <b>Extensions → Extension Manager → Install Extension</b>, pick the <code>.rbz</code>.</li>
+                <li>The <b>ArchAI</b> toolbar and the <b>Extensions → ArchAI</b> menu appear.</li>
+              </ol>
+            </details>
+          </div>
+          <a class="btn" href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/plugins/ArchAI-SketchUp-0.4.0.rbz" target="_blank" rel="noopener noreferrer">
+            <svg><use href="#download" /></svg>
+            Download
+          </a>
+        </div>
+
+        <div class="card">
+          <div class="app logo"><img class="brand" src="/brand/apps/blender.svg" alt="Blender" /><span class="mark"><img src="/brand/archai-mark.png" alt="" /></span></div>
+          <div class="info">
+            <h2>ArchAI in Blender</h2>
+            <p>An ArchAI tab in the 3D View sidebar and File → Import / Export entries. Modifiers and instances are included; cameras become VR stops.</p>
+            <div class="meta">
+              <span class="badge">Blender 3.6+ · 4.x</span>
+              <span class="badge feature">Send · Live link · Open .AIR · VR</span>
+              <span class="badge beta">Beta</span>
+            </div>
+            <details>
+              <summary>How to install</summary>
+              <ol>
+                <li><b>Edit → Preferences → Add-ons</b> (Blender 4.2+: the ⌄ menu → <b>Install from Disk</b>), pick the zip.</li>
+                <li>Press <b>N</b> in the 3D View and open the <b>ArchAI</b> tab.</li>
+              </ol>
+            </details>
+          </div>
+          <a class="btn" href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/plugins/ArchAI-Blender-0.4.0.zip" target="_blank" rel="noopener noreferrer">
+            <svg><use href="#download" /></svg>
+            Download
+          </a>
+        </div>
+
+        <div class="card">
+          <div class="app logo"><img class="brand" src="/brand/apps/3dsmax.svg" alt="Autodesk 3ds Max" /><span class="mark"><img src="/brand/archai-mark.png" alt="" /></span></div>
+          <div class="info">
+            <h2>ArchAI in 3ds Max</h2>
+            <p>A dockable ArchAI panel and an ArchAI menu. Physical and standard materials go across; cameras become VR stops.</p>
+            <div class="meta">
+              <span class="badge">3ds Max 2025+</span>
+              <span class="badge feature">Send · Live link · Open .AIR · VR</span>
+              <span class="badge beta">Beta</span>
+            </div>
+            <details>
+              <summary>How to install</summary>
+              <ol>
+                <li>Unzip and copy the <code>ArchAI.bundle</code> folder to <code>%AppData%\Autodesk\ApplicationPlugins</code>.</li>
+                <li>Start 3ds Max: open <b>ArchAI → ArchAI Panel</b> from the main menu.</li>
+              </ol>
+            </details>
+          </div>
+          <a class="btn" href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/plugins/ArchAI-3dsMax-0.4.0.zip" target="_blank" rel="noopener noreferrer">
+            <svg><use href="#download" /></svg>
+            Download
+          </a>
+        </div>
+
+        <div class="card">
+          <div class="app logo"><img class="brand" src="/brand/apps/unreal.svg" alt="Unreal Engine" /><img class="second" src="/brand/apps/twinmotion.svg" alt="Twinmotion" /><span class="mark"><img src="/brand/archai-mark.png" alt="" /></span></div>
+          <div class="info">
+            <h2>ArchAI in Unreal Engine &amp; Twinmotion</h2>
+            <p>An ArchAI menu in the Unreal Editor: static meshes go to ArchAI, .AIR files come in as placed meshes. Camera actors become VR stops. Twinmotion has no plugins: bring ArchAI models in through Unreal, or export from the source app.</p>
+            <div class="meta">
+              <span class="badge">Unreal Engine 5.1+</span>
+              <span class="badge feature">Send · Live link · Open .AIR · VR</span>
+              <span class="badge beta">Beta</span>
+            </div>
+            <details>
+              <summary>How to install</summary>
+              <ol>
+                <li>Unzip into your project's <code>Plugins</code> folder (so you have <code>Plugins/ArchAI/ArchAI.uplugin</code>).</li>
+                <li>Restart the editor: the <b>ArchAI</b> menu appears in the main menu bar.</li>
+              </ol>
+            </details>
+          </div>
+          <a class="btn" href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/plugins/ArchAI-Unreal-0.4.0.zip" target="_blank" rel="noopener noreferrer">
+            <svg><use href="#download" /></svg>
+            Download
+          </a>
+        </div>
+
+        <p class="note">
+          ArchAI documents saved with ArchAI 0.2.2.8 or later carry a 3D model the plugins read; open an older <code>.AIR</code> in ArchAI and save it once
+          before importing it into AutoCAD, Rhino, SketchUp, Blender, 3ds Max or Unreal. Product names and logos belong to their owners; the plugins are
+          made by ArchAI.
+        </p>
+      </section>
+
+      <footer>
+        <a href="./">&larr; Back to ArchAI</a>
+      </footer>
+    </div>
+    <script>
+      // Tabs: #plugins / #apps in the address, arrow keys between tabs.
+      (function () {
+        var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+        function select(tab, focus) {
+          tabs.forEach(function (t) {
+            var on = t === tab;
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+            t.tabIndex = on ? 0 : -1;
+            document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+          });
+          if (focus) tab.focus();
+          var id = tab.getAttribute('aria-controls');
+          if (location.hash !== '#' + id) history.replaceState(null, '', '#' + id);
+        }
+        tabs.forEach(function (tab, i) {
+          tab.addEventListener('click', function () {
+            select(tab, false);
+          });
+          tab.addEventListener('keydown', function (e) {
+            if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+              e.preventDefault();
+              select(tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length], true);
+            }
+          });
+        });
+        var initial = tabs.filter(function (t) {
+          return '#' + t.getAttribute('aria-controls') === location.hash;
+        })[0];
+        select(initial || tabs[0], false);
+      })();
+    </script>
+  </body>
+</html>

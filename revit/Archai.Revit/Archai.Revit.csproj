@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RevitVersion Condition="'$(RevitVersion)' == ''">2025</RevitVersion>
+    <TargetFramework Condition="'$(RevitVersion)' == '2024'">net48</TargetFramework>
+    <TargetFramework Condition="'$(RevitVersion)' == '2025' Or '$(RevitVersion)' == '2026'">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(RevitVersion)' == '2027'">net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <RevitApiDir Condition="'$(RevitApiDir)' == ''">C:\Program Files\Autodesk\Revit $(RevitVersion)</RevitApiDir>
+    <OutputPath>bin\$(Configuration)\$(RevitVersion)\</OutputPath>
+    <AssemblyName>Archai.AirImporter</AssemblyName>
+    <ApiPackageVersion Condition="'$(RevitVersion)' == '2024'">2024.0.0</ApiPackageVersion>
+    <ApiPackageVersion Condition="'$(RevitVersion)' == '2025'">2025.0.2</ApiPackageVersion>
+    <ApiPackageVersion Condition="'$(RevitVersion)' == '2026'">2026.0.4</ApiPackageVersion>
+    <ApiPackageVersion Condition="'$(RevitVersion)' == '2027'">2027.0.0</ApiPackageVersion>
+  </PropertyGroup>
+  <!-- The plugin core (glTF, exchange, VR tours; it bakes the VR share key from .env.local), the
+       shared ArchAI windows and the icon set (plugins/). -->
+  <Import Project="..\..\plugins\dotnet\Shared.Windows\Shared.Windows.props" />
+  <ItemGroup>
+    <ProjectReference Include="..\Archai.Air\Archai.Air.csproj" />
+    <Reference Include="RevitAPI" Condition="'$(UseApiPackages)' != 'true'"><HintPath>$(RevitApiDir)\RevitAPI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RevitAPIUI" Condition="'$(UseApiPackages)' != 'true'"><HintPath>$(RevitApiDir)\RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(ApiPackageVersion)" PrivateAssets="All" ExcludeAssets="runtime" Condition="'$(UseApiPackages)' == 'true'" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(ApiPackageVersion)" PrivateAssets="All" ExcludeAssets="runtime" Condition="'$(UseApiPackages)' == 'true'" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" Condition="'$(RevitVersion)' == '2024'" />
+  </ItemGroup>
+  <Target Name="CheckRevitReferences" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(UseApiPackages)' != 'true' And !Exists('$(RevitApiDir)\RevitAPI.dll')" Text="Revit $(RevitVersion) API missing. Set RevitApiDir or opt in to UseApiPackages=true for community-packaged Autodesk references." />
+  </Target>
+</Project>

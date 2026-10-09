@@ -1,0 +1,18 @@
+.section { display: flex; flex-direction: column; gap: 4px; }
+.row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.label { flex: 0 0 76px; overflow: hidden; font-size: 11px; color: var(--text-muted); white-space: nowrap; text-overflow: ellipsis; }
+.picker { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; height: 28px; padding: 0 6px 0 3px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text); font-size: 12px; text-align: left; }
+.picker:hover { border-color: var(--border-strong); }
+.name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.origin { flex: 0 0 auto; padding: 0 5px; border-radius: 3px; background: var(--bg-active); color: var(--text-muted); font-size: 10px; }
+.origin[data-origin='Element'] { background: var(--accent-soft); color: var(--accent); }
+.none { width: 22px; height: 22px; flex: 0 0 22px; border: 1px dashed var(--border-strong); border-radius: 4px; }
+.icon { display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; border-radius: var(--radius-sm); color: var(--text-muted); font-size: 12px; }
+.icon:hover { background: var(--bg-hover); color: var(--text); }
+.subhead { margin-top: 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.surface { display: flex; flex-direction: column; gap: 3px; }
+.paint { display: flex; align-items: center; gap: 6px; margin-left: 82px; font-size: 11px; }
+.paint > .name { flex: 0 1 auto; max-width: 90px; }
+.zone { display: flex; flex: 1; align-items: center; gap: 3px; min-width: 0; color: var(--text-muted); }
+.zone > div { flex: 1; min-width: 46px; }
+.whole { flex: 1; color: var(--text-muted); }

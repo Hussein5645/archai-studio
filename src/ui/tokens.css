@@ -1,0 +1,54 @@
+:root {
+  color-scheme: light;
+
+  --font: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, 'Roboto Mono', monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+
+  --bg-app: #f7f7f8;
+  --bg-panel: #ffffff;
+  --bg-panel-translucent: rgba(255, 255, 255, 0.92);
+  --bg-hover: #f1f1f3;
+  --bg-active: #e9e9ee;
+  --bg-input: #f3f3f5;
+  --bg-board: #ebedef;
+
+  --border: #e4e4e8;
+  --border-strong: #cfcfd6;
+
+  --text: #1f1f24;
+  --text-muted: #6b6b73;
+  --text-faint: #9a9aa3;
+  --text-inverse: #ffffff;
+
+  --accent: #2f6fed;
+  --accent-hover: #245fd6;
+  --accent-soft: rgba(47, 111, 237, 0.12);
+  --accent-line: rgba(47, 111, 237, 0.9);
+  --danger: #d64545;
+  --success: #2f9e6a;
+
+  --shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.06), 0 0 0 1px rgba(20, 20, 30, 0.04);
+  --shadow-md: 0 6px 20px rgba(20, 20, 30, 0.1), 0 0 0 1px rgba(20, 20, 30, 0.05);
+  --shadow-lg: 0 16px 48px rgba(20, 20, 30, 0.16), 0 0 0 1px rgba(20, 20, 30, 0.06);
+
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  --topbar-h: 40px;
+  --panel-gap: 12px;
+  --left-w: 252px;
+  --inspector-w: 276px;
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+html[data-touch='true'] {
+  --topbar-h: 46px;
+  --left-w: 270px;
+  --inspector-w: 290px;
+}

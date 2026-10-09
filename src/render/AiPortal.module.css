@@ -1,0 +1,376 @@
+.portal {
+  position: absolute;
+  overflow: hidden;
+  border-radius: clamp(14px, calc(36px * var(--portal-scale, 1)), 54px);
+  box-sizing: border-box;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  isolation: isolate;
+
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  user-select: text;
+}
+
+.portal[data-tiny='true'] {
+  pointer-events: none;
+}
+
+/* Main cavity: much stronger inset depth so it reads as carved inward. */
+.portal::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  background: linear-gradient(145deg, #eceff3 0%, #e7ebf0 48%, #eef1f5 100%);
+  box-shadow:
+    inset calc(20px * var(--portal-scale, 1)) calc(20px * var(--portal-scale, 1)) calc(34px * var(--portal-scale, 1)) rgba(154, 165, 183, 0.50),
+    inset calc(8px * var(--portal-scale, 1)) calc(8px * var(--portal-scale, 1)) calc(15px * var(--portal-scale, 1)) rgba(145, 156, 174, 0.24),
+    inset calc(-18px * var(--portal-scale, 1)) calc(-18px * var(--portal-scale, 1)) calc(30px * var(--portal-scale, 1)) rgba(255, 255, 255, 0.98),
+    inset calc(-7px * var(--portal-scale, 1)) calc(-7px * var(--portal-scale, 1)) calc(14px * var(--portal-scale, 1)) rgba(255, 255, 255, 0.85),
+    inset 0 calc(2px * var(--portal-scale, 1)) 0 rgba(255, 255, 255, 0.72),
+    inset 0 calc(-1px * var(--portal-scale, 1)) 0 rgba(180, 189, 201, 0.20);
+}
+
+/* Extra inner lip / bevel near the edge of the opening. */
+.portal::after {
+  content: '';
+  position: absolute;
+  inset: clamp(4px, calc(10px * var(--portal-scale, 1)), 14px);
+  border-radius: clamp(10px, calc(28px * var(--portal-scale, 1)), 42px);
+  pointer-events: none;
+  z-index: 0;
+  box-shadow:
+    inset calc(2px * var(--portal-scale, 1)) calc(2px * var(--portal-scale, 1)) calc(3px * var(--portal-scale, 1)) rgba(255, 255, 255, 0.72),
+    inset calc(-7px * var(--portal-scale, 1)) calc(-7px * var(--portal-scale, 1)) calc(12px * var(--portal-scale, 1)) rgba(255, 255, 255, 0.45),
+    inset calc(7px * var(--portal-scale, 1)) calc(7px * var(--portal-scale, 1)) calc(12px * var(--portal-scale, 1)) rgba(173, 182, 195, 0.18);
+}
+
+.portal[data-selected='true']::before {
+  box-shadow:
+    inset calc(20px * var(--portal-scale, 1)) calc(20px * var(--portal-scale, 1)) calc(34px * var(--portal-scale, 1)) rgba(154, 165, 183, 0.50),
+    inset calc(8px * var(--portal-scale, 1)) calc(8px * var(--portal-scale, 1)) calc(15px * var(--portal-scale, 1)) rgba(145, 156, 174, 0.24),
+    inset calc(-18px * var(--portal-scale, 1)) calc(-18px * var(--portal-scale, 1)) calc(30px * var(--portal-scale, 1)) rgba(255, 255, 255, 0.98),
+    inset calc(-7px * var(--portal-scale, 1)) calc(-7px * var(--portal-scale, 1)) calc(14px * var(--portal-scale, 1)) rgba(255, 255, 255, 0.85),
+    inset 0 calc(2px * var(--portal-scale, 1)) 0 rgba(255, 255, 255, 0.72),
+    inset 0 calc(-1px * var(--portal-scale, 1)) 0 rgba(180, 189, 201, 0.20),
+    0 0 0 2px rgba(99, 102, 241, 0.28);
+}
+
+.portalBar {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: clamp(8px, calc(20px * var(--portal-scale, 1)), 34px)
+           clamp(10px, calc(30px * var(--portal-scale, 1)), 54px)
+           clamp(4px, calc(8px * var(--portal-scale, 1)), 12px)
+           clamp(10px, calc(30px * var(--portal-scale, 1)), 54px);
+  background: transparent;
+  user-select: none;
+  cursor: grab;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.portalTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: clamp(4px, calc(8px * var(--portal-scale, 1)), 12px);
+  color: #202735;
+  font-size: clamp(11px, calc(17px * var(--portal-scale, 1)), 24px);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.portalTitleGroup > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portalSparkle {
+  color: #6b63ff;
+  filter: drop-shadow(0 2px 4px rgba(99, 102, 241, 0.2));
+  flex-shrink: 0;
+}
+
+.portalButtons {
+  display: flex;
+  align-items: center;
+  gap: clamp(2px, calc(4px * var(--portal-scale, 1)), 6px);
+  flex-shrink: 0;
+}
+
+.portalAction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(20px, calc(30px * var(--portal-scale, 1)), 40px);
+  height: clamp(20px, calc(30px * var(--portal-scale, 1)), 40px);
+  padding: 0;
+  border-radius: clamp(6px, calc(8px * var(--portal-scale, 1)), 12px);
+  border: none;
+  background: transparent;
+  color: #566273;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.portalAction:hover {
+  background: rgba(255, 255, 255, 0.55);
+  color: #1f2937;
+  transform: translateY(-1px);
+}
+
+.portalContent {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.messagesList {
+  flex: 1;
+  padding: clamp(8px, calc(16px * var(--portal-scale, 1)), 28px)
+           clamp(10px, calc(30px * var(--portal-scale, 1)), 54px)
+           clamp(6px, calc(12px * var(--portal-scale, 1)), 18px)
+           clamp(10px, calc(30px * var(--portal-scale, 1)), 54px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(8px, calc(20px * var(--portal-scale, 1)), 34px);
+  min-height: 0;
+  min-width: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(130, 144, 164, 0.25) transparent;
+  z-index: 1;
+}
+
+.messagesList::-webkit-scrollbar {
+  width: clamp(3px, calc(5px * var(--portal-scale, 1)), 8px);
+}
+
+.messagesList::-webkit-scrollbar-thumb {
+  background: rgba(130, 144, 164, 0.25);
+  border-radius: 999px;
+}
+
+.messageRow {
+  display: flex;
+  width: 100%;
+}
+
+.messageRowUser {
+  justify-content: flex-end;
+}
+
+.messageRowAi {
+  justify-content: flex-start;
+}
+
+.messageBubble {
+  max-width: 84%;
+  min-width: 0;
+  padding: clamp(6px, calc(11px * var(--portal-scale, 1)), 18px)
+           clamp(8px, calc(15px * var(--portal-scale, 1)), 22px);
+  border-radius: clamp(10px, calc(18px * var(--portal-scale, 1)), 26px);
+  box-sizing: border-box;
+  transform: translateZ(0);
+}
+
+/* User messages float above the carved surface. */
+.messageBubbleUser {
+  background: linear-gradient(145deg, #a5a2ff 0%, #817cf4 56%, #756ff0 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow:
+    0 calc(8px * var(--portal-scale, 1)) calc(18px * var(--portal-scale, 1)) rgba(92, 83, 218, 0.24),
+    0 calc(2px * var(--portal-scale, 1)) calc(6px * var(--portal-scale, 1)) rgba(73, 67, 168, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+/* Assistant messages are light raised tiles, as in the reference. */
+.messageBubbleAi {
+  background: rgba(249, 250, 252, 0.96);
+  color: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 calc(7px * var(--portal-scale, 1)) calc(18px * var(--portal-scale, 1)) rgba(71, 82, 99, 0.11),
+    0 calc(2px * var(--portal-scale, 1)) calc(4px * var(--portal-scale, 1)) rgba(71, 82, 99, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+}
+
+.senderUser {
+  display: flex;
+  align-items: center;
+  gap: clamp(3px, calc(5px * var(--portal-scale, 1)), 8px);
+  font-size: clamp(9px, calc(11px * var(--portal-scale, 1)), 15px);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.82);
+  margin-bottom: clamp(2px, calc(5px * var(--portal-scale, 1)), 8px);
+}
+
+.senderAi {
+  display: flex;
+  align-items: center;
+  gap: clamp(3px, calc(5px * var(--portal-scale, 1)), 8px);
+  font-size: clamp(9px, calc(11px * var(--portal-scale, 1)), 15px);
+  font-weight: 600;
+  color: #655cf6;
+  margin-bottom: clamp(2px, calc(5px * var(--portal-scale, 1)), 8px);
+}
+
+.messageTextUser {
+  font-size: clamp(10px, calc(14px * var(--portal-scale, 1)), 18px);
+  font-weight: 500;
+  line-height: 1.35;
+  color: #ffffff;
+  word-break: break-word;
+}
+
+.messageTextAi {
+  font-size: clamp(10px, calc(14px * var(--portal-scale, 1)), 18px);
+  font-weight: 600;
+  line-height: 1.35;
+  color: #1f2937;
+  word-break: break-word;
+}
+
+.timeUser {
+  font-size: clamp(8px, calc(10px * var(--portal-scale, 1)), 13px);
+  color: rgba(255, 255, 255, 0.72);
+  margin-top: clamp(2px, calc(5px * var(--portal-scale, 1)), 8px);
+}
+
+.timeAi {
+  font-size: clamp(8px, calc(10px * var(--portal-scale, 1)), 13px);
+  color: #8490a2;
+  margin-top: clamp(2px, calc(5px * var(--portal-scale, 1)), 8px);
+}
+
+/*
+ * The input is intentionally RAISED to board level while the conversation
+ * area remains recessed. This contrast creates the portal / pit effect.
+ */
+.inputFloatingBar {
+  margin: clamp(4px, calc(8px * var(--portal-scale, 1)), 12px)
+          clamp(8px, calc(22px * var(--portal-scale, 1)), 44px)
+          clamp(8px, calc(18px * var(--portal-scale, 1)), 26px)
+          clamp(8px, calc(22px * var(--portal-scale, 1)), 44px);
+  min-height: clamp(32px, calc(48px * var(--portal-scale, 1)), 66px);
+  padding: clamp(3px, calc(5px * var(--portal-scale, 1)), 8px)
+           clamp(4px, calc(7px * var(--portal-scale, 1)), 10px)
+           clamp(3px, calc(5px * var(--portal-scale, 1)), 8px)
+           clamp(8px, calc(16px * var(--portal-scale, 1)), 22px);
+  border-radius: 9999px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
+  border: 1px solid rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 calc(10px * var(--portal-scale, 1)) calc(18px * var(--portal-scale, 1)) rgba(84, 95, 112, 0.16),
+    0 calc(3px * var(--portal-scale, 1)) calc(8px * var(--portal-scale, 1)) rgba(84, 95, 112, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -1px 0 rgba(193, 201, 213, 0.24);
+  display: flex;
+  align-items: center;
+  gap: clamp(6px, calc(10px * var(--portal-scale, 1)), 14px);
+  z-index: 10;
+  flex-shrink: 0;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.inputFloatingBar:focus-within {
+  transform: translateY(-1px);
+  box-shadow:
+    0 calc(8px * var(--portal-scale, 1)) calc(18px * var(--portal-scale, 1)) rgba(68, 80, 98, 0.18),
+    0 calc(3px * var(--portal-scale, 1)) calc(7px * var(--portal-scale, 1)) rgba(68, 80, 98, 0.08),
+    0 0 0 2px rgba(99, 102, 241, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+}
+
+.clipButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(20px, calc(28px * var(--portal-scale, 1)), 38px);
+  height: clamp(20px, calc(28px * var(--portal-scale, 1)), 38px);
+  border: none;
+  background: transparent;
+  color: #4b5563;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.clipButton:hover {
+  color: #1f2937;
+  transform: translateY(-1px);
+}
+
+.chatInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: #1f2937;
+  font-size: clamp(10px, calc(13px * var(--portal-scale, 1)), 17px);
+  font-weight: 500;
+  outline: none;
+  font-family: inherit;
+}
+
+.chatInput::placeholder {
+  color: #8995a8;
+}
+
+.sendButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(24px, calc(38px * var(--portal-scale, 1)), 52px);
+  height: clamp(24px, calc(38px * var(--portal-scale, 1)), 52px);
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: linear-gradient(145deg, #6961ff 0%, #5448ef 100%);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow:
+    0 calc(4px * var(--portal-scale, 1)) calc(12px * var(--portal-scale, 1)) rgba(79, 70, 229, 0.31),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  transition: transform 0.12s ease, filter 0.15s ease, opacity 0.15s ease;
+  flex-shrink: 0;
+}
+
+.sendButton:hover:not(:disabled) {
+  filter: brightness(1.05);
+  transform: translateY(-1px) scale(1.03);
+}
+
+.sendButton:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
+}
+
+.sendButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}

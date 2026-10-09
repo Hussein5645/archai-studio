@@ -1,0 +1,34 @@
+# ArchAI cloud: accounts, online projects, libraries. Deploy:  npx wrangler deploy   (from this folder)
+# Library links are signed with a secret:                     npx wrangler secret put LIBRARY_SECRET
+# Database tables:   npx wrangler d1 execute archai --remote --file schema.sql   (idempotent; --local for wrangler dev)
+name = "archai-cloud"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "archai"
+database_id = "72f97293-d2be-4f24-be36-7217032c5810"
+
+[[r2_buckets]]
+binding = "PROJECTS"
+bucket_name = "archai-projects"
+
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "archai-assets"
+
+# One live board per online project (src/board.js), SQLite-backed (free plan).
+[[durable_objects.bindings]]
+name = "BOARD"
+class_name = "Board"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Board"]
+
+# Who people email for an account (accounts are by invitation; create them with admin.mjs).
+# WEB_APP_URL (optional): where the web app runs, for the "Open in the browser" button of invite pages.
+[vars]
+CONTACT_EMAIL = "mklkoklpp@gmail.com"
+# WEB_APP_URL = "https://..."
