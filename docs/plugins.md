@@ -112,7 +112,7 @@ their owners (noted on the page).
 
 ## Revit setup
 
-`ArchAI-Revit-Setup-0.5.1-beta.1.exe` (archai-revit bucket) installs the 0.5.1-beta.1 packages,
+`ArchAI-Revit-Setup-0.5.2-beta.1.exe` (archai-revit bucket) installs the 0.5.2-beta.1 packages,
 built with `revit/build-packages.ps1 -UseApiPackages -Dotnet revit/artifacts/tools/dotnet/dotnet.exe`
 (the local .NET 10 SDK, needed for Revit 2027) and `revit/build-setup.ps1`. Its `--self-test <dir>`
 must run in a short path (.NET Framework 260-character limit).

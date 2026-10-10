@@ -7,7 +7,7 @@ require 'base64'
 
 module ArchAI
   module Core
-    VERSION = '0.5.1'.freeze
+    VERSION = '0.5.2'.freeze
     WEB_URL = 'https://archai-studio-six.vercel.app/'.freeze
     DEFAULT_SHARE_URL = 'https://archai-vr-share.mklkoklpp.workers.dev'.freeze
     MAX_MODEL_BYTES = 95 * 1024 * 1024

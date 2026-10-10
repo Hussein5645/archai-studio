@@ -23,7 +23,7 @@ import urllib.request
 import webbrowser
 from array import array
 
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 WEB_URL = "https://archai-studio-six.vercel.app/"
 DEFAULT_SHARE_URL = "https://archai-vr-share.mklkoklpp.workers.dev"
 MAX_MODEL_BYTES = 95 * 1024 * 1024
