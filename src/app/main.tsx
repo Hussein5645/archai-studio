@@ -20,6 +20,7 @@ import { TouchModeProvider } from '@/ui/touch';
 import { VrDeviceProvider } from '@/ui/vrDevice';
 import { startBoardLink } from '@/studio/link';
 import { startLiveLink } from '@/live/board';
+import { startBridgeGuard } from '@/bridge/guard';
 import { App } from './App';
 import { AppProvider, type AppServices } from './context';
 import { findMatchingDocumentId, getCurrentRoute, parseRoute } from './router';
@@ -111,6 +112,8 @@ async function boot(): Promise<void> {
   startBoardLink(platform, store, { executor, toasts });
   const persistence = new PersistenceService(store, executor, platform);
   startLiveLink(platform, store, executor, catalog, toasts, persistence);
+  // An app's geometry is edited in that app: changes made here are put back (docs/live-bridge.md).
+  startBridgeGuard(executor, store, (app) => toasts.push({ kind: 'info', message: `${app} decides this element, so your change was put back. Convert it to an ArchAI element (Inspector, Live Bridge) to edit it here.` }));
   const route = parseRoute(getCurrentRoute());
 
   if (route.isHome) {

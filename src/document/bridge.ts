@@ -75,6 +75,8 @@ export const BridgeBindingSchema = z.object({
   state: FacetHashes.default({}),
   /** Deleted in ArchAI (time): source syncs do not bring it back. */
   removed: z.number().optional(),
+  /** The element (and everything below it) as its app last sent it: edits in ArchAI to parts the app owns are put back from it. */
+  snapshot: z.object({ element: JsonLike, descendants: z.array(JsonLike) }).optional(),
   /** Converted into a native ArchAI element: no longer synced, its sources kept as history. */
   history: z.array(z.object({ source: Key, app: z.string().max(60), id: z.string().max(200), at: z.number() })).optional(),
   refs: z.record(Key, BridgeRefSchema).default({}),

@@ -354,8 +354,9 @@ public sealed class LiveLink : IDisposable
                         SaveState();
                     }
                     var revision = (long?)result["revision"] ?? 0;
-                    // Up to date before this push: nothing new to bring back.
-                    if (upToDate) lastPulled = revision;
+                    // Up to date before this push, and nothing else changed in ArchAI meanwhile: nothing new to bring back.
+                    var before = (long?)result["before"];
+                    if (upToDate && (before == null || before == lastSeen)) lastPulled = revision;
                     lastSeen = revision;
                     var conflicts = (int?)result["applied"]?["conflicts"] ?? 0;
                     var held = (int?)result["applied"]?["held"] ?? 0;

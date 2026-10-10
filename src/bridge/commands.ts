@@ -5,10 +5,10 @@
 import { z } from 'zod';
 import { defineMutation, CommandError } from '@/commands/contract';
 import { removeSubtree } from '@/commands/helpers';
-import { BRIDGE_FACETS, BRIDGE_MODES, BRIDGE_SHARES, BridgeOwnerSchema, IdSchema, type BridgeData, type JsonValue } from '@/document';
+import { BRIDGE_FACETS, BRIDGE_MODES, BRIDGE_SHARES, BridgeOwnerSchema, IdSchema, type BridgeData, type Element, type JsonValue } from '@/document';
 import { RevitExchangeSchema } from '@/revit/exchange';
-import { bridgeLog, editableElsewhere, ensureBridge, originOf, runBridgeSync, unbind } from './engine';
-import { childLookup, facetHashes, withFacetValue } from './facets';
+import { bridgeLog, editableElsewhere, ensureBridge, originOf, ownerOf, runBridgeSync, unbind } from './engine';
+import { childLookup, facetHashes, facetsOf, withFacetValue } from './facets';
 import { current, isDraft } from 'immer';
 
 const SyncInput = z.object({
@@ -263,6 +263,58 @@ export const bridgeConvert = defineMutation({
   },
 });
 
+export const bridgeRevert = defineMutation({
+  id: 'bridge-revert',
+  label: "Put back the app's version",
+  description: "Puts elements that came from a linked app back as the app sent them, for every part the app decides (an app's geometry is edited only in that app until it is converted into an ArchAI element). Restores them when deleted.",
+  group: 'document',
+  palette: false,
+  history: 'record',
+  input: z.object({ ids: z.array(IdSchema).min(1) }),
+  run: (ctx, input) => {
+    const bridge = bridgeOf(ctx.doc as { bridge?: BridgeData });
+    let reverted = 0;
+    for (const id of input.ids) {
+      const binding = bridge.elements[id];
+      const origin = originOf(binding);
+      if (!binding || !origin || !binding.snapshot) continue;
+      // Plain copies (the snapshot is part of the document being edited).
+      const plainSnapshot = isDraft(binding.snapshot) ? current(binding.snapshot) : binding.snapshot;
+      const saved = plainSnapshot.element as unknown as Element;
+      const descendants = plainSnapshot.descendants as unknown as Element[];
+      const existing = ctx.doc.elements[id];
+      if (!existing) {
+        // Deleted in ArchAI: back as it was, with everything below it.
+        ctx.doc.elements[id] = structuredClone(saved);
+        for (const child of descendants) ctx.doc.elements[child.id] = structuredClone(child);
+        delete binding.removed;
+        reverted += 1;
+        continue;
+      }
+      const elements = isDraft(ctx.doc.elements) ? current(ctx.doc.elements) : ctx.doc.elements;
+      const now = facetHashes(childLookup(elements), elements[id]!);
+      const savedTable = Object.fromEntries([saved, ...descendants].map((e) => [e.id, e]));
+      const savedFacets = facetsOf(childLookup(savedTable), saved);
+      let next = structuredClone(elements[id]!);
+      let changed = false;
+      for (const facet of BRIDGE_FACETS) {
+        if (ownerOf(bridge, binding, facet) !== origin || now[facet] === binding.state[facet]) continue;
+        next = withFacetValue(next, facet, savedFacets[facet]);
+        changed = true;
+        if (facet === 'geometry') {
+          for (const child of childLookup(elements)(id)) if (ctx.doc.elements[child.id]) removeSubtree(ctx.doc, child.id);
+          for (const child of descendants) ctx.doc.elements[child.id] = structuredClone(child);
+        }
+      }
+      if (changed) {
+        ctx.doc.elements[id] = next;
+        reverted += 1;
+      }
+    }
+    return { reverted };
+  },
+});
+
 export const bridgeForget = defineMutation({
   id: 'bridge-forget-source',
   label: 'Disconnect Live Bridge link',
@@ -290,4 +342,4 @@ export const bridgeForget = defineMutation({
   },
 });
 
-export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeHeld, bridgeSetSource, bridgeSetOwner, bridgeSetShare, bridgeOffer, bridgeConvert, bridgeForget];
+export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeHeld, bridgeSetSource, bridgeSetOwner, bridgeSetShare, bridgeOffer, bridgeConvert, bridgeRevert, bridgeForget];

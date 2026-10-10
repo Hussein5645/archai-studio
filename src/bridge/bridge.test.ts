@@ -4,6 +4,7 @@ import type { ArchaiDocument, BridgeData, Element } from '@/document';
 import { withoutLink } from '@/live/sync';
 import type { BridgeSyncReport } from './engine';
 import { flattenSourceGroups, pullPlan, type PullPlan } from './pull';
+import { startBridgeGuard } from './guard';
 
 type Mesh = { id: string; name?: string; category?: string; origin: [number, number, number]; size: [number, number, number]; glb: string; archai?: string; was?: string };
 type Wall = { id: string; points: [number, number][]; base: number; height: number; layers: { name: string; role: 'core'; thickness: number; material?: string }[]; level?: string };
@@ -442,5 +443,48 @@ describe('Live Bridge generic meshes', () => {
     expect(doc(app).elements[id]).toMatchObject({ kind: 'rect', name: 'Basic Wall' });
     expect(bridge(app).elements[id]!.refs['revit:tower']!.kind).toBe('meshes');
     expect(real(app)).toHaveLength(1);
+  });
+});
+
+describe("An app's geometry edited in ArchAI", () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('is put back as the app sent it: moved, renamed, deleted', async () => {
+    const app = createTestApp();
+    const told: string[] = [];
+    startBridgeGuard(app.executor, app.store, (name) => told.push(name));
+    sync(app, 'revit:tower', model({ app: 'Revit', meshes: [mesh('e1', 1000, 'Basic Wall')] }));
+    const id = bound(app, 'revit:tower', 'e1')!.id;
+    run(app, 'select', { ids: [id] });
+    run(app, 'move-selection', { ids: [id], dx: 500, dy: 0 });
+    await settle();
+    expect(doc(app).elements[id]!.x).toBe(1000);
+    run(app, 'rename', { id, name: 'Mine now' });
+    await settle();
+    expect(doc(app).elements[id]!.name).toBe('Basic Wall');
+    run(app, 'select', { ids: [id] });
+    run(app, 'delete-selection', {});
+    await settle();
+    expect(doc(app).elements[id]).toMatchObject({ name: 'Basic Wall', x: 1000 });
+    expect(told).toContain('Revit');
+    // The app's own next change still applies.
+    sync(app, 'revit:tower', model({ app: 'Revit', meshes: [mesh('e1', 3000, 'Basic Wall')] }));
+    await settle();
+    expect(doc(app).elements[id]!.x).toBe(3000);
+  });
+
+  it('stays edited once converted into an ArchAI element, or for parts handed to ArchAI', async () => {
+    const app = createTestApp();
+    startBridgeGuard(app.executor, app.store);
+    sync(app, 'revit:tower', model({ app: 'Revit', meshes: [mesh('e1', 1000, 'Wall'), mesh('e2', 3000, 'Door')] }));
+    const wall = bound(app, 'revit:tower', 'e1')!.id;
+    const door = bound(app, 'revit:tower', 'e2')!.id;
+    run(app, 'bridge-convert', { ids: [wall] });
+    run(app, 'rename', { id: wall, name: 'ArchAI wall' });
+    run(app, 'bridge-set-owner', { ids: [door], facet: 'metadata', owner: 'archai' });
+    run(app, 'rename', { id: door, name: 'Named in ArchAI' });
+    await settle();
+    expect(doc(app).elements[wall]!.name).toBe('ArchAI wall');
+    expect(doc(app).elements[door]!.name).toBe('Named in ArchAI');
   });
 });

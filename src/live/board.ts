@@ -250,6 +250,9 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       const changeId = typeof payload['changeId'] === 'string' ? payload['changeId'].slice(0, 100) : null;
       const deleted = Array.isArray(payload['deleted']) ? payload['deleted'].filter((id): id is string => typeof id === 'string') : [];
       touch(key, { app, name, syncing: true });
+      // The revision before this app's own change: a plugin counts itself up to date only when
+      // nothing else changed meanwhile (a change made right then must still be pulled).
+      const before = revision;
       const result = await executor.dispatch('bridge-sync', { key, app, name, model: payload['model'], complete: payload['complete'] !== false, deleted, changeId });
       if (result.ok) task.done();
       else task.failed();
@@ -264,7 +267,7 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       if (first) toasts.push({ kind: 'success', message: `Live Bridge: ${app}${name ? ` (${name})` : ''} is connected, ${objects} objects` });
       if (report.held) toasts.push({ kind: 'info', message: `Live Bridge: ${report.held} deletions from ${app} wait for your confirmation` });
       const { built, skipped, ...applied } = report;
-      return { protocol: BRIDGE_PROTOCOL, ack: changeId, revision, document: { id: doc.id, name: doc.meta.name || 'Untitled' }, applied, created: built ?? {}, skipped: skipped?.length ?? 0 };
+      return { protocol: BRIDGE_PROTOCOL, ack: changeId, revision, before, document: { id: doc.id, name: doc.meta.name || 'Untitled' }, applied, created: built ?? {}, skipped: skipped?.length ?? 0 };
     }
     if (kind === 'pull') {
       const app = str(payload['app'], 60) || connections.get(key)?.app || 'the plugin';

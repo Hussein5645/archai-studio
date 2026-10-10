@@ -23,6 +23,8 @@ import { sheetItemShape } from './sheetShapes';
 import { diagramShape } from './diagramShapes';
 import { annotationShape } from './annotationShapes';
 import { paperAncestor } from '@/sheets/model';
+import { meshPlanStore, segmentsPath } from './meshPlan';
+import { useSyncExternalStore } from 'react';
 
 // ---- zoom-aware minimums ------------------------------------------------------------------------
 // The board sets `--px` (millimetres per screen pixel) on its container, so these follow zoom
@@ -211,6 +213,11 @@ export function Shape({ element: source, context }: { element: Element; context:
   const eg = typeId ? graphicsForElement(g, element, typeId, 'board', viewStyle) : null;
   switch (element.kind) {
     case 'rect': {
+      // Mesh elements (from linked apps, imports): drawn as a CAD plan of the mesh, not its box.
+      const mesh = element.meta?.['mesh'];
+      if (mesh && typeof mesh === 'object' && !Array.isArray(mesh) && typeof mesh['blobId'] === 'string' && context.blobs[mesh['blobId']]) {
+        return <MeshPlanShape element={element} blobId={mesh['blobId']} context={context} />;
+      }
       // View frames, title blocks, scale bars and north arrows draw themselves (see sheetShapes).
       const sheetItem = sheetItemShape(element, context.elements);
       if (sheetItem !== undefined) return sheetItem;
@@ -739,6 +746,29 @@ function CatalogImage({ element, definition, context }: { element: Element & { k
   // While the model loads, a light outline holds the place (never the package image).
   if (!href) return useImage ? null : <rect width={element.width} height={element.height} fill="none" stroke="#c3c8d2" strokeWidth={6} strokeDasharray="30 20" data-loading-model="true" />;
   return <image href={href} width={element.width} height={element.height} preserveAspectRatio="none" data-styled={parametric || rendered || styled ? 'true' : undefined} />;
+}
+
+/**
+ * A mesh element as a CAD plan (src/render/meshPlan.ts): bold section lines at 1.2 m, thin
+ * visible edges below; a transparent box keeps it easy to pick. While the plan is computed, a
+ * light dashed box holds the place.
+ */
+function MeshPlanShape({ element, blobId, context }: { element: Element & { kind: 'rect' }; blobId: string; context: RenderContext }) {
+  const live = useAppOptional() !== null;
+  useSyncExternalStore(meshPlanStore.subscribe, meshPlanStore.getVersion, meshPlanStore.getVersion);
+  const plan = meshPlanStore.get(blobId, context.blobs[blobId]!.data, !live);
+  const ink = element.style.stroke && element.style.stroke !== '#9aa0aa' ? element.style.stroke : '#2b2f36';
+  if (!plan) return <rect width={element.width} height={element.height} fill="none" stroke="#c3c8d2" strokeWidth={6} strokeDasharray="30 20" data-loading-mesh="true" />;
+  if (plan.cut.length === 0 && plan.edges.length === 0) {
+    return <rect width={element.width} height={element.height} fill="none" stroke={ink} strokeWidth={element.style.strokeWidth} opacity={element.style.opacity} />;
+  }
+  return (
+    <g opacity={element.style.opacity} data-mesh-plan="true">
+      <rect width={element.width} height={element.height} fill="transparent" stroke="none" />
+      {plan.edges.length > 0 && <path d={segmentsPath(plan.edges)} fill="none" stroke={ink} strokeOpacity={0.7} strokeWidth={0.8} vectorEffect="non-scaling-stroke" strokeLinecap="round" />}
+      {plan.cut.length > 0 && <path d={segmentsPath(plan.cut)} fill="none" stroke={ink} strokeWidth={1.8} vectorEffect="non-scaling-stroke" strokeLinecap="round" />}
+    </g>
+  );
 }
 
 /** Uniform scale factor carried by a matrix (1 for pure rotation/translation). */

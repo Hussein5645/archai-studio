@@ -1249,7 +1249,9 @@ class LiveLink(object):
                     self._known = sent_ids if complete else (self._known - set(deleted)) | sent_ids
                     self._save_state()
                 revision = reply.get("revision", 0)
-                if up_to_date:
+                # Up to date before this push, and nothing else changed in ArchAI meanwhile.
+                before = reply.get("before")
+                if up_to_date and (before is None or before == self._last_seen):
                     self._last_pulled = revision
                 self._last_seen = revision
                 applied = reply.get("applied") or {}

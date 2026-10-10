@@ -246,7 +246,8 @@ module ArchAI
           save_bridge
         end
         revision = reply['revision'].to_i
-        @link[:last_pulled] = revision if up_to_date
+        # Up to date before this push, and nothing else changed in ArchAI meanwhile.
+        @link[:last_pulled] = revision if up_to_date && (reply['before'].nil? || reply['before'].to_i == @link[:last_seen])
         @link[:last_seen] = revision
         status("Sent to #{project} #{Time.now.strftime('%H:%M:%S')}")
         return

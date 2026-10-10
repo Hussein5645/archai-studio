@@ -1,9 +1,9 @@
 # ArchAI plugins
 
-Status: **implemented** (plugins 0.5.1, 2026-10-11). Revit, AutoCAD and Blender are run-tested
+Status: **implemented** (plugins 0.5.2, 2026-10-11). Revit, AutoCAD and Blender are run-tested
 (Send to ArchAI, Open .AIR); Rhino, SketchUp, 3ds Max and Unreal are built (or packaged) but not yet
 run in their apps. Live Bridge status and geometry quality per app:
-[docs/live-bridge.md](live-bridge.md#status-by-app-2026-10-11-archai-02218-plugins-051).
+[docs/live-bridge.md](live-bridge.md#status-by-app-2026-10-11-archai-02219-plugins-052).
 
 Every plugin ("ArchAI in <app>") offers the same four actions, with the shared ArchAI icon set:
 

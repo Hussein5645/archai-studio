@@ -43,10 +43,14 @@ different kind of element on the way, so a Revit wall looks the same in ArchAI, 
 (Send to ArchAI, the .AIR file, still rebuilds Revit's walls, doors and slabs as editable ArchAI
 elements.) Links made by Revit 0.5.0 become these meshes in place on the next sync.
 
-### Geometry from an app is edited only in that app (and ArchAI)
+### Geometry from an app is edited only in that app
 
-An element that came from an app (it has an `origin` ref) can be changed by that app and in
-ArchAI, never by another app: it cannot be offered as an editable copy, its parts cannot be handed
+An element that came from an app (it has an `origin` ref) is changed only by that app. **Edited
+in ArchAI** (moved, reshaped, renamed, recoloured or deleted), it is put back right away as the
+app sent it (`src/bridge/guard.ts`, command `bridge-revert`, from the snapshot ArchAI keeps of
+each element as its app last sent it), with a message saying which app decides it; moving the
+app's whole model group stays possible (it places the model). Parts handed to ArchAI or shared in
+the Live Bridge panel stay editable in ArchAI. Another app can never change it: it cannot be offered as an editable copy, its parts cannot be handed
 to another app's authority, and a copy another app sends anyway changes nothing and adds nothing.
 Other apps receive it as reference geometry only. **Edited anyway in another app** (moved,
 reshaped, copied or deleted there), it is **reset**: the plugin notices and ArchAI's version is
@@ -128,7 +132,9 @@ one).
   decides each part; select its model, pause/resume, sync now, disconnect; conflicts (take the
   app's, keep ArchAI's); held deletions; activity.
 - **Board**: each model is a group (select it, move it as one); "Show each app's elements in its
-  colour" outlines and tints them.
+  colour" outlines and tints them. Mesh elements are drawn as a CAD plan (`src/render/meshPlan.ts`):
+  bold section lines where a 1.2 m cut crosses them, thin visible edges below the cut; objects up
+  to 1.5 m high (furniture, slabs) show all their edges from above.
 - **Inspector**: source, refs and fidelity, where it goes, who decides its parts, editable copies
   for other apps (ArchAI's own elements only), **Convert to ArchAI element** (releases it: no
   longer synced, the source is kept as history and it is not sent back to that app).
@@ -145,7 +151,7 @@ one).
 | 3ds Max | "ArchAI Live" layers, user property `archai_id` | "ArchAI Copies" layer | move | node handles |
 | Unreal | actors tagged `ArchAILive` and `archai:<id>`, one asset each | "ArchAI Copies" folder | add_actor_world_offset | actor names |
 
-## Status by app (2026-10-11, ArchAI 0.2.2.18, plugins 0.5.1)
+## Status by app (2026-10-11, ArchAI 0.2.2.19, plugins 0.5.2)
 
 How far each app's Live Bridge has been tested, and how well its geometry travels. "Run" means
 the plugin's own code ran in the real app against the ArchAI desktop app; "built" means it
@@ -166,8 +172,9 @@ What travels the same way for every app:
 - **Geometry** goes as triangle meshes in millimetres, the same triangles in ArchAI and in every
   linked app; positions are exact (up to 0.1 mm rounding). In ArchAI they are mesh elements that
   can be moved, coloured and converted but not reshaped.
-- **Another app's geometry edited in a plugin is reset** to ArchAI's version (until it is released
-  with Convert to ArchAI element and offered as an editable copy).
+- **Another app's geometry edited in a plugin is reset** to ArchAI's version, and **an app's
+  geometry edited in ArchAI is put back** to the app's version, until it is released with Convert
+  to ArchAI element (then offered as an editable copy if another app should edit it).
 - **Materials** carry colour, opacity, roughness and metalness; textures and UV maps do not
   travel yet.
 - **Back into the apps** everything arrives as display geometry (reference). Only ArchAI's own

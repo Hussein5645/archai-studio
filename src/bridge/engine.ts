@@ -465,12 +465,27 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
   const sameUnsupported = JSON.stringify(unsupported) === JSON.stringify(source.unsupported);
   // Nothing changed (an app sending what ArchAI already has): no document change at all, so
   // the other apps are not made to pull for nothing.
-  const changedNothing = Boolean(known) && merges.length === 0 && created.length === 0 && !report.deleted && !report.held && !report.conflicts && !report.migrated && notes.length === 0 && sameUnsupported && source.complete === input.complete;
+  // What each element of this app looks like as the app sent it (edits in ArchAI are put back to it).
+  const snapshotsMissing = [...bound.values()].some((elementId) => ctx.doc.elements[elementId] && !bridge.elements[elementId]?.snapshot);
+  const changedNothing = Boolean(known) && !snapshotsMissing && merges.length === 0 && created.length === 0 && !report.deleted && !report.held && !report.conflicts && !report.migrated && notes.length === 0 && sameUnsupported && source.complete === input.complete;
   if (changedNothing) {
     ctx.ui.selection = selection.filter((id) => ctx.doc.elements[id]);
     return report;
   }
   if (!sameUnsupported) source.unsupported = unsupported;
+  {
+    const now = plain(ctx.doc.elements);
+    const kids = childLookup(now);
+    const touched = new Set([...created.map((entry) => entry.element), ...merges.map((merge) => merge.target)]);
+    for (const [elementId, binding] of Object.entries(bridge.elements)) {
+      if (binding.refs[key]?.role !== 'origin' || !now[elementId]) continue;
+      if (!touched.has(elementId) && binding.snapshot) continue;
+      // Only a state that is the app's (not one edited in ArchAI since).
+      const hashes = facetHashes(kids, now[elementId]!);
+      if (!touched.has(elementId) && BRIDGE_FACETS.some((facet) => hashes[facet] !== binding.state[facet])) continue;
+      binding.snapshot = snapshotOf(now, kids, elementId);
+    }
+  }
   source.lastSync = now;
   source.complete = input.complete;
   source.lastChangeId = input.changeId;
@@ -480,6 +495,19 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
   if (report.created || report.updated || report.deleted || report.unsupported || notes.length) bridgeLog(ctx, key, summary(report, notes));
   ctx.ui.selection = selection.filter((id) => ctx.doc.elements[id]);
   return report;
+}
+
+/** An element and everything below it, as plain data. */
+export function snapshotOf(elements: ElementTable, children: ReturnType<typeof childLookup>, id: string): { element: JsonValue; descendants: JsonValue[] } {
+  const descendants: JsonValue[] = [];
+  const visit = (parent: string) => {
+    for (const child of children(parent)) {
+      descendants.push(structuredClone(child) as unknown as JsonValue);
+      visit(child.id);
+    }
+  };
+  visit(id);
+  return { element: structuredClone(elements[id]!) as unknown as JsonValue, descendants };
 }
 
 /** The group holding a source's elements, made (at the origin, so coordinates stay) when missing. */
