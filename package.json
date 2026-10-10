@@ -2,8 +2,8 @@
   "name": "archai",
   "version": "0.2.2",
   "private": true,
-  "description": "ArchAI - an open-source, command-driven architectural workspace: plans, 3D, sheets, rendering, VR and plugins",
-  "license": "AGPL-3.0-only",
+  "description": "ArchAI - a source-available, command-driven architectural workspace: plans, 3D, sheets, rendering, VR and plugins",
+  "license": "SEE LICENSE IN LICENSE",
   "author": "Hussein5645 (https://github.com/Hussein5645)",
   "homepage": "https://github.com/Hussein5645/archai-studio#readme",
   "repository": {

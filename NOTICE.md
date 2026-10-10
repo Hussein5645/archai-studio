@@ -4,7 +4,9 @@
 
 Copyright (C) 2026 Hussein5645 (github.com/Hussein5645) and the ArchAI contributors.
 
-ArchAI is licensed under the GNU Affero General Public License v3.0; see [LICENSE](LICENSE).
+ArchAI is source-available under the PolyForm Strict License 1.0.0 with an additional permission
+for contributors; see [LICENSE](LICENSE). Versions up to release v0.2.2.13 were released under the
+GNU AGPL v3.0.
 
 ## Third-party names and logos
 

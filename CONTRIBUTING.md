@@ -44,8 +44,24 @@ run `wrangler dev` instead.
 3. `npm run typecheck` and `npm test` must pass (CI runs them).
 4. Describe what changed and why, and how you tested it. Screenshots help for UI changes.
 
-By contributing you agree that your contribution is licensed under the project's license,
-the GNU AGPL v3.0 (see [LICENSE](LICENSE)).
+## License and contributor agreement
+
+ArchAI is **source-available**, not open source: it is licensed under the PolyForm Strict License
+1.0.0 with an additional permission that lets you fork this repository and change the code **only
+to send pull requests back here** (see [LICENSE](LICENSE)). Please do not publish your fork's
+builds or use the code in other projects.
+
+By opening a pull request (or otherwise submitting a contribution) you agree that:
+
+1. the contribution is your own work, or you have the right to submit it, and it does not include
+   code or content you are not allowed to share;
+2. you grant the project owner (Hussein5645) a perpetual, worldwide, non-exclusive, royalty-free,
+   irrevocable license to use, change, distribute and sublicense your contribution, as part of
+   ArchAI or otherwise, under any license, including relicensing the project in the future;
+3. you keep the copyright in your contribution and may use your own work elsewhere;
+4. the contribution is provided as is, without warranty.
+
+If you contribute on behalf of an employer, make sure they agree to these terms first.
 
 ## Conduct
 

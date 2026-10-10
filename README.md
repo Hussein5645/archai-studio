@@ -5,7 +5,7 @@
 <h1 align="center">ArchAI</h1>
 
 <p align="center">
-  An open-source architectural workspace: plans, 3D, sheets, rendering and VR walkthroughs in one
+  A source-available architectural workspace: plans, 3D, sheets, rendering and VR walkthroughs in one
   command-driven board, live-linked with Revit, AutoCAD, Rhino, SketchUp, Blender, 3ds Max and Unreal.
 </p>
 
@@ -55,7 +55,7 @@ and you will get an email and password to sign in with.
 
 The server code is in this repository ([`workers/`](workers)), so you can also run the whole
 cloud locally for development (see below). The hosted services, their data and their secrets are
-not part of the open-source project.
+not part of this repository.
 
 ## Getting started (development)
 
@@ -138,9 +138,21 @@ problems see [SECURITY.md](SECURITY.md).
 
 ## License
 
-ArchAI is free software under the **GNU Affero General Public License v3.0**
-([LICENSE](LICENSE)): you may use, change and share it, and if you distribute it or offer a
-modified version as a network service, you must share your source code under the same license.
+ArchAI is **source-available**, not open source. It is licensed under the
+**PolyForm Strict License 1.0.0** with an additional permission for contributors
+([LICENSE](LICENSE)):
+
+- You may use ArchAI for **non-commercial** purposes: personal use, study, research, hobby
+  projects, and use by schools, universities, charities and public institutions.
+- You may **fork this repository and change the code only to send pull requests back here**, and
+  run your changed version privately to test them.
+- You may **not** redistribute ArchAI or changed versions, publish your own builds, use it in
+  other projects, or use it commercially without permission. For any of that, email
+  [mklkoklpp@gmail.com](mailto:mklkoklpp@gmail.com).
+
+Contributions are welcome under the contributor agreement in [CONTRIBUTING.md](CONTRIBUTING.md).
+Versions published before 2026-10-10 (up to release v0.2.2.13) were released under the GNU AGPL
+v3.0 and remain available under it.
 
 Product names and logos of other applications (Autodesk Revit, AutoCAD and 3ds Max, Rhino,
 SketchUp, Blender, Unreal Engine, Twinmotion) belong to their owners. They appear only to show

@@ -155,7 +155,7 @@ Python, `Core.share_config` in Ruby); no key is built into the plugins any more.
 
 ## Public access switched off (2026-10-10)
 
-With the open-source release (0.2.2.13) the cloud is reachable only with an account:
+With the public source release (0.2.2.13) the cloud is reachable only with an account:
 
 - The `archai-assets` bucket's public `r2.dev` URL is disabled; libraries come only through
   `archai-cloud` (`/lib/<token>/...`). Versions up to 0.2.2.11 no longer get the libraries.
@@ -183,4 +183,6 @@ first: `npx wrangler d1 execute archai --local --file schema.sql`.
 3. Address: `archai-cloud.mklkoklpp.workers.dev` for now; a custom domain can come later.
 4. Plugins sign in too, through the ArchAI desktop app (2026-10-10).
 5. Live cursors like a Miro board (2026-10-10).
-6. Open source under AGPL-3.0 (github.com/Hussein5645/archai-studio); accounts by invitation, created by the owner (2026-10-10).
+6. Public repository github.com/Hussein5645/archai-studio; accounts by invitation, created by the owner (2026-10-10).
+   Source-available under PolyForm Strict 1.0.0 plus a contribute-by-pull-request permission
+   (2026-10-10; v0.2.2.13 and earlier were AGPL-3.0).
