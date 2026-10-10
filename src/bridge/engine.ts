@@ -1,5 +1,5 @@
 /**
- * The Live Bridge sync engine (docs/live-bridge-proposal.md): applies one source model (a
+ * The Live Bridge sync engine (docs/live-bridge.md): applies one source model (a
  * plugin's exchange file) to the project through the binding graph instead of replacing it.
  *
  * - Items keep their ArchAI element across syncs (bound by the source's own id); unchanged items

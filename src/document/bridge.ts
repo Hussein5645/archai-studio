@@ -1,5 +1,5 @@
 /**
- * Live Bridge data kept in the project (docs/live-bridge-proposal.md): the connected source
+ * Live Bridge data kept in the project (docs/live-bridge.md): the connected source
  * models, the binding graph between ArchAI elements and the objects in each app, property-level
  * authority, open conflicts, deletions waiting for confirmation and the sync log. Optional:
  * documents without a bridge load unchanged.

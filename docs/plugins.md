@@ -9,7 +9,8 @@ Every plugin ("ArchAI in <app>") offers the same four actions, with the shared A
 |---|---|
 | **Send to ArchAI** | Saves the visible model as an `.AIR` exchange file; ArchAI's *Open file* rebuilds it (`src/revit/exchange.ts`, `import-revit-model`). |
 | **Open .AIR** | Brings an ArchAI document (or another plugin's exchange file) into the app as meshes, grouped per element, a layer / collection / tag per level. |
-| **Live link** | Keeps the app and the ArchAI desktop app in sync while it is on (see below). |
+| **Live Bridge** | Keeps the app and the ArchAI desktop app in sync while it is on, element by element, with the other linked apps (see below and docs/live-bridge.md). |
+| **Link to project...** | Choose the ArchAI project this model syncs with (ArchAI shows its projects). |
 | **Open in VR** | Uploads the model and a tour to the VR share service and opens the short link (docs/vr-tours.md); cameras / named views / scenes become stops. |
 
 | App | Plugin | UI | Language | Package (`plugins/dist`) |
@@ -24,42 +25,41 @@ Every plugin ("ArchAI in <app>") offers the same four actions, with the shared A
 
 Twinmotion has no plugin API: its users go through Unreal or export from the source app.
 
-## Live link
+## Live Bridge
 
-The ArchAI desktop app runs a small HTTP server on the loopback interface
-(`127.0.0.1:47821`, `ARCHAI_LIVE_PORT` overrides; `electron/liveLink.ts`). A plugin with its
-Live link on:
+The ArchAI desktop app runs a small HTTP server on the loopback interface (`127.0.0.1:47821`,
+`ARCHAI_LIVE_PORT` overrides; `electron/liveLink.ts`). With a plugin's Live Bridge on:
 
-1. sends its model a moment (1.5 s) after each edit: `POST /live/push { key, app, name, model }`,
-   `model` being the exchange file *Send to ArchAI* writes. The board runs `sync-live-link`
-   (`src/live/sync.ts`, one undo step): what that plugin sent before (elements tagged
-   `meta.liveLink = { key, app }`) is replaced, materials are reused by name and colour;
-2. polls `GET /live/status?key=` every 2 s (project, a revision bumped on every document change)
-   and, when the project changed since its last pull, fetches `GET /live/pull?key=`: ArchAI's
-   model as binary glTF (the .AIR snapshot format) without what that plugin sent;
-3. puts that model in a layer / collection / folder of its own, replaced on every update and
-   never sent back: "ArchAI Live" layers (AutoCAD, Rhino, 3ds Max), the "ArchAI Live" collection
-   (Blender), group (SketchUp) and outliner folder (Unreal, tag `ArchAILive`), DirectShapes with
-   ApplicationId "ArchAI Live" (Revit).
+1. the model goes to ArchAI a moment (1.5 s) after each edit, as the exchange file *Send to ArchAI*
+   writes, and ArchAI applies it element by element through the binding graph (`bridge-sync`, one
+   undo step): items keep their ArchAI element, unchanged ones are skipped, changes are merged per
+   part (geometry, position, material, name and data) following who owns them;
+2. the plugin polls `GET /live/status` every 2 s and, when the project changed, pulls what changed
+   since its last pull: other apps' shared elements (one object each, in its source colour),
+   ArchAI's moves and names for its own objects, editable copies;
+3. ArchAI's elements go into a layer / collection / folder of their own ("ArchAI Live"), replaced
+   or removed one by one and never sent back; editable copies are ordinary objects ("ArchAI
+   Copies") that are sent back and linked to the element they came from.
 
-**Starting ArchAI and opening a project by itself (0.2.2.11, plugins 0.3.2).** When the desktop
-app is not running, the plugin starts it: `ArchAI.exe` in its install folder
-(`%LOCALAPPDATA%ProgramsArchAI`, `%ProgramFiles%ArchAI`, or `ARCHAI_EXE`), else the
-`archai://live?key=…` link the installer registers (only when Windows knows it, so nothing pops up
-where ArchAI is not installed), at most once a minute. ArchAI runs as a single instance: a second
-launch brings the open window forward. When a plugin checks in (`status` carries `name` and
-`app`) while ArchAI shows its Home screen, ArchAI opens the project that model synced with last
-time (`live:project:<key>` in its storage), else creates one named after the model. A project
-already open is used as it is.
+Everything about ownership, conflicts, safe deletions, fidelity and the protocol is in
+docs/live-bridge.md. Plugins 0.4.x (protocol 1: whole models both ways) keep working.
 
-The top bar of ArchAI shows the connected apps (`src/live/LiveLinkChip.tsx`). Requests need the
-`X-ArchAI-Live: 1` header and are refused when they carry an `Origin` (a web page cannot reach
-the model). Clients: `Archai.Plugins.LiveLink` (C#: Revit through an ExternalEvent, AutoCAD on
-Idle, Rhino on the UI thread), `archai_core.LiveLink` (Python: Blender timers, a Qt queued signal
-in 3ds Max, a slate tick in Unreal; 3ds Max and Unreal notice edits by polling a scene
-fingerprint) and `plugins/sketchup/archai/live.rb` (Ruby, a UI timer and Net::HTTP). Run-tested:
-the desktop app with a scripted client and the Python client (push, re-push, pull of the Meridian
-Tower: 751 objects, 12 MB).
+**Projects.** A model is bound to one ArchAI project: the one open when it first connects, or the
+one chosen with **Link to project...** (ArchAI shows its project picker). The link is remembered
+per model (`%LOCALAPPDATA%\ArchAI\live-bridge.json`, shared by all plugins). While ArchAI shows
+another project, the plugin says so and sends nothing.
+
+**Starting ArchAI by itself.** When the desktop app is not running, the plugin starts it:
+`ArchAI.exe` in its install folder (`%LOCALAPPDATA%\Programs\ArchAI`, `%ProgramFiles%\ArchAI`, or
+`ARCHAI_EXE`), else the `archai://live?key=…` link the installer registers, at most once a minute.
+On its Home screen ArchAI opens the project the model is linked to, else creates one named after it.
+
+Requests need the `X-ArchAI-Live: 1` header and are refused when they carry an `Origin` (a web
+page cannot reach the model). Clients: `Archai.Plugins.LiveLink` (C#: Revit through an
+ExternalEvent, AutoCAD on Idle, Rhino on the UI thread), `archai_core.LiveLink` (Python: Blender
+timers, a Qt queued signal in 3ds Max, a slate tick in Unreal; 3ds Max and Unreal notice edits by
+polling a scene fingerprint) and `plugins/sketchup/archai/live.rb` (Ruby, a UI timer and
+Net::HTTP).
 
 ## Shared pieces
 
@@ -97,7 +97,7 @@ glTF, about 1 s to export).
 `powershell -ExecutionPolicy Bypass -File plugins/build-plugins.ps1 [-Version 0.3.0] [-Skip Rhino,...]`
 builds the .NET plugins against the installed apps (AutoCAD 2026, Rhino 8; override `AcadDir` /
 `RhinoDir`) and writes the packages to `plugins/dist`. Nothing secret is built in: **Open in VR**
-publishes with the account signed in in the ArchAI desktop app, asked over the live link
+publishes with the account signed in in the ArchAI desktop app, asked over the Live Bridge
 (`GET /live/account`, docs/accounts-and-cloud.md). The download page (`public/download.html`, tab
 Plugins) links `https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/plugins/<package>`.
 

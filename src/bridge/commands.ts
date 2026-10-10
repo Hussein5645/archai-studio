@@ -1,5 +1,5 @@
 /**
- * Live Bridge commands (docs/live-bridge-proposal.md). Each one is a normal ArchAI mutation: one
+ * Live Bridge commands (docs/live-bridge.md). Each one is a normal ArchAI mutation: one
  * undo step, shared with co-editors of an online project like any other edit.
  */
 import { z } from 'zod';

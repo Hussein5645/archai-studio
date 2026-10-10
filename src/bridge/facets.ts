@@ -1,5 +1,5 @@
 /**
- * Live Bridge facets (docs/live-bridge-proposal.md, 2.3): an element's data split into the parts
+ * Live Bridge facets (docs/live-bridge.md, 2.3): an element's data split into the parts
  * that can have different authorities: geometry, transform, material and metadata. Visibility,
  * lock and the element's place in the tree always stay ArchAI's.
  */

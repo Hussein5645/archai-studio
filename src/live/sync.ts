@@ -1,6 +1,6 @@
 /**
  * Live Bridge / Live Bridge helpers for what a plugin pulls (docs/plugins.md, "Live Bridge";
- * docs/live-bridge-proposal.md). The sync itself is the Live Bridge's `bridge-sync` (and the
+ * docs/live-bridge.md). The sync itself is the Live Bridge's `bridge-sync` (and the
  * Live Bridge's `sync-live-link`, src/bridge/commands.ts).
  */
 import type { ArchaiDocument, Element } from '@/document';

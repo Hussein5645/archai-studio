@@ -880,7 +880,7 @@ class LiveLink(object):
     Archai.Plugins.LiveLink). While running, the host's model goes to the open ArchAI project a
     moment after each change, and ArchAI's model comes back when it changes there.
 
-    Live Bridge (protocol 2, docs/live-bridge-proposal.md) when the host also gives:
+    Live Bridge (protocol 2, docs/live-bridge.md) when the host also gives:
     - apply(delta): a BridgeDelta, applied element by element (main thread);
     - all_ids(): the ids of every object of the host model, hidden ones included (main thread):
       pushes are then partial (visible objects) with explicit deletions (ids gone from the model),

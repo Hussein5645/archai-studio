@@ -5,7 +5,7 @@
  *
  * - `status`: the project, its revision (bumped on every document change) and the revision the
  *   asking plugin's own last sync produced, so a plugin pulls only changes made by others.
- * - `push`: protocol 1 (plugins 0.4.x) and protocol 2 (Live Bridge, docs/live-bridge-proposal.md)
+ * - `push`: protocol 1 (plugins 0.4.x) and protocol 2 (Live Bridge, docs/live-bridge.md)
  *   both run `bridge-sync` (one undo step); protocol 2 adds its change id, whether the model is a
  *   complete snapshot, and explicit deletions.
  * - `pull`: the project's 3D model as binary glTF (the .AIR snapshot format, metres, one node per

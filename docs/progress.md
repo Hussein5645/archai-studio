@@ -1,7 +1,7 @@
 # Progress bars
 
 Long work shows its progress in ArchAI and in every plugin: exports, imports, opening and saving
-files, VR links, online projects and the live link.
+files, VR links, online projects and the Live Bridge.
 
 ## ArchAI (web, desktop, Android)
 
@@ -37,7 +37,7 @@ The plugin cores report progress as `(text, fraction or null)` callbacks:
 
 Each host shows them in its own way:
 
-| Host | Commands (Send, Open .AIR, Open in VR) | Live link |
+| Host | Commands (Send, Open .AIR, Open in VR) | Live Bridge |
 |---|---|---|
 | Revit, AutoCAD | `ArchaiProgress` window (`plugins/dotnet/Shared.Windows`): status, percentage, filling or sweeping bar; on its own UI thread, so it moves while the host builds geometry | `LiveProgress`: the same window, only for syncs longer than a second |
 | Rhino | status bar progress meter and command prompt (`RhinoProgress`) | `RhinoLiveProgress`, syncs longer than a second |

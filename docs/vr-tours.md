@@ -42,7 +42,7 @@ view shows when run from one, plus the ground disc), stops at each perspective c
 level under the eye, facing the camera's way) and each placed room (at its room point, facing into
 the room), max 40. It uploads with the same calls as `vrShare.ts`, opens the short link in the
 browser and copies it; republishing keeps the link. Publishing needs an ArchAI account: the
-plugin asks the running ArchAI desktop app for its session over the live link (`/live/account`,
+plugin asks the running ArchAI desktop app for its session over the Live Bridge (`/live/account`,
 docs/accounts-and-cloud.md); `ARCHAI_VR_SHARE_URL` overrides the service.
 
 ## Pieces

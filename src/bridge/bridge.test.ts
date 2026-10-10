@@ -380,3 +380,34 @@ describe('Live Bridge export', () => {
     expect(flat.elements[id]).toMatchObject({ parentId: null, x: 1500, y: 200 });
   });
 });
+
+describe('Live Bridge on online projects', () => {
+  it("treats a collaborator's edit like an ArchAI edit: kept, and a conflict when a shared part changes in the app too", () => {
+    const app = createTestApp();
+    sync(app, 'rhino:facade', model({ meshes: [mesh('a', 0, 'Panel')] }));
+    run(app, 'bridge-set-source', { key: 'rhino:facade', authority: { metadata: 'shared' } });
+    const id = bound(app, 'rhino:facade', 'a')!.id;
+    // A collaborator renames it on the online board (their patch arrives through the board).
+    expect(app.executor.applyRemote([{ op: 'replace', path: ['elements', id, 'name'], value: 'Renamed by a collaborator' }])).toBe(true);
+    const report = sync(app, 'rhino:facade', model({ meshes: [mesh('a', 0, 'Renamed in Rhino')] }));
+    expect(report.conflicts).toBe(1);
+    expect(doc(app).elements[id]!.name).toBe('Renamed by a collaborator');
+  });
+
+  it("replays a collaborator's sync as plain document changes (bindings travel with the project)", () => {
+    const here = createTestApp();
+    const there = createTestApp();
+    const patches: Parameters<typeof there.executor.applyRemote>[0][] = [];
+    here.executor.onDocChange((p) => patches.push(p));
+    run(here, 'new-document', { name: 'Online' });
+    there.store.setState((state) => ({ ...state, doc: here.store.getState().doc }));
+    sync(here, 'revit:tower', model({ app: 'Revit', walls: [wall('w')] }));
+    expect(patches.length).toBeGreaterThan(0);
+    for (const p of patches) expect(there.executor.applyRemote(p)).toBe(true);
+    const theirs = there.store.getState().doc;
+    expect(Object.keys(theirs.bridge!.sources)).toEqual(['revit:tower']);
+    expect(Object.values(theirs.elements).filter((e) => e.kind !== 'group')).toHaveLength(1);
+    // The other desktop app can pull it for its own apps.
+    expect(pullPlan(theirs, 'rhino:facade', null).nodes.size).toBe(1);
+  });
+});

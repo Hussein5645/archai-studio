@@ -1,5 +1,5 @@
 /**
- * The Live Bridge in the top bar (docs/live-bridge-proposal.md): a chip with the connected apps,
+ * The Live Bridge in the top bar (docs/live-bridge.md): a chip with the connected apps,
  * opening a panel to manage them.
  *
  * - Apps: each linked model with its colour, status (connected, syncing, disconnected, error),

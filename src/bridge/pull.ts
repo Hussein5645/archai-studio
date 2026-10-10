@@ -1,5 +1,5 @@
 /**
- * What a connected app receives from ArchAI (Live Bridge protocol 2, docs/live-bridge-proposal.md):
+ * What a connected app receives from ArchAI (Live Bridge protocol 2, docs/live-bridge.md):
  *
  * - **nodes**: elements shared with it, each with a content hash (its facets and the elements it
  *   depends on or that depend on it, such as a wall and its doors), its source and colour, and

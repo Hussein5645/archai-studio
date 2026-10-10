@@ -52,7 +52,7 @@ public sealed class BridgeDelta
 /// AutoCAD's Idle, Rhino's UI thread) and calls <see cref="ModelChanged"/> from its change events.
 /// While <see cref="Importing"/> is true the host's own change events are ArchAI's import.
 ///
-/// Live Bridge (protocol 2, docs/live-bridge-proposal.md) when the host also supplies
+/// Live Bridge (protocol 2, docs/live-bridge.md) when the host also supplies
 /// <see cref="Apply"/> (a <see cref="BridgeDelta"/>, applied element by element) and
 /// <see cref="AllIds"/> (every object id of the model, hidden ones too: pushes are then partial with
 /// explicit deletions, so hiding never deletes in ArchAI). The model is bound to one ArchAI project

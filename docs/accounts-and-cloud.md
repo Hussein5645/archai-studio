@@ -7,14 +7,14 @@ Both are deployed (phase 2 on 2026-10-10: the `invites` table and the `Board` Du
 ## Goal
 
 - **No account needed.** ArchAI works on this device as before: local projects, .AIR files,
-  autosave, plugins, live link. Nothing asks you to sign in.
+  autosave, plugins, Live Bridge. Nothing asks you to sign in.
 - **With an account** you get the cloud: online projects, the asset / material / render
   libraries, VR tour links (also from the plugins), invites, and several people editing the
   same board at once with everyone's cursor visible (like Miro).
 
 | Feature | Without account | With account |
 |---|---|---|
-| Local projects, files, export, plugins, live link | yes | yes |
+| Local projects, files, export, plugins, Live Bridge | yes | yes |
 | Online projects | no | yes |
 | Asset, material and render libraries | no (built-in tools and own imports only) | yes |
 | VR tour links (app and plugins' Open in VR) | no | yes, listed under the account |
@@ -146,7 +146,7 @@ sign in. The VR Worker records tours in `vr_tours` and only lets an account repu
 
 ## Plugins
 
-A plugin's **Open in VR** asks the running ArchAI desktop app for the account over the live link:
+A plugin's **Open in VR** asks the running ArchAI desktop app for the account over the Live Bridge:
 `GET /live/account?app=<App>&prompt=1` → `{ signedIn, token, user }` (`electron/liveLink.ts`,
 answered by `src/live/board.ts`). Nobody signed in: ArchAI comes to the front with its sign-in
 dialog and the plugin says to sign in and run Open in VR again. ArchAI not running: the plugin

@@ -38,7 +38,8 @@ keeps the app small, testable and easy to automate.
 | **Sheets and export** | Sheets with views, title blocks and scale bars; PDF, image, DXF/CAD and glTF export ([docs](docs/sheets-and-export.md)). |
 | **ArchAI Render** | Real-time and path-traced rendering with sun, skies, PBR materials and entourage ([docs](docs/render-studio.md)). |
 | **VR tours** | Place stops and publish a short link that opens in a Meta Quest or any browser ([docs](docs/vr-tours.md)). |
-| **Plugins** | Revit, AutoCAD, Rhino, SketchUp, Blender, 3ds Max and Unreal: send models, open `.AIR` files, keep a live link, open in VR ([docs](docs/plugins.md)). |
+| **Plugins** | Revit, AutoCAD, Rhino, SketchUp, Blender, 3ds Max and Unreal: send models, open `.AIR` files, open in VR ([docs](docs/plugins.md)). |
+| **Live Bridge** | Several apps linked to one project at once: element-by-element sync, each app in its colour, who owns what per part of an element, conflicts to resolve, safe deletions ([docs](docs/live-bridge.md)). |
 | **Together** | Online projects edited by several people at once, with live cursors, invite links and roles ([docs](docs/accounts-and-cloud.md)). |
 
 It runs in the browser (https://archai-studio-six.vercel.app), as a Windows desktop app (Electron)
@@ -47,7 +48,7 @@ hosted is in [docs/hosting.md](docs/hosting.md).
 
 ## Accounts and the ArchAI cloud
 
-ArchAI works **without an account**: local projects, files, export, plugins and the live link
+ArchAI works **without an account**: local projects, files, export, plugins and the Live Bridge
 need nothing online.
 
 An ArchAI account adds the cloud services run by the project: online projects and editing
@@ -124,7 +125,7 @@ src/
   cloud/        accounts, online projects, editing together
   ui/           panels, dialogs, toolbar
   platform/     the one boundary to the host (web, Electron, Android)
-electron/       desktop host (windows, files, live link server)
+electron/       desktop host (windows, files, Live Bridge server)
 native/         Android / Meta Quest host (Kotlin)
 plugins/        modelling-app plugins (AutoCAD, Rhino, SketchUp, Blender, 3ds Max, Unreal)
 revit/          Revit add-in and setup
