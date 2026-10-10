@@ -84,10 +84,12 @@ export const WindowSetTitleInput = z.object({ title: z.string().max(300) });
 /** The board's answer to a live-link request (`result` may carry bytes as a Uint8Array). */
 export const LiveReplyInput = z.object({ id: z.string().min(1).max(40), ok: z.boolean(), result: z.unknown().optional(), error: z.string().max(2000).optional() });
 
-/** A live-link request to the board: `status`, `push` (a plugin's model) or `pull` (ArchAI's model as glTF). */
+/** The live-link / Live Bridge requests the board answers (electron/liveLink.ts). */
+export type LiveRequestKind = 'status' | 'push' | 'pull' | 'stop' | 'account' | 'projects' | 'bind';
+/** A live-link request to the board (see LiveRequestKind). */
 export interface LiveRequest {
   id: string;
-  kind: 'status' | 'push' | 'pull' | 'stop' | 'account';
+  kind: LiveRequestKind;
   payload: Record<string, unknown>;
 }
 

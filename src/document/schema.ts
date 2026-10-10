@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 import { MaterialLibrarySchema } from './material';
+import { BridgeSchema } from './bridge';
 
 export const SCHEMA_VERSION = 1 as const;
 
@@ -249,5 +250,7 @@ export const DocumentSchema = z.strictObject({
   blobs: z.record(IdSchema, BlobSchema),
   /** Material library (see ./material.ts); older documents have none. */
   materials: MaterialLibrarySchema.default({}),
+  /** Live Bridge: connected source models, bindings and sync state (see ./bridge.ts); absent until a plugin syncs. */
+  bridge: BridgeSchema.optional(),
 });
 export type ArchaiDocument = z.infer<typeof DocumentSchema>;

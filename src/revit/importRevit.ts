@@ -66,7 +66,18 @@ export interface RevitImportOptions {
   reuseMaterial?: (material: RevitExchange['materials'][number]) => string | undefined;
   /** Recorded on materials this import creates (`Material.source`). */
   materialSource?: (material: RevitExchange['materials'][number]) => string;
+  /**
+   * Live Bridge (src/bridge/engine.ts): an element already built for this item. A string reuses
+   * that element (the item is not rebuilt; hosted openings and level links still find it), null
+   * skips the item, undefined builds it.
+   */
+  existing?: (collection: ExchangeCollection, id: string) => string | null | undefined;
+  /** Called with the element each item was built into. */
+  onCreated?: (collection: ExchangeCollection, id: string, elementId: string) => void;
 }
+
+/** The exchange file's element collections (materials aside). */
+export type ExchangeCollection = 'levels' | 'walls' | 'openings' | 'slabs' | 'columns' | 'railings' | 'rooms' | 'meshes';
 
 export function importRevitModel(ctx: MutationContext, model: RevitExchange, options: RevitImportOptions = {}): RevitImportReport {
   const report: RevitImportReport = { created: {}, skipped: [] };
@@ -95,6 +106,14 @@ export function importRevitModel(ctx: MutationContext, model: RevitExchange, opt
     });
   }
   const materialOf = (id: string | undefined) => (id ? materials.get(id) : undefined);
+  /** Builds an item unless the bridge already has an element for it; returns that element (or none). */
+  const item = (collection: ExchangeCollection, id: string, build: () => string): string | null => {
+    const reused = options.existing?.(collection, id);
+    if (reused !== undefined) return reused;
+    const built = build();
+    options.onCreated?.(collection, id, built);
+    return built;
+  };
 
   // Levels: a rectangle around the whole model, like a level drawn on the board.
   const plan: Plan[] = [
@@ -108,9 +127,13 @@ export function importRevitModel(ctx: MutationContext, model: RevitExchange, opt
   const levels = new Map<string, { id: string; elevation: number }>();
   for (const level of [...model.levels].sort((a, b) => a.elevation - b.elevation)) {
     attempt('level', level.id, () => {
-      const id = createLevel.run(ctx, { x: extent.minX - margin, y: extent.minY - margin, width: extent.maxX - extent.minX + 2 * margin, height: extent.maxY - extent.minY + 2 * margin, elevation: level.elevation, name: level.name, planView: false });
-      levels.set(level.id, { id, elevation: level.elevation });
-      count('level');
+      let built = false;
+      const id = item('levels', level.id, () => {
+        built = true;
+        return createLevel.run(ctx, { x: extent.minX - margin, y: extent.minY - margin, width: extent.maxX - extent.minX + 2 * margin, height: extent.maxY - extent.minY + 2 * margin, elevation: level.elevation, name: level.name, planView: false });
+      });
+      if (id) levels.set(level.id, { id, elevation: level.elevation });
+      if (built) count('level');
     });
   }
   /** Links an element's elevation to its level (offset = absolute - level), or sets it absolutely. */
@@ -126,13 +149,18 @@ export function importRevitModel(ctx: MutationContext, model: RevitExchange, opt
     attempt('wall', wall.id, () => {
       const thickness = wall.layers.reduce((sum, layer) => sum + layer.thickness, 0);
       const layers = wall.layers.map((layer) => ({ name: layer.name, role: layer.role, thickness: layer.thickness, ...(materialOf(layer.material) ? { material: materialOf(layer.material)! } : {}) }));
-      const id = wall.curtain
-        ? createArchElement.run(ctx, { tool: 'curtain-wall', points: wall.points, rotation: 0, parentId: null, meta: { arch: { parameters: { panelSpacing: wall.height } } } })
-        : createArchElement.run(ctx, { tool: 'wall', points: wall.points, rotation: 0, parentId: null, meta: { arch: { parameters: { layers, height: wall.height, elevation: 0, locationLine: 'centre' } } } });
-      rename(ctx, id, wall.name);
-      place(id, wall.level, wall.base);
-      walls.set(wall.id, { id, points: wall.points, base: wall.base, thickness });
-      count(wall.curtain ? 'curtain wall' : 'wall');
+      let built = false;
+      const id = item('walls', wall.id, () => {
+        built = true;
+        const id = wall.curtain
+          ? createArchElement.run(ctx, { tool: 'curtain-wall', points: wall.points, rotation: 0, parentId: null, meta: { arch: { parameters: { panelSpacing: wall.height } } } })
+          : createArchElement.run(ctx, { tool: 'wall', points: wall.points, rotation: 0, parentId: null, meta: { arch: { parameters: { layers, height: wall.height, elevation: 0, locationLine: 'centre' } } } });
+        rename(ctx, id, wall.name);
+        place(id, wall.level, wall.base);
+        return id;
+      });
+      if (id) walls.set(wall.id, { id, points: wall.points, base: wall.base, thickness });
+      if (built) count(wall.curtain ? 'curtain wall' : 'wall');
     });
   }
 
@@ -161,6 +189,7 @@ export function importRevitModel(ctx: MutationContext, model: RevitExchange, opt
         parameters = { width, height: opening.height, sill: Math.max(0, above) };
         mount = windowMountOffset(wall.thickness);
       }
+      if (options.existing?.('openings', opening.id) !== undefined) return;
       const id = createArchElement.run(ctx, {
         tool: opening.kind,
         x: start.x - normal.x * mount,
@@ -170,6 +199,7 @@ export function importRevitModel(ctx: MutationContext, model: RevitExchange, opt
         meta: { arch: { type: opening.kind, parameters, opening: { wallId: wall.id, segment, start: local, end: local + width } } },
       });
       if (opening.name) rename(ctx, id, opening.name);
+      options.onCreated?.('openings', opening.id, id);
       count(opening.kind);
     });
   }
@@ -177,6 +207,7 @@ export function importRevitModel(ctx: MutationContext, model: RevitExchange, opt
   // Floors and ceilings, with their openings.
   for (const slab of model.slabs) {
     attempt(slab.kind, slab.id, () => {
+      if (options.existing?.('slabs', slab.id) !== undefined) return;
       const id = createSlabEnclosure.run(ctx, { points: slab.outline, type: slab.kind, ...(slab.name ? { name: slab.name } : {}) });
       const element = ctx.doc.elements[id]!;
       const arch = snapshot((element.meta?.['arch'] as Record<string, JsonValue> | undefined) ?? {});
@@ -187,12 +218,14 @@ export function importRevitModel(ctx: MutationContext, model: RevitExchange, opt
       place(id, slab.level, slab.bottom);
       const material = materialOf(slab.material);
       if (material) meta(ctx, id, { materials: { body: material } });
+      options.onCreated?.('slabs', slab.id, id);
       count(slab.kind);
     });
   }
 
   for (const column of model.columns) {
     attempt('column', column.id, () => {
+      if (options.existing?.('columns', column.id) !== undefined) return;
       const parameters: Record<string, JsonValue> = column.round
         ? { shape: 'circle', diameter: column.width, width: column.width, depth: column.width, height: column.height, elevation: 0 }
         : { shape: 'rectangle', width: column.width, depth: column.depth, height: column.height, elevation: 0 };
@@ -201,25 +234,30 @@ export function importRevitModel(ctx: MutationContext, model: RevitExchange, opt
       place(id, column.level, column.base);
       const material = materialOf(column.material);
       if (material) meta(ctx, id, { materials: { body: material } });
+      options.onCreated?.('columns', column.id, id);
       count('column');
     });
   }
 
   for (const railing of model.railings) {
     attempt('railing', railing.id, () => {
+      if (options.existing?.('railings', railing.id) !== undefined) return;
       const id = createArchElement.run(ctx, { tool: 'railing', points: railing.points, rotation: 0, parentId: null, meta: { arch: { parameters: { height: railing.height, elevation: 0 } } } });
       rename(ctx, id, railing.name);
       place(id, railing.level, railing.base);
+      options.onCreated?.('railings', railing.id, id);
       count('railing');
     });
   }
 
   for (const room of model.rooms) {
     attempt('room', room.id, () => {
+      if (options.existing?.('rooms', room.id) !== undefined) return;
       const name = [room.number, room.name].filter(Boolean).join(' ') || 'Room';
       const id = createRoomEnclosure.run(ctx, { points: room.outline, name });
       const level = room.level ? levels.get(room.level) : undefined;
       if (level) setElementLevelLink.run(ctx, { id, levelId: level.id, offset: 0 });
+      options.onCreated?.('rooms', room.id, id);
       count('room');
     });
   }
@@ -227,6 +265,7 @@ export function importRevitModel(ctx: MutationContext, model: RevitExchange, opt
   // Everything else: one mesh element per Revit element, its plan box on the board.
   for (const mesh of model.meshes) {
     attempt('mesh', mesh.id, () => {
+      if (options.existing?.('meshes', mesh.id) !== undefined) return;
       const blobId = ensureBlob(ctx.doc, { mime: 'model/gltf-binary', data: mesh.glb, width: 0, height: 0 });
       const id = createRect.run(ctx, {
         x: mesh.origin[0],
@@ -242,6 +281,7 @@ export function importRevitModel(ctx: MutationContext, model: RevitExchange, opt
         select: false,
       });
       place(id, mesh.level, mesh.origin[2]);
+      options.onCreated?.('meshes', mesh.id, id);
       count(mesh.category ? mesh.category.toLowerCase() : 'mesh');
     });
   }

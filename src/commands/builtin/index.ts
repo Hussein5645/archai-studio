@@ -32,7 +32,7 @@ import { renderCommands } from './render';
 import { materialCommands } from './materials';
 import { modelCommands } from './models';
 import { importRevitExchange } from '@/revit/importRevit';
-import { syncLiveLink } from '@/live/sync';
+import { bridgeCommands } from '@/bridge/commands';
 import { caiParameterCommands } from './caiParameters';
 import { draftingCommands } from './drafting';
 import { sheetLayoutCommands } from './sheetLayout';
@@ -80,7 +80,7 @@ export const builtinCommands: AnyCommand[] = [
   ...materialCommands,
   ...modelCommands,
   importRevitExchange,
-  syncLiveLink,
+  ...bridgeCommands,
   ...caiParameterCommands,
 ];
 

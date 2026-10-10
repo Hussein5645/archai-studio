@@ -2,7 +2,7 @@
  * The only boundary between the renderer and the host. Electron, the native tablet host and the
  * plain browser each implement it; nothing else in `src/` may import Electron.
  */
-import type { MenuItemTemplateT } from '@shared/ipc';
+import type { LiveRequestKind, MenuItemTemplateT } from '@shared/ipc';
 
 export interface ImageFile {
   name: string;
@@ -78,6 +78,6 @@ export interface Platform {
     subscribe(listener: (url: string) => void): () => void;
   } | null;
   live?: {
-    serve(handler: (kind: 'status' | 'push' | 'pull' | 'stop' | 'account', payload: Record<string, unknown>) => Promise<unknown>): () => void;
+    serve(handler: (kind: LiveRequestKind, payload: Record<string, unknown>) => Promise<unknown>): () => void;
   } | null;
 }

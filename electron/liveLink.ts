@@ -3,11 +3,16 @@
  * loopback interface that Revit, AutoCAD, Rhino, SketchUp, Blender, 3ds Max and Unreal talk to
  * while their Live link is on. Requests go to the board window, which owns the document:
  *
- *   GET  /live/status?key=K&name=N&app=A   { app, version, document, revision, own }
+ *   GET  /live/status?key=K&name=N&app=A[&project=P&protocol=2]
+ *                              { app, version, protocol, document, bound, mismatch?, revision, own }
  *                              (is ArchAI there? On its Home screen it opens a project for K)
- *   POST /live/push           { key, app, name, model }  → { revision, created, skipped }
- *                              the plugin's model (the exchange format of src/revit/exchange.ts)
- *                              replaces what that plugin sent before
+ *   POST /live/push           { key, app, name, model[, protocol: 2, project, changeId, complete,
+ *                              deleted] }  → { protocol, ack, revision, document, applied, created,
+ *                              skipped } or { refused, message }: the plugin's model (the exchange
+ *                              format of src/revit/exchange.ts) applied through the Live Bridge
+ *   GET  /live/projects        { protocol, open, projects: [{ id, name, updatedAt, online, open }] }
+ *   POST /live/bind           { key, app, name, project | newName }  → { document, revision }
+ *                              links the model to that project (opened) or a new one
  *   GET  /live/pull?key=K     ArchAI's model as binary glTF (X-ArchAI-Revision header), without
  *                              the elements that came from that plugin
  *   POST /live/stop           { key }   the plugin turned its link off
@@ -90,13 +95,23 @@ export function startLiveLink(board: () => BrowserWindow | null, version: string
       if (request.headers.origin || request.headers['x-archai-live'] !== '1') return send(response, 403, { error: 'Live link requests come from the ArchAI plugins' });
       const key = (url.searchParams.get('key') ?? '').slice(0, 300);
       if (request.method === 'GET' && url.pathname === '/live/status') {
-        const status = (await ask(board(), 'status', { key, name: (url.searchParams.get('name') ?? '').slice(0, 200), app: (url.searchParams.get('app') ?? '').slice(0, 60) })) as Record<string, unknown>;
+        const status = (await ask(board(), 'status', {
+          key,
+          name: (url.searchParams.get('name') ?? '').slice(0, 200),
+          app: (url.searchParams.get('app') ?? '').slice(0, 60),
+          project: (url.searchParams.get('project') ?? '').slice(0, 64),
+          protocol: Number(url.searchParams.get('protocol')) || 1,
+        })) as Record<string, unknown>;
         return send(response, 200, { app: 'ArchAI', version, ...status });
       }
-      if (request.method === 'POST' && (url.pathname === '/live/push' || url.pathname === '/live/stop')) {
+      if (request.method === 'GET' && url.pathname === '/live/projects') {
+        return send(response, 200, await ask(board(), 'projects', {}));
+      }
+      const posts = { '/live/push': 'push', '/live/stop': 'stop', '/live/bind': 'bind' } as const;
+      if (request.method === 'POST' && url.pathname in posts) {
         const body = JSON.parse((await readBody(request)).toString('utf8')) as Record<string, unknown>;
         if (typeof body['key'] !== 'string' || !body['key']) return send(response, 400, { error: 'key is required' });
-        const result = await ask(board(), url.pathname === '/live/push' ? 'push' : 'stop', body);
+        const result = await ask(board(), posts[url.pathname as keyof typeof posts], body);
         return send(response, 200, result);
       }
       if (request.method === 'GET' && url.pathname === '/live/account') {

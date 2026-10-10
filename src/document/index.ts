@@ -1,5 +1,6 @@
 export * from './schema';
 export * from './material';
+export * from './bridge';
 export * from './types';
 export * from './ids';
 export * from './order';

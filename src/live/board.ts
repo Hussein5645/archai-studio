@@ -5,9 +5,15 @@
  *
  * - `status`: the project, its revision (bumped on every document change) and the revision the
  *   asking plugin's own last sync produced, so a plugin pulls only changes made by others.
- * - `push`: runs `sync-live-link` (one undo step).
+ * - `push`: protocol 1 (plugins 0.4.x) and protocol 2 (Live Bridge, docs/live-bridge-proposal.md)
+ *   both run `bridge-sync` (one undo step); protocol 2 adds its change id, whether the model is a
+ *   complete snapshot, and explicit deletions.
  * - `pull`: the project's 3D model as binary glTF (the .AIR snapshot format, metres, one node per
- *   element), without what the asking plugin sent.
+ *   element), without what the asking plugin sent and without elements not shared with it.
+ * - `projects` / `bind` (protocol 2): the projects a plugin can link to, and linking to one.
+ *
+ * Protocol-2 plugins name the project they are bound to: while ArchAI shows another one, their
+ * pushes are refused (`refused: 'project-mismatch'`) so nothing lands in the wrong project.
  *
  * A plugin that finds ArchAI on its Home screen gets a project opened for it: the one linked to
  * that model last time (`live:project:<key>` in platform storage), else a new one named after it.
@@ -23,6 +29,10 @@ import { withoutLink } from './sync';
 import { account } from '@/cloud/account';
 import { openAccountDialog } from '@/ui/account-dialog';
 import { startProgress } from '@/progress';
+import type { BridgeSyncReport } from '@/bridge/engine';
+
+/** The Live Bridge protocol this ArchAI speaks (plugins 0.4.x speak 1). */
+export const BRIDGE_PROTOCOL = 2;
 
 export interface LiveConnection {
   key: string;
@@ -34,6 +44,8 @@ export interface LiveConnection {
   objects: number;
   /** Revision of the document right after this link's last sync. */
   ownRevision: number | null;
+  /** Live Bridge protocol the plugin speaks (1: live link). */
+  protocol: number;
 }
 
 /** A link that has not been heard from for this long counts as gone. */
@@ -49,7 +61,7 @@ function changed(): void {
 }
 
 function touch(key: string, patch: Partial<LiveConnection>): LiveConnection {
-  const current = connections.get(key) ?? { key, app: '', name: '', lastSeen: 0, lastSync: null, objects: 0, ownRevision: null };
+  const current = connections.get(key) ?? { key, app: '', name: '', lastSeen: 0, lastSync: null, objects: 0, ownRevision: null, protocol: 1 };
   const next = { ...current, ...patch, lastSeen: Date.now() };
   connections = new Map(connections).set(key, next);
   changed();
@@ -82,14 +94,14 @@ export function nameFromKey(key: string): string {
 
 /** Board window, once at boot (desktop app only). */
 
-export function startLiveLink(platform: Platform, store: AppStore, executor: CommandExecutor, catalog: AssetCatalog, toasts: ToastStore, persistence: Pick<PersistenceService, 'openStored'> | null = null): void {
+export function startLiveLink(platform: Platform, store: AppStore, executor: CommandExecutor, catalog: AssetCatalog, toasts: ToastStore, persistence: Pick<PersistenceService, 'openStored' | 'recent'> | null = null): void {
   if (!platform.live) return;
   let opening: Promise<void> | null = null;
   /** On the Home screen: opens the project linked to this model before, else a new one for it. */
-  const ensureProject = (key: string, name: string, app: string): Promise<void> => {
+  const ensureProject = (key: string, name: string, app: string, project = ''): Promise<void> => {
     if (!key || store.getState().ui.screen !== 'home') return Promise.resolve();
     opening ??= (async () => {
-      const remembered = await platform.storage.get(`live:project:${key}`).catch(() => null);
+      const remembered = project || (await platform.storage.get(`live:project:${key}`).catch(() => null));
       if (remembered && persistence && (await persistence.openStored(remembered))) {
         toasts.push({ kind: 'info', message: `Live link: opened ${store.getState().doc.meta.name} for ${app || 'the plugin'}` });
         return;
@@ -103,7 +115,8 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
     });
     return opening;
   };
-  let revision = 1;
+  // Time-based, so a plugin reconnecting after ArchAI restarted never sees an old revision again.
+  let revision = Date.now();
   let docId = store.getState().doc.id;
   let lastDoc = store.getState().doc;
   store.subscribe((state) => {
@@ -133,14 +146,28 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       if (payload['prompt'] === true) openAccountDialog('sign-in', `Sign in to ArchAI to use ${str(payload['app'], 60) || 'the plugin'}'s cloud features (Open in VR).`);
       return { signedIn: false };
     }
+    if (kind === 'projects') {
+      const state = store.getState();
+      const open = state.ui.screen !== 'home' ? state.doc.id : null;
+      const projects = (persistence?.recent() ?? []).slice(0, 50).map((entry) => ({ id: entry.id, name: entry.name || 'Untitled', updatedAt: entry.updatedAt, online: Boolean(entry.cloud), open: entry.id === open }));
+      return { protocol: BRIDGE_PROTOCOL, open, projects };
+    }
     const key = str(payload['key'], 300);
-    if (kind !== 'stop') await ensureProject(key, str(payload['name']), str(payload['app'], 60) || connections.get(key)?.app || '');
+    const project = str(payload['project'], 64);
+    if (kind === 'bind') return bind(key, str(payload['app'], 60), str(payload['name']), project, str(payload['newName']));
+    if (kind !== 'stop') await ensureProject(key, str(payload['name']), str(payload['app'], 60) || connections.get(key)?.app || '', project);
     const state = store.getState();
     const hasProject = state.ui.screen !== 'home';
+    /** A protocol-2 plugin bound to another project than the open one. */
+    const mismatch = Boolean(project && hasProject && project !== state.doc.id);
+    const current = hasProject ? { id: state.doc.id, name: state.doc.meta.name || 'Untitled' } : null;
     if (kind === 'status') {
-      if (key) touch(key, {});
+      if (key) touch(key, { protocol: Number(payload['protocol']) || connections.get(key)?.protocol || 1 });
       return {
-        document: hasProject ? { id: state.doc.id, name: state.doc.meta.name || 'Untitled' } : null,
+        protocol: BRIDGE_PROTOCOL,
+        document: current,
+        bound: Boolean(key && state.doc.bridge?.sources[key]),
+        ...(mismatch ? { mismatch: { bound: project, open: state.doc.id } } : {}),
         revision,
         own: connections.get(key)?.ownRevision ?? null,
       };
@@ -155,23 +182,36 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
     if (kind === 'push') {
       const app = str(payload['app'], 60) || 'App';
       const name = str(payload['name']);
+      const protocol = Number(payload['protocol']) || 1;
+      if (mismatch) {
+        return { protocol: BRIDGE_PROTOCOL, refused: 'project-mismatch', document: current, message: `ArchAI has another project open (${current?.name}). Open the linked project in ArchAI, or link this model to the open one.` };
+      }
+      const link = state.doc.bridge?.sources[key];
+      if (link && link.mode !== 'two-way') {
+        return { protocol: BRIDGE_PROTOCOL, refused: link.mode, document: current, message: link.mode === 'paused' ? 'This link is paused in ArchAI' : 'This link only receives from ArchAI' };
+      }
       const first = !connections.get(key)?.lastSync;
       // Shown when the sync takes a moment (a first sync or a big model); quick ones never appear.
       const model = payload['model'] as { elements?: unknown[] } | undefined;
       const count = Array.isArray(model?.elements) ? model.elements.length : null;
       const task = startProgress(`Live link: ${app}`, count ? `Updating ${count} elements from ${app}` : `Updating the model from ${app}`, null);
       await task.paint();
-      const result = await executor.dispatch('sync-live-link', { key, app, model: payload['model'] });
+      const changeId = typeof payload['changeId'] === 'string' ? payload['changeId'].slice(0, 100) : null;
+      const deleted = Array.isArray(payload['deleted']) ? payload['deleted'].filter((id): id is string => typeof id === 'string') : [];
+      const result = await executor.dispatch('bridge-sync', { key, app, name, model: payload['model'], complete: payload['complete'] !== false, deleted, changeId });
       if (result.ok) task.done();
       else task.failed();
       // The project this model syncs with, to reopen next time.
       void platform.storage.set(`live:project:${key}`, state.doc.id).catch(() => undefined);
       if (!result.ok) throw new Error(result.error.message);
-      const report = result.value as { created: Record<string, number>; skipped: unknown[] };
-      const objects = Object.entries(report.created).filter(([kind]) => kind !== 'material' && kind !== 'level').reduce((sum, [, n]) => sum + n, 0);
-      touch(key, { app, name, lastSync: Date.now(), objects, ownRevision: revision });
+      const report = result.value as BridgeSyncReport;
+      const doc = store.getState().doc;
+      const objects = Object.values(doc.bridge?.elements ?? {}).filter((binding) => binding.refs[key] && !binding.removed).length;
+      touch(key, { app, name, lastSync: Date.now(), objects, ownRevision: revision, protocol });
       if (first) toasts.push({ kind: 'success', message: `Live link: ${app}${name ? ` (${name})` : ''} is connected, ${objects} objects` });
-      return { revision, created: report.created, skipped: report.skipped.length };
+      if (report.held) toasts.push({ kind: 'info', message: `Live link: ${report.held} deletions from ${app} wait for your confirmation` });
+      const { built, skipped, ...applied } = report;
+      return { protocol: BRIDGE_PROTOCOL, ack: changeId, revision, document: { id: doc.id, name: doc.meta.name || 'Untitled' }, applied, created: built ?? {}, skipped: skipped?.length ?? 0 };
     }
     if (kind === 'pull') {
       const app = str(payload['app'], 60) || connections.get(key)?.app || 'the plugin';
@@ -192,4 +232,24 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
     }
     throw new Error(`Unknown live-link request ${String(kind)}`);
   });
+
+  /**
+   * Links a model to a project (protocol 2): an existing one (opened if another is showing) or a
+   * new one; remembered for the plugin's next connection.
+   */
+  async function bind(key: string, app: string, name: string, project: string, newName: string): Promise<unknown> {
+    if (!key) throw new Error('key is required');
+    let state = store.getState();
+    if (project && !(state.ui.screen !== 'home' && state.doc.id === project)) {
+      if (!persistence || !(await persistence.openStored(project))) throw new Error('That project is not on this computer');
+    } else if (!project) {
+      const created = executor.dispatchSync('new-document', { name: newName || name || nameFromKey(key) });
+      if (!created.ok) throw new Error(created.error.message);
+    }
+    state = store.getState();
+    await platform.storage.set(`live:project:${key}`, state.doc.id).catch(() => undefined);
+    touch(key, { app, name, protocol: BRIDGE_PROTOCOL, ownRevision: null });
+    toasts.push({ kind: 'info', message: `Live link: ${app || 'the plugin'}${name ? ` (${name})` : ''} is linked to ${state.doc.meta.name || 'this project'}` });
+    return { protocol: BRIDGE_PROTOCOL, document: { id: state.doc.id, name: state.doc.meta.name || 'Untitled' }, revision };
+  }
 }
