@@ -18,7 +18,9 @@ import { removeSubtree, snapshot } from '@/commands/helpers';
 import { BRIDGE_FACETS, type BridgeBinding, type BridgeData, type BridgeFacet, type BridgeFidelity, type BridgeSource, type Element, type ElementTable, type JsonValue } from '@/document';
 import type { RevitExchange } from '@/revit/exchange';
 import { importRevitModel, type ExchangeCollection, type RevitImportReport } from '@/revit/importRevit';
-import { childLookup, facetHashes, facetValue, hashValue, mergeFacets, rewriteIds } from './facets';
+import { worldMatrix } from '@/geometry';
+import { instanceElevationOf } from '@/view3d/geometry';
+import { childLookup, facetHashes, facetsOf, facetValue, hashValue, mergeFacets, nearlyEqual, rewriteIds } from './facets';
 
 /** Source colours, in the order new sources get them. */
 export const SOURCE_COLORS = ['#e8590c', '#1c7ed6', '#2f9e44', '#ae3ec9', '#f08c00', '#0c8599', '#e03131', '#5f3dc4', '#66a80f', '#c2255c'];
@@ -52,6 +54,8 @@ export interface BridgeSyncReport {
   unsupported: number;
   /** Elements of the old live link replaced on the first bridge sync. */
   migrated: number;
+  /** Objects recognised as the app's editable copies of ArchAI elements (linked, not added). */
+  linked: number;
   /** Elements built by kind (as the live link reported them). */
   built: Record<string, number>;
   skipped: RevitImportReport['skipped'];
@@ -146,6 +150,11 @@ function legacyTag(element: Element): string | null {
 
 const plain = (elements: ElementTable): ElementTable => (isDraft(elements) ? current(elements) : elements);
 
+/** Where an element is: its plan matrix and elevation (what the app has, for updates sent back to it). */
+export function placedOf(elements: ElementTable, element: Element): { m: number[]; z: number } {
+  return { m: [...worldMatrix(elements, element)], z: instanceElevationOf(element, elements) };
+}
+
 export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): BridgeSyncReport {
   const bridge = ensureBridge(ctx);
   const known = bridge.sources[input.key];
@@ -154,7 +163,7 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
   const source = registerSource(ctx, input.key, input.app, input.name);
   const key = input.key;
   const now = nowOf(ctx);
-  const report: BridgeSyncReport = { created: 0, updated: 0, unchanged: 0, deleted: 0, held: 0, conflicts: 0, rejected: 0, unsupported: 0, migrated: 0, built: {}, skipped: [] };
+  const report: BridgeSyncReport = { created: 0, updated: 0, unchanged: 0, deleted: 0, held: 0, conflicts: 0, rejected: 0, unsupported: 0, migrated: 0, linked: 0, built: {}, skipped: [] };
   const notes: string[] = [];
   const selection = ctx.ui.selection;
 
@@ -185,6 +194,9 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
   const hashes = itemHashes(input.model);
   /** Items whose bound element is rebuilt aside: `collection/id` → bound element. */
   const changed = new Map<string, string>();
+  /** The app's editable copies of ArchAI elements, seen for the first time: item → element. */
+  const copyOf = new Map<string, string>(input.model.meshes.flatMap((mesh) => (mesh.archai ? [[`meshes/${mesh.id}`, mesh.archai] as const] : [])));
+  const copies = new Map<string, string>();
   const created: { item: string; collection: ExchangeCollection; id: string; element: string }[] = [];
   const existingMaterials = new Map(Object.values(ctx.doc.materials).flatMap((material) => (material.source ? [[material.source, material.id] as const] : [])));
 
@@ -194,7 +206,11 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
     existing: (collection, id) => {
       const item = `${collection}/${id}`;
       const elementId = bound.get(item);
-      if (!elementId) return undefined;
+      if (!elementId) {
+        const original = copyOf.get(item);
+        if (original && ctx.doc.elements[original] && !bridge.elements[original]?.refs[key]) copies.set(item, original);
+        return undefined;
+      }
       const binding = bridge.elements[elementId]!;
       if (binding.removed) return null;
       if (!ctx.doc.elements[elementId]) {
@@ -230,17 +246,28 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
 
   let elements = plain(ctx.doc.elements);
   let children = childLookup(elements);
-  const merges: { entry: (typeof created)[number]; target: string; apply: Set<BridgeFacet>; edited: Set<BridgeFacet> }[] = [];
+  type Merge = { entry: (typeof created)[number]; target: string; apply: Set<BridgeFacet>; edited: Set<BridgeFacet>; converged: Set<BridgeFacet>; kept: Set<BridgeFacet> };
+  const merges: Merge[] = [];
   for (const entry of created) {
     const target = changed.get(entry.item);
     if (target) {
-      merges.push({ entry, target, apply: new Set(), edited: new Set() });
+      merges.push({ entry, target, apply: new Set(), edited: new Set(), converged: new Set(), kept: new Set() });
       continue;
     }
+    const original = copies.get(entry.item);
     const element = elements[entry.element]!;
+    if (original) {
+      // The app's copy of an ArchAI element: linked to it, the element itself stays as it is.
+      const target = elements[original]!;
+      const binding = (bridge.elements[original] ??= { state: facetHashes(children, target), refs: {} });
+      binding.refs[key] = { id: entry.id, kind: entry.collection, role: 'copy', fidelity: 'converted', lossy: true, base: facetHashes(children, element), item: hashes.get(entry.item), archai: facetHashes(children, target), placed: placedOf(elements, element), at: now };
+      if (ctx.doc.elements[entry.element]) removeSubtree(ctx.doc, entry.element);
+      report.linked += 1;
+      continue;
+    }
     const hashesNow = facetHashes(children, element);
     const { fidelity, lossy } = FIDELITY[entry.collection];
-    bridge.elements[entry.element] = { state: hashesNow, refs: { [key]: { id: entry.id, kind: entry.collection, role: 'origin', fidelity, lossy, base: hashesNow, item: hashes.get(entry.item), at: now } } };
+    bridge.elements[entry.element] = { state: hashesNow, refs: { [key]: { id: entry.id, kind: entry.collection, role: 'origin', fidelity, lossy, base: hashesNow, item: hashes.get(entry.item), archai: hashesNow, placed: placedOf(elements, element), at: now } } };
     report.created += 1;
   }
 
@@ -252,28 +279,42 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
     const ref = binding.refs[key]!;
     const theirs = elements[entry.element]!;
     const mine = elements[target]!;
+    const theirFacets = facetsOf(children, theirs);
+    const myFacets = facetsOf(children, mine);
     const incoming = facetHashes(children, theirs);
     const present = facetHashes(children, mine);
     for (const facet of BRIDGE_FACETS) {
       const editedHere = present[facet] !== binding.state[facet];
       if (editedHere) merge.edited.add(facet);
       if (incoming[facet] === ref.base[facet]) continue;
+      // The app now has what ArchAI has (it applied an update ArchAI sent): in sync, not a change.
+      if (nearlyEqual(theirFacets[facet], myFacets[facet])) {
+        merge.converged.add(facet);
+        continue;
+      }
       const owner = ownerOf(bridge, binding, facet);
+      const offered = binding.offers?.[key]?.includes(facet) ?? false;
       if (facet === 'geometry' && theirs.kind !== mine.kind && ref.role !== 'origin') {
         report.rejected += 1;
+        merge.kept.add(facet);
         continue;
       }
       if (owner === key) {
         apply.add(facet);
         if (editedHere) overwritten += 1;
-      } else if (owner === 'shared') {
+      } else if (owner === 'shared' || offered) {
         if (editedHere) {
+          merge.kept.add(facet);
           bridge.conflicts = bridge.conflicts.filter((c) => !(c.element === target && c.source === key && c.facet === facet));
           bridge.conflicts.push({ id: ctx.ids.next('hist'), element: target, source: key, facet, at: now, theirs: facetValue(children, theirs, facet) as JsonValue });
           report.conflicts += 1;
         } else apply.add(facet);
-      } else report.rejected += 1;
+      } else {
+        report.rejected += 1;
+        merge.kept.add(facet);
+      }
     }
+    ref.placed = placedOf(elements, theirs);
     if (apply.size) {
       ctx.doc.elements[target] = mergeFacets(mine, theirs, apply);
       if (apply.has('geometry')) {
@@ -300,7 +341,10 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
     const merge = mergedInto.get(elementId);
     for (const facet of BRIDGE_FACETS) {
       if (merge) {
-        if (merge.apply.has(facet) || !merge.edited.has(facet)) binding.state[facet] = after[facet];
+        if (merge.apply.has(facet) || merge.converged.has(facet) || !merge.edited.has(facet)) binding.state[facet] = after[facet];
+        // What the app has: ArchAI's version unless ArchAI kept its own (sent back to it later).
+        const ref = binding.refs[key];
+        if (ref && !merge.kept.has(facet) && (merge.apply.has(facet) || merge.converged.has(facet) || !merge.edited.has(facet))) ref.archai[facet] = after[facet];
       } else if (old[facet] !== after[facet] && binding.state[facet] === old[facet]) binding.state[facet] = after[facet];
     }
   }

@@ -3,8 +3,9 @@ import { createTestApp, run, type TestApp } from '@/test/harness';
 import type { ArchaiDocument, BridgeData, Element } from '@/document';
 import { withoutLink } from '@/live/sync';
 import type { BridgeSyncReport } from './engine';
+import { pullPlan, type PullPlan } from './pull';
 
-type Mesh = { id: string; name?: string; category?: string; origin: [number, number, number]; size: [number, number, number]; glb: string };
+type Mesh = { id: string; name?: string; category?: string; origin: [number, number, number]; size: [number, number, number]; glb: string; archai?: string };
 type Wall = { id: string; points: [number, number][]; base: number; height: number; layers: { name: string; role: 'core'; thickness: number; material?: string }[]; level?: string };
 
 const mesh = (id: string, x = 0, name = `Object ${id}`): Mesh => ({ id, name, category: 'Generic', origin: [x, 0, 0], size: [500, 500, 900], glb: 'AAAA' });
@@ -255,5 +256,73 @@ describe('Live Bridge sync', () => {
     const report = run<{ created: Record<string, number>; removed: number }>(app, 'sync-live-link', { key: 'rhino:house', app: 'Rhino', model: model({ meshes: [mesh('a')] }) });
     expect(report.removed).toBe(1);
     expect(Object.keys(doc(app).elements).length).toBe(1);
+  });
+});
+
+describe('Live Bridge pulls and updates', () => {
+  const ids = (plan: PullPlan) => [...plan.nodes.keys()];
+
+  it('sends each app what others shared, then only what changed', () => {
+    const app = createTestApp();
+    sync(app, 'revit:tower', model({ app: 'Revit', walls: [wall('w1')] }));
+    sync(app, 'rhino:facade', model({ app: 'Rhino', meshes: [mesh('panel'), mesh('fin', 900)] }));
+    const wallId = bound(app, 'revit:tower', 'w1')!.id;
+    const panel = bound(app, 'rhino:facade', 'panel')!.id;
+    const first = pullPlan(doc(app), 'rhino:facade', null);
+    expect(ids(first)).toEqual([wallId]);
+    expect(first.nodes.get(wallId)).toMatchObject({ source: 'revit:tower', color: '#e8590c' });
+    const forRevit = pullPlan(doc(app), 'revit:tower', null);
+    expect(ids(forRevit).sort()).toEqual([panel, bound(app, 'rhino:facade', 'fin')!.id].sort());
+    // Nothing changed: no nodes, but everything still present.
+    const again = pullPlan(doc(app), 'revit:tower', forRevit.sent);
+    expect(ids(again)).toEqual([]);
+    expect(again.present.sort()).toEqual(forRevit.present.sort());
+    // Rhino moves its panel: Revit gets that one node only.
+    sync(app, 'rhino:facade', model({ app: 'Rhino', meshes: [mesh('panel', 300), mesh('fin', 900)] }));
+    expect(ids(pullPlan(doc(app), 'revit:tower', forRevit.sent))).toEqual([panel]);
+  });
+
+  it("sends ArchAI's moves back to the app when it does not own the transform, and settles when the app catches up", () => {
+    const app = createTestApp();
+    sync(app, 'blender:viz', model({ app: 'Blender', meshes: [mesh('tree', 1000, 'Tree')] }));
+    const tree = bound(app, 'blender:viz', 'tree')!.id;
+    // Owned by Blender (the default): ArchAI's move stays in ArchAI.
+    run(app, 'select', { ids: [tree] });
+    run(app, 'move-selection', { ids: [tree], dx: 500, dy: 0 });
+    expect(pullPlan(doc(app), 'blender:viz', null).updates).toEqual([]);
+    // Shared: the move goes to Blender.
+    run(app, 'bridge-set-source', { key: 'blender:viz', authority: { transform: 'shared', metadata: 'shared' } });
+    run(app, 'rename', { id: tree, name: 'Oak' });
+    const [update] = pullPlan(doc(app), 'blender:viz', null).updates;
+    expect(update).toMatchObject({ ref: 'tree', element: tree, name: 'Oak' });
+    expect(update!.move![0]).toBeCloseTo(500);
+    // Blender applies it and sends its model again: in sync, no conflict, nothing more to send.
+    const report = sync(app, 'blender:viz', model({ app: 'Blender', meshes: [mesh('tree', 1500.04, 'Oak')] }));
+    expect(report.conflicts).toBe(0);
+    expect(doc(app).elements[tree]).toMatchObject({ name: 'Oak' });
+    expect(pullPlan(doc(app), 'blender:viz', null).updates).toEqual([]);
+  });
+
+  it('links editable copies back to their element and applies the offered facets', () => {
+    const app = createTestApp();
+    sync(app, 'revit:tower', model({ app: 'Revit', meshes: [mesh('stair', 0, 'Stair')] }));
+    sync(app, 'blender:viz', model({ app: 'Blender', meshes: [] }));
+    const stair = bound(app, 'revit:tower', 'stair')!.id;
+    // Reference geometry until offered.
+    expect(pullPlan(doc(app), 'blender:viz', null).nodes.get(stair)!['editable']).toBeUndefined();
+    run(app, 'bridge-offer', { ids: [stair], key: 'blender:viz', facets: ['metadata', 'material'] });
+    expect(pullPlan(doc(app), 'blender:viz', null).nodes.get(stair)!['editable']).toEqual(['metadata', 'material']);
+    // Blender made its copy and sends it with the element it came from.
+    const copy = { ...mesh('obj-7', 0, 'Stair'), archai: stair };
+    const linked = sync(app, 'blender:viz', model({ app: 'Blender', meshes: [copy] }));
+    expect(linked).toMatchObject({ linked: 1, created: 0 });
+    expect(Object.keys(doc(app).elements).length).toBe(1);
+    expect(bridge(app).elements[stair]!.refs['blender:viz']).toMatchObject({ id: 'obj-7', role: 'copy' });
+    // No longer a node for Blender (it has its own copy).
+    expect(pullPlan(doc(app), 'blender:viz', null).nodes.has(stair)).toBe(false);
+    // A rename in Blender is offered: applied. A move is not: Revit keeps the transform.
+    const report = sync(app, 'blender:viz', model({ app: 'Blender', meshes: [{ ...mesh('obj-7', 800, 'Stair B'), archai: stair }] }));
+    expect(doc(app).elements[stair]).toMatchObject({ name: 'Stair B', x: 0 });
+    expect(report.rejected).toBeGreaterThan(0);
   });
 });

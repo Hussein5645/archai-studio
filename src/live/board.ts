@@ -30,6 +30,7 @@ import { account } from '@/cloud/account';
 import { openAccountDialog } from '@/ui/account-dialog';
 import { startProgress } from '@/progress';
 import type { BridgeSyncReport } from '@/bridge/engine';
+import { pullPlan } from '@/bridge/pull';
 
 /** The Live Bridge protocol this ArchAI speaks (plugins 0.4.x speak 1). */
 export const BRIDGE_PROTOCOL = 2;
@@ -117,6 +118,8 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
   };
   // Time-based, so a plugin reconnecting after ArchAI restarted never sees an old revision again.
   let revision = Date.now();
+  /** Protocol 2: what each app received in this session (element → hash), so pulls carry changes only. */
+  const sentTo = new Map<string, Map<string, string>>();
   let docId = store.getState().doc.id;
   let lastDoc = store.getState().doc;
   store.subscribe((state) => {
@@ -126,6 +129,7 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
     if (state.doc.id !== docId) {
       // Another project: every link starts over.
       docId = state.doc.id;
+      sentTo.clear();
       connections = new Map([...connections].map(([key, c]) => [key, { ...c, ownRevision: null }]));
       changed();
     }
@@ -218,10 +222,22 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       const task = startProgress(`Live link: ${app}`, `Sending ArchAI's model to ${app}`, null);
       await task.paint();
       const { exportSceneSnapshot } = await import('@/view3d/vrExport');
-      const doc = withoutLink(state.doc, key);
       let glb: Uint8Array;
       try {
-        glb = new Uint8Array(await exportSceneSnapshot(doc, catalog));
+        if ((Number(payload['protocol']) || 1) >= 2) {
+          // Live Bridge: only what changed since this app's last pull, plus updates for its own objects.
+          const fresh = payload['fresh'] === true || payload['fresh'] === '1';
+          const plan = pullPlan(state.doc, key, fresh ? null : (sentTo.get(key) ?? null));
+          const document = { id: state.doc.id, name: state.doc.meta.name || 'Untitled' };
+          glb = new Uint8Array(
+            await exportSceneSnapshot(state.doc, catalog, {
+              include: (id) => plan.nodes.has(id),
+              extras: (id) => plan.nodes.get(id),
+              root: { archaiBridge: { protocol: BRIDGE_PROTOCOL, document, revision, present: plan.present, updates: plan.updates } },
+            }),
+          );
+          sentTo.set(key, plan.sent);
+        } else glb = new Uint8Array(await exportSceneSnapshot(withoutLink(state.doc, key), catalog));
         task.done();
       } catch (error) {
         task.failed();

@@ -126,7 +126,7 @@ export function startLiveLink(board: () => BrowserWindow | null, version: string
         return send(response, 200, result);
       }
       if (request.method === 'GET' && url.pathname === '/live/pull') {
-        const result = (await ask(board(), 'pull', { key })) as { glb: Uint8Array; revision: number; name: string } | null;
+        const result = (await ask(board(), 'pull', { key, protocol: Number(url.searchParams.get('protocol')) || 1, fresh: url.searchParams.get('fresh') === '1' })) as { glb: Uint8Array; revision: number; name: string } | null;
         if (!result) return send(response, 204, {});
         const bytes = Buffer.from(result.glb.buffer, result.glb.byteOffset, result.glb.byteLength);
         response.writeHead(200, {

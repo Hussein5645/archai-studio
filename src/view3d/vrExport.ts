@@ -45,18 +45,27 @@ export async function buildSurfaces(doc: ArchaiDocument, catalog: AssetCatalog, 
  * The 3D snapshot saved inside .AIR files (`scene3d`, see docs/plugins.md): what the ArchAI
  * plugins for AutoCAD, Rhino, SketchUp, Blender, 3ds Max and Unreal import. One node per element,
  * named after it, with `extras.archai = { id, kind, type, level }`.
+ *
+ * Live Bridge pulls (src/bridge/pull.ts) pass `include` (elements to write; the others are still
+ * built, so walls keep their openings), `extras` added to each node's `archai`, and `root` extras.
  */
-export async function exportSceneSnapshot(doc: ArchaiDocument, catalog: AssetCatalog): Promise<ArrayBuffer> {
+export async function exportSceneSnapshot(
+  doc: ArchaiDocument,
+  catalog: AssetCatalog,
+  options: { include?: (id: string) => boolean; extras?: (id: string) => Record<string, unknown> | undefined; root?: Record<string, unknown> } = {},
+): Promise<ArrayBuffer> {
   const root = await buildSurfaces(doc, catalog, (item) => {
+    if (options.include && !options.include(item.id)) return new THREE.Group();
     const element = doc.elements[item.id];
     const levelId = element ? parentLevelOf(doc.elements, element.id) : null;
     const level = levelId ? doc.elements[levelId] : undefined;
     const node = new THREE.Group();
     node.name = element?.name?.trim() || archTypeOf(element) || element?.kind || 'Element';
-    node.userData = { archai: { id: item.id, kind: element?.kind ?? '', type: archTypeOf(element) ?? '', level: level?.name?.trim() || null } };
+    node.userData = { archai: { id: item.id, kind: element?.kind ?? '', type: archTypeOf(element) ?? '', level: level?.name?.trim() || null, ...options.extras?.(item.id) } };
     node.add(item.object);
     return node;
   });
+  if (options.root) root.userData = { ...root.userData, ...options.root };
   root.updateMatrixWorld(true);
   const exported = await new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: true, maxTextureSize: 1024 });
   if (!(exported instanceof ArrayBuffer)) throw new Error('The 3D snapshot could not be exported');

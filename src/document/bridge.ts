@@ -56,6 +56,10 @@ export const BridgeRefSchema = z.object({
   base: FacetHashes.default({}),
   /** Hash of its raw exchange item: unchanged items are skipped without rebuilding. */
   item: Hash.optional(),
+  /** ArchAI's facets as that app last had them: what changed since is sent to it (where it is not the owner). */
+  archai: FacetHashes.default({}),
+  /** Where that app has it: plan matrix (a, b, c, d, e, f, mm) and elevation (mm). */
+  placed: z.object({ m: z.array(z.number()).length(6), z: z.number() }).optional(),
   at: z.number(),
 });
 export type BridgeRef = z.infer<typeof BridgeRefSchema>;
@@ -63,6 +67,8 @@ export type BridgeRef = z.infer<typeof BridgeRefSchema>;
 export const BridgeBindingSchema = z.object({
   share: z.enum(BRIDGE_SHARES).optional(),
   owners: z.partialRecord(Facet, BridgeOwnerSchema).optional(),
+  /** Apps offered this element as an editable copy, with the facets each may change. */
+  offers: z.record(Key, z.array(Facet)).optional(),
   /** ArchAI's facets after the last sync: a different hash now means ArchAI changed it. */
   state: FacetHashes.default({}),
   /** Deleted in ArchAI (time): source syncs do not bring it back. */

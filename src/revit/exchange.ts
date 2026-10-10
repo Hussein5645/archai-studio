@@ -102,6 +102,8 @@ export const RevitMeshSchema = z.object({
   size: z.tuple([z.number().min(0), z.number().min(0), z.number().min(0)]),
   /** Binary glTF, base64; vertices in mm as (x, elevation, y) relative to `origin`. */
   glb: z.string().min(1),
+  /** Live Bridge: the ArchAI element this object is an editable copy of (it came from ArchAI). */
+  archai: z.string().max(64).optional(),
 });
 
 export const RevitExchangeSchema = z.object({

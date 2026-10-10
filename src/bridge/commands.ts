@@ -193,6 +193,33 @@ export const bridgeSetShare = defineMutation({
   },
 });
 
+export const bridgeOffer = defineMutation({
+  id: 'bridge-offer',
+  label: 'Offer as editable copy',
+  description: 'Offers elements to a connected app as editable copies, with the facets it may change (geometry, transform, material, metadata); an empty list makes them reference geometry again. The app creates them as its own objects and its edits come back to the same elements.',
+  group: 'document',
+  palette: false,
+  history: 'record',
+  input: z.object({ ids: z.array(IdSchema).min(1), key: z.string().min(1).max(300), facets: z.array(z.enum(BRIDGE_FACETS)) }),
+  run: (ctx, input) => {
+    const bridge = ensureBridge(ctx);
+    if (!bridge.sources[input.key]) throw new CommandError('rejected', 'That app is not linked to this project');
+    let count = 0;
+    for (const id of input.ids) {
+      if (!ctx.doc.elements[id]) continue;
+      const binding = (bridge.elements[id] ??= { state: {}, refs: {} });
+      const offers = { ...(binding.offers ?? {}) };
+      if (input.facets.length) offers[input.key] = [...new Set(input.facets)];
+      else delete offers[input.key];
+      if (Object.keys(offers).length) binding.offers = offers;
+      else delete binding.offers;
+      count += 1;
+    }
+    bridgeLog(ctx, input.key, input.facets.length ? `${count} elements offered as editable copies (${input.facets.join(', ')})` : `${count} elements back to reference geometry`);
+    return { offered: count };
+  },
+});
+
 export const bridgeForget = defineMutation({
   id: 'bridge-forget-source',
   label: 'Disconnect Live Bridge link',
@@ -214,4 +241,4 @@ export const bridgeForget = defineMutation({
   },
 });
 
-export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeHeld, bridgeSetSource, bridgeSetOwner, bridgeSetShare, bridgeForget];
+export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeHeld, bridgeSetSource, bridgeSetOwner, bridgeSetShare, bridgeOffer, bridgeForget];

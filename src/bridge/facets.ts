@@ -139,6 +139,21 @@ export function withFacetValue(element: Element, facet: BridgeFacet, value: Reco
   return next as unknown as Element;
 }
 
+/**
+ * Deep equality with a tolerance on numbers (half a millimetre by default): what an app sends
+ * back after applying ArchAI's change differs from ArchAI's own values by rounding only.
+ */
+export function nearlyEqual(a: unknown, b: unknown, tolerance = 0.5): boolean {
+  if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) <= tolerance;
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return a === b;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((value, i) => nearlyEqual(value, b[i], tolerance));
+  const ka = Object.keys(a as object).filter((k) => (a as Record<string, unknown>)[k] !== undefined);
+  const kb = Object.keys(b as object).filter((k) => (b as Record<string, unknown>)[k] !== undefined);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => nearlyEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], tolerance));
+}
+
 /** Replaces every string equal to a key of `ids` with its value (references to rebuilt elements). */
 export function rewriteIds<T>(value: T, ids: ReadonlyMap<string, string>): T {
   if (typeof value === 'string') return (ids.get(value) ?? value) as T;
