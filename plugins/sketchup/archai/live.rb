@@ -71,6 +71,9 @@ module ArchAI
       @link[:known] = (entry['known'] || []).map(&:to_s)
       @link[:have] = {}
       @link[:tokens] = {}
+      # ArchAI elements reset here (another app's geometry edited in SketchUp): asked again.
+      @link[:resend] = []
+      @link[:received] = {}
       @observer = Observer.new
       model.add_observer(@observer)
       @timer = UI.start_timer(0.5, true) { tick }
@@ -94,6 +97,16 @@ module ArchAI
     def self.changed
       return unless running?
       now = Time.now.to_f
+      unless now < @link[:quiet_until]
+        # Another app's geometry edited here: ArchAI's version is put back.
+        received = ArchAI.live_fingerprints(@link[:model])
+        touched = (@link[:received].keys | received.keys).reject { |id| @link[:received][id] == received[id] }
+        unless touched.empty?
+          @link[:resend] = (@link[:resend] | touched)
+          @link[:received] = received
+          @link[:next_poll] = now
+        end
+      end
       @link[:push_at] = now < @link[:quiet_until] ? @link[:quiet_until] + DEBOUNCE : now + DEBOUNCE
     end
 
@@ -240,10 +253,12 @@ module ArchAI
       end
       revision = info['revision'].to_i
       @link[:last_seen] = revision
-      return if revision == @link[:last_pulled]
+      reset_ids = bridge ? @link[:resend].first(500) : []
+      return if revision == @link[:last_pulled] && reset_ids.empty?
       fresh = bridge && @link[:have].empty?
       path = "/live/pull?key=#{URI.encode_www_form_component(@link[:key])}"
       path += "&protocol=2&project=#{URI.encode_www_form_component(@link[:project]['id'])}#{fresh ? '&fresh=1' : ''}" if bridge
+      path += "&resend=#{URI.encode_www_form_component(reset_ids.join(','))}" unless reset_ids.empty?
       result = request(Net::HTTP::Get, path)
       return if result.code == '204'
       raise error_of(result) unless result.is_a?(Net::HTTPSuccess)
@@ -253,6 +268,9 @@ module ArchAI
         objects, extras = Core.read_bridge_glb(result.body)
         present = (extras['present'] || []).map(&:to_s)
         removed = @link[:have].keys - present
+        @link[:resend] -= reset_ids
+        # Reset objects ArchAI no longer has (or no longer shares): removed here.
+        removed |= (reset_ids - present)
         updates = (extras['updates'] || []).reject { |u| @link[:tokens][u['token']] }
         model = @link[:model]
         unless objects.empty? && removed.empty? && updates.empty? && !fresh
@@ -264,6 +282,7 @@ module ArchAI
           end
           status("Updated from #{project} #{Time.now.strftime('%H:%M:%S')}")
         end
+        @link[:received] = ArchAI.live_fingerprints(model)
         @link[:have] = {} if fresh
         removed.each { |id| @link[:have].delete(id) }
         objects.each { |o| @link[:have][o.archai['id'].to_s] = o.archai['hash'].to_s if o.archai['id'] }

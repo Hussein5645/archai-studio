@@ -41,8 +41,31 @@ internal sealed class ArchaiExporter
     /// <summary>Progress of <see cref="Export"/> (Send to ArchAI shows it).</summary>
     public ProgressReport? Progress { get; set; }
 
+    /// <summary>
+    /// Live Bridge: every element as a generic mesh (no walls, slabs or levels rebuilt as ArchAI
+    /// elements), so the same triangles reach ArchAI and every linked app.
+    /// </summary>
+    public bool MeshesOnly { get; set; }
+
+    /// <summary>Only these elements (a sync of what changed); null: the whole model.</summary>
+    public ICollection<long>? Only { get; set; }
+
     public JObject Export()
     {
+        if (MeshesOnly)
+        {
+            var only = ExportMeshes();
+            return new JObject
+            {
+                ["archaiRevit"] = 1,
+                ["name"] = string.IsNullOrWhiteSpace(doc.Title) ? "Revit model" : System.IO.Path.GetFileNameWithoutExtension(doc.Title),
+                ["source"] = doc.PathName ?? "",
+                ["revitVersion"] = doc.Application.VersionNumber,
+                ["materials"] = new JArray(),
+                ["levels"] = new JArray(),
+                ["meshes"] = only,
+            };
+        }
         Progress?.Invoke("Reading levels", 0.02);
         var levels = ExportLevels();
         Progress?.Invoke("Reading walls", 0.06);
@@ -550,8 +573,10 @@ internal sealed class ArchaiExporter
     private JArray ExportMeshes()
     {
         var list = new JArray();
-        var candidates = new FilteredElementCollector(doc).WhereElementIsNotElementType().WhereElementIsViewIndependent();
-        var total = candidates.GetElementCount();
+        IEnumerable<Element> candidates = Only != null
+            ? Only.Select(id => doc.GetElement(new ElementId(id))).Where(e => e != null && !(e is ElementType) && e.ViewSpecific == false)!
+            : new FilteredElementCollector(doc).WhereElementIsNotElementType().WhereElementIsViewIndependent();
+        var total = Only?.Count ?? ((FilteredElementCollector)candidates).GetElementCount();
         var index = 0;
         var meshProgress = Progress.Range(0.5, 0.97);
         foreach (var element in candidates)

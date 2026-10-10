@@ -310,6 +310,23 @@ def _tag(actor, prefix):
     return None
 
 
+def live_fingerprints():
+    """Each received ArchAI element's actors (transform): edits to them are noticed and reset."""
+    prints = {}
+    for actor in _actors.get_all_level_actors():
+        archai_id = _tag(actor, "archai:") if is_live(actor) else None
+        if not archai_id:
+            continue
+        t = actor.get_actor_transform()
+        prints.setdefault(archai_id, []).append((str(t.translation), str(t.rotation), str(t.scale3d)))
+    return {k: tuple(sorted(v)) for k, v in prints.items()}
+
+
+def touched(before, now):
+    """ArchAI elements whose received actors were moved, scaled, copied or deleted."""
+    return [k for k in set(before) | set(now) if before.get(k) != now.get(k)]
+
+
 def all_ids():
     """Names of every static mesh actor that could be sent (hidden ones too), not what ArchAI sent."""
     return [actor.get_name()[:64] for actor in _actors.get_all_level_actors()

@@ -60,13 +60,14 @@ def report():
             "collections": [c.name for c in obj.users_collection],
         })
     with open(status_file + ".tmp", "w", encoding="utf-8") as f:
-        json.dump({"role": role, "objects": objects, "status": link.last_status, "statuses": statuses[-5:], "time": time.time()}, f)
+        json.dump({"role": role, "objects": objects, "status": link.last_status, "statuses": statuses[-5:], "moved": moved, "time": time.time()}, f)
     try:
         os.replace(status_file + ".tmp", status_file)
     except PermissionError:
         pass  # the driver is reading it (Windows); the next report replaces it
 
 
+moved = []
 done = set()
 deadline = time.time() + 600
 while time.time() < deadline:
@@ -106,6 +107,18 @@ while time.time() < deadline:
         elif step == "rename" and obj:
             obj.name = "Wall A renamed"
             link.changed()
+        elif step == "touch-live":
+            # The user moves another app's geometry: the add-on asks ArchAI for it again.
+            received = next((o for o in bpy.context.scene.objects if archai.is_live(o) and o.get("archai_id")), None)
+            if received:
+                received.location.x += 5.0
+                moved.append(round(received.location.x, 3))
+                link.reset([received["archai_id"]])
+        elif step == "delete-live":
+            received = next((o for o in bpy.context.scene.objects if archai.is_live(o) and o.get("archai_id")), None)
+            if received:
+                bpy.data.objects.remove(received, do_unlink=True)
+                link.reset(archai._live_ids_touched(bpy.context.scene))
         elif step == "push":
             link.changed()
         elif step == "stop":

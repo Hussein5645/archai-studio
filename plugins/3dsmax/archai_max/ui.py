@@ -84,6 +84,7 @@ def toggle_live(status=None):
     def do_apply(delta):
         scene.apply_delta(delta)
         _live["signature"] = scene.signature()
+        _live["received"] = scene.live_fingerprints()
 
     link = core.LiveLink(scene.document_key().replace("3dsmax|", "3dsmax:"), "3ds Max", scene.document_name(), scene.live_exchange, do_import, _main.call.emit, _main.status.emit,
                          progress=gate.report, finished=gate.finished, apply=do_apply, all_ids=scene.all_ids)
@@ -93,6 +94,12 @@ def toggle_live(status=None):
     def poll():
         if _live["link"] is None or link.quiet():
             return
+        # Another app's geometry edited here: ArchAI's version is put back.
+        received = scene.live_fingerprints()
+        reset = scene.touched(_live.get("received") or {}, received)
+        if reset:
+            _live["received"] = received
+            link.reset(reset)
         current = scene.signature()
         if current != _live["signature"]:
             _live["signature"] = current

@@ -23,6 +23,12 @@ def _live_tick(delta):
     if _live["since"] < 1.5 or link.quiet():
         return
     _live["since"] = 0.0
+    # Another app's geometry edited here: ArchAI's version is put back.
+    received = scene.live_fingerprints()
+    reset = scene.touched(_live.get("received") or {}, received)
+    if reset:
+        _live["received"] = received
+        link.reset(reset)
     current = scene.signature()
     if current != _live["signature"]:
         _live["signature"] = current
@@ -54,6 +60,7 @@ def toggle_live():
     def do_apply(delta):
         scene.apply_delta(delta)
         _live["signature"] = scene.signature()
+        _live["received"] = scene.live_fingerprints()
 
     link = core.LiveLink(scene.document_key().replace("unreal|", "unreal:"), "Unreal", scene.level_name(), scene.live_exchange, do_import, _live["queue"].append, status,
                          progress=gate.report, finished=gate.finished, apply=do_apply, all_ids=scene.all_ids)

@@ -204,6 +204,24 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
     }
   }
   const hashes = itemHashes(input.model);
+  // The same object sent in another collection than before (Revit's walls, doors and slabs now
+  // come as meshes): its link follows, the element is updated in place (its kind can change).
+  {
+    const byId = new Map<string, string>();
+    for (const item of bound.keys()) byId.set(item.slice(item.indexOf('/') + 1), item);
+    for (const item of hashes.keys()) {
+      if (bound.has(item)) continue;
+      const id = item.slice(item.indexOf('/') + 1);
+      const previous = byId.get(id);
+      if (!previous || hashes.has(previous)) continue;
+      const moved = bound.get(previous)!;
+      bound.delete(previous);
+      bound.set(item, moved);
+      const ref = bridge.elements[moved]!.refs[key]!;
+      ref.kind = item.slice(0, item.indexOf('/'));
+      ref.item = undefined;
+    }
+  }
   /** Items whose bound element is rebuilt aside: `collection/id` → bound element. */
   const changed = new Map<string, string>();
   // Objects released into ArchAI elements (Convert to ArchAI element): ArchAI's now, not added again.

@@ -112,7 +112,22 @@ internal sealed class Live : IDisposable
 
     private void Changed(object? sender, EventArgs e)
     {
-        if (!link.Importing) link.ModelChanged();
+        if (link.Importing) return;
+        // Another app's geometry (a block on an ArchAI Live layer) moved, edited or erased here:
+        // ArchAI's version is put back.
+        if (e is ObjectEventArgs change && change.DBObject is Entity entity)
+        {
+            try
+            {
+                if (entity.Layer.StartsWith(LayerPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (BridgeTags.Read(entity).Id is { Length: > 0 } archaiId) link.Reset(new[] { archaiId });
+                    return;
+                }
+            }
+            catch (System.Exception) { /* an erased object may not answer: treat it as a change */ }
+        }
+        link.ModelChanged();
     }
 
     private void Closing(object? sender, DocumentBeginCloseEventArgs e) => Dispose();

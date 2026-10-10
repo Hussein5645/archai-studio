@@ -920,6 +920,9 @@ class LiveLink(object):
         # What ArchAI sent: element id -> hash; update tokens already applied.
         self._have = {}
         self._tokens = set()
+        # ArchAI elements the host reset (edited there though they are another app's): asked again.
+        self._resend = set()
+        self.paused = False
         self.key = key[:300]
         self.app = app
         self.name = name
@@ -964,6 +967,31 @@ class LiveLink(object):
         except Exception:
             pass
         self._report("Off")
+
+    def pause(self):
+        """Stops syncing for a while; resume() sends what changed meanwhile."""
+        if self.running and not self.paused:
+            self.paused = True
+            self._report("Paused: changes stay here until you resume")
+
+    def resume(self):
+        import time
+        if not self.paused:
+            return
+        self.paused = False
+        with self._lock:
+            self._push_at = time.time()
+        self._report("Resuming...")
+        self._wake.set()
+
+    def reset(self, archai_ids):
+        """The host's user edited objects ArchAI sent (another app's geometry, reference only
+        here): they are put back as ArchAI has them on the next round."""
+        if not self.running:
+            return
+        with self._lock:
+            self._resend.update(i for i in archai_ids if i)
+        self._wake.set()
 
     def quiet(self):
         """True for a moment after an import: host change events are ArchAI's model arriving."""
@@ -1173,6 +1201,9 @@ class LiveLink(object):
         elif bridge:
             # An older ArchAI: the Live Bridge as before.
             bridge = False
+        if self.paused:
+            # Still seen by ArchAI, but nothing is sent or received.
+            return
         up_to_date = self._last_seen == self._last_pulled and self._last_pulled >= 0
         if push:
             with self._lock:
@@ -1231,13 +1262,17 @@ class LiveLink(object):
             return
         revision = status.get("revision", 0)
         self._last_seen = revision
-        if revision == self._last_pulled:
+        with self._lock:
+            reset_ids = sorted(self._resend)[:500]
+        if revision == self._last_pulled and not (bridge and reset_ids):
             return
         self._phase("ArchAI is preparing its model", None)
         path = "/live/pull?key=" + urllib.request.quote(self.key)
         fresh = bridge and not self._have
         if bridge:
             path += "&protocol=2&project=%s%s" % (urllib.request.quote(self.project["id"], safe=""), "&fresh=1" if fresh else "")
+            if reset_ids:
+                path += "&resend=" + urllib.request.quote(",".join(reset_ids), safe="")
         code, headers, data = self._pull(path)
         if code == 204 or not data:
             return
@@ -1248,6 +1283,10 @@ class LiveLink(object):
             objects, extras = read_bridge_glb(data)
             present = set(extras.get("present") or [])
             removed = [i for i in self._have if i not in present]
+            with self._lock:
+                self._resend.difference_update(reset_ids)
+            # Reset objects ArchAI no longer has (or no longer shares): removed here.
+            removed += [i for i in reset_ids if i not in present and i not in removed]
             updates = [u for u in extras.get("updates") or [] if isinstance(u, dict) and u.get("token") not in self._tokens]
             delta = BridgeDelta(name, objects, removed, updates, fresh)
             if not delta.empty:

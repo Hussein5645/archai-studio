@@ -58,7 +58,12 @@ for (const role of ['A', 'B']) {
 
 const blenderState = (role) => {
   const file = join(work, `status-${role}.json`);
-  return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+  // An agent may be writing it right now (Windows locks the file): the next look reads it.
+  try {
+    return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+  } catch {
+    return null;
+  }
 };
 const archaiState = () =>
   page.evaluate(() => {
@@ -122,6 +127,18 @@ try {
     return liveIn('B').length === 1 && cube && Math.abs(cube.center[0] - 3) < 0.01;
   });
   check('B\'s view of the cube moved, still one object', liveIn('B').length === 1, JSON.stringify(liveIn('B')[0]?.center));
+
+  // 2b. Another app's geometry edited in B is put back as ArchAI has it (moved, then deleted).
+  send('B', 'touch-live');
+  // (the reset can be faster than this script looks: wait, then check the cube is where ArchAI has it)
+  await new Promise((r) => setTimeout(r, 1500));
+  await waitFor('the moved cube is put back', () => liveIn('B').length === 1 && Math.abs(liveIn('B')[0].center[0] - 3) < 0.01);
+  check('B really moved it first', (blenderState('B')?.moved ?? [])[0] === 5, JSON.stringify(blenderState('B')?.moved));
+  check("moving another app's geometry is reset", liveIn('B').length === 1 && Math.abs(liveIn('B')[0].center[0] - 3) < 0.01, JSON.stringify(liveIn('B')[0]?.center));
+  send('B', 'delete-live');
+  await new Promise((r) => setTimeout(r, 400));
+  await waitFor('the deleted cube comes back', () => liveIn('B').length === 1 && liveIn('B')[0].archai_id === wallId);
+  check("deleting another app's geometry is reset", liveIn('B').length === 1 && liveIn('B')[0].archai_id === wallId);
 
   // 3. ArchAI moves A's cube with the transform shared: A's own cube moves in Blender.
   await page.evaluate(([key, id]) => {

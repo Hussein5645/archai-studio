@@ -101,6 +101,8 @@ public sealed class LiveLink : IDisposable
     public string Name { get; set; }
     public bool Running { get; private set; }
     public bool Importing { get; private set; }
+    /// <summary>Paused by the user: nothing is sent or received until <see cref="Resume"/> (edits made meanwhile go then).</summary>
+    public bool Paused { get; private set; }
     public string LastStatus { get; private set; } = "";
     /// <summary>The ArchAI project this model is bound to (Live Bridge), or null.</summary>
     public (string Id, string Name)? Project { get; private set; }
@@ -119,6 +121,8 @@ public sealed class LiveLink : IDisposable
     private HashSet<string> known = new HashSet<string>();
     private Dictionary<string, string> have = new Dictionary<string, string>();
     private readonly HashSet<string> tokens = new HashSet<string>();
+    /// <summary>ArchAI elements the host reset (edited there though they are another app's): asked again.</summary>
+    private readonly HashSet<string> resend = new HashSet<string>();
 
     public LiveLink(string key, string app, string name)
     {
@@ -156,6 +160,34 @@ public sealed class LiveLink : IDisposable
         debounce = null;
         _ = Post("/live/stop", new JObject { ["key"] = Key });
         Report("Live Bridge is off");
+    }
+
+    /// <summary>Stops syncing for a while (the host keeps working undisturbed); <see cref="Resume"/> sends what changed meanwhile.</summary>
+    public void Pause()
+    {
+        if (!Running || Paused) return;
+        Paused = true;
+        Report("Paused: changes stay here until you resume");
+    }
+
+    public void Resume()
+    {
+        if (!Paused) return;
+        Paused = false;
+        pushPending = true;
+        Report("Resuming…");
+        poll?.Change(TimeSpan.Zero, PollEvery);
+    }
+
+    /// <summary>
+    /// The host's user edited objects ArchAI sent (another app's geometry, reference only here): they
+    /// are put back as ArchAI has them on the next round. Ids are ArchAI element ids.
+    /// </summary>
+    public void Reset(IEnumerable<string> archaiIds)
+    {
+        if (!Running) return;
+        lock (resend) foreach (var id in archaiIds) if (!string.IsNullOrEmpty(id)) resend.Add(id);
+        poll?.Change(TimeSpan.FromMilliseconds(300), PollEvery);
     }
 
     /// <summary>The host's model changed: send it after a short pause.</summary>
@@ -272,6 +304,8 @@ public sealed class LiveLink : IDisposable
                 // First connection: linked to the project ArchAI shows.
                 if (Project == null || Project.Value.Id != status.ProjectId) await BindAsync(status.ProjectId).ConfigureAwait(false);
             }
+            // Paused: still seen by ArchAI (its panel shows the link), but nothing is sent or received.
+            if (Paused) return;
             var upToDate = lastSeen == lastPulled && lastPulled >= 0;
             if (pushPending)
             {
@@ -331,12 +365,14 @@ public sealed class LiveLink : IDisposable
                 return;
             }
             lastSeen = status.Revision;
-            // Changed by someone else since the last pull (our own pushes move lastPulled along).
-            if (status.Revision == lastPulled) return;
+            string[] resetIds;
+            lock (resend) resetIds = resend.Take(500).ToArray();
+            // Changed by someone else since the last pull (our own pushes move lastPulled along), or reset here.
+            if (status.Revision == lastPulled && (resetIds.Length == 0 || !bridge)) return;
             SyncProgress?.Invoke("ArchAI is preparing its model", null);
             var fresh = bridge && have.Count == 0;
             var path = "/live/pull?key=" + Uri.EscapeDataString(Key);
-            if (bridge) path += "&protocol=2&project=" + Uri.EscapeDataString(Project?.Id ?? "") + (fresh ? "&fresh=1" : "");
+            if (bridge) path += "&protocol=2&project=" + Uri.EscapeDataString(Project?.Id ?? "") + (fresh ? "&fresh=1" : "") + (resetIds.Length > 0 ? "&resend=" + Uri.EscapeDataString(string.Join(",", resetIds)) : "");
             using var response = await http.GetAsync(baseUrl + path, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
             if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return;
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await ErrorOf(response).ConfigureAwait(false));
@@ -349,6 +385,8 @@ public sealed class LiveLink : IDisposable
                 var present = new HashSet<string>((extras["present"] as JArray ?? new JArray()).Select(i => (string?)i ?? ""));
                 var delta = new BridgeDelta { Name = name, Fresh = fresh };
                 delta.Nodes.AddRange(objects);
+                // Reset objects that ArchAI no longer has (or no longer shares): removed here.
+                lock (resend) foreach (var id in resetIds) { resend.Remove(id); if (!present.Contains(id)) delta.Removed.Add(id); }
                 delta.Removed.AddRange(have.Keys.Where(id => !present.Contains(id)));
                 foreach (var u in extras["updates"] as JArray ?? new JArray())
                 {

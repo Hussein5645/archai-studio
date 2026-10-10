@@ -321,6 +321,26 @@ def _prop(node, name):
         return None
 
 
+def live_fingerprints():
+    """Each received ArchAI element's nodes (transform, faces): edits to them are noticed and reset."""
+    prints = {}
+    for node in rt.objects:
+        archai_id = _prop(node, "archai_id") if is_live(node) else None
+        if not archai_id:
+            continue
+        try:
+            value = (str(node.transform), int(rt.getPolygonCount(node)[0]))
+        except Exception:  # noqa: BLE001
+            value = (str(node.name),)
+        prints.setdefault(archai_id, []).append(value)
+    return {k: tuple(sorted(v)) for k, v in prints.items()}
+
+
+def touched(before, now):
+    """ArchAI elements whose received nodes were moved, edited, copied or deleted."""
+    return [k for k in set(before) | set(now) if before.get(k) != now.get(k)]
+
+
 def all_ids():
     """Handles of every geometry node that could be sent (hidden ones too), not what ArchAI sent."""
     return [str(node.handle) for node in rt.geometry if not is_live(node)]

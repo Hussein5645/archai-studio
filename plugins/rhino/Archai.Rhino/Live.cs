@@ -120,7 +120,13 @@ internal sealed class Live : IDisposable
 
     private void Changed(RhinoDoc? doc, RhinoObject? obj)
     {
-        if (doc != Doc || link.Importing || (obj != null && RhinoScene.IsLive(obj.Attributes))) return;
+        if (doc != Doc || link.Importing) return;
+        if (obj != null && RhinoScene.IsLive(obj.Attributes))
+        {
+            // Another app's geometry moved, edited, copied or deleted here: ArchAI's version is put back.
+            if (obj.Attributes.GetUserString("archai.id") is { Length: > 0 } archaiId) link.Reset(new[] { archaiId });
+            return;
+        }
         link.ModelChanged();
     }
 

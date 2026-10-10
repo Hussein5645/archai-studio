@@ -570,6 +570,7 @@ def _live_apply(delta):
             obj.matrix_world = matrix
         if update.get("name"):
             obj.name = update["name"]
+    _remember_received()
 
 
 def replace_mesh(obj, item, mm):
@@ -601,13 +602,43 @@ def _depsgraph_changed(scene, depsgraph):
     link = _live["link"]
     if link is None or link.quiet():
         return
+    reset, changed, structure = set(), False, False
     for update in depsgraph.updates:
         target = update.id
         if isinstance(target, bpy.types.Object) and is_live(target.original):
+            # Another app's geometry edited here: ArchAI's version is put back.
+            if (update.is_updated_geometry or update.is_updated_transform) and target.original.get("archai_id"):
+                reset.add(target.original["archai_id"])
             continue
+        if isinstance(target, (bpy.types.Collection, bpy.types.Scene)):
+            structure = True
         if isinstance(target, (bpy.types.Object, bpy.types.Mesh, bpy.types.Material, bpy.types.Collection)) and (update.is_updated_geometry or update.is_updated_transform or isinstance(target, bpy.types.Collection)):
-            link.changed()
-            return
+            changed = True
+    if structure:
+        # Received objects deleted (or duplicated) here are put back too.
+        reset.update(_live_ids_touched(scene))
+    if reset:
+        link.reset(reset)
+    if changed:
+        link.changed()
+
+
+def _live_ids_touched(scene):
+    """ArchAI elements whose received objects were deleted or duplicated since the last pull."""
+    expected = _live.get("received") or {}
+    counts = {}
+    for obj in scene.objects:
+        if is_live(obj) and obj.get("archai_id"):
+            counts[obj["archai_id"]] = counts.get(obj["archai_id"], 0) + 1
+    return [i for i, n in expected.items() if counts.get(i, 0) != n] + [i for i in counts if i not in expected]
+
+
+def _remember_received():
+    counts = {}
+    for obj in bpy.context.scene.objects:
+        if is_live(obj) and obj.get("archai_id"):
+            counts[obj["archai_id"]] = counts.get(obj["archai_id"], 0) + 1
+    _live["received"] = counts
 
 
 @bpy.app.handlers.persistent

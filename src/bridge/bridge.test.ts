@@ -430,3 +430,17 @@ describe('Live Bridge on online projects', () => {
     expect(pullPlan(theirs, 'rhino:facade', null).nodes.size).toBe(1);
   });
 });
+
+describe('Live Bridge generic meshes', () => {
+  it('turns an element an app used to send as a wall into the mesh it now sends, in place', () => {
+    const app = createTestApp();
+    sync(app, 'revit:tower', model({ app: 'Revit', walls: [wall('e101')] }));
+    const id = bound(app, 'revit:tower', 'e101')!.id;
+    expect(doc(app).elements[id]!.kind).toBe('line');
+    const report = sync(app, 'revit:tower', model({ app: 'Revit', meshes: [mesh('e101', 0, 'Basic Wall')] }), { complete: false });
+    expect(report).toMatchObject({ created: 0, updated: 1 });
+    expect(doc(app).elements[id]).toMatchObject({ kind: 'rect', name: 'Basic Wall' });
+    expect(bridge(app).elements[id]!.refs['revit:tower']!.kind).toBe('meshes');
+    expect(real(app)).toHaveLength(1);
+  });
+});

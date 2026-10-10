@@ -70,6 +70,32 @@ public sealed class LinkProjectCommand : IExternalCommand
     }
 }
 
+/// <summary>Pause / resume the Live Bridge: work in Revit undisturbed; resuming sends what changed meanwhile.</summary>
+[Transaction(TransactionMode.Manual)]
+public sealed class PauseCommand : IExternalCommand
+{
+    public Result Execute(ExternalCommandData data, ref string message, ElementSet elements)
+    {
+        var live = Live.Current;
+        if (live == null)
+        {
+            ArchaiDialog.Show("Live Bridge", "The Live Bridge is off. Turn it on with Live Bridge first.");
+            return Result.Cancelled;
+        }
+        if (live.Link.Paused)
+        {
+            live.Link.Resume();
+            ArchaiDialog.Show("Live Bridge", "The Live Bridge is syncing again. What you changed meanwhile is sent now.");
+        }
+        else
+        {
+            live.Link.Pause();
+            ArchaiDialog.Show("Live Bridge", "The Live Bridge is paused: work in Revit undisturbed. Click Pause again to resume; your changes are sent then.");
+        }
+        return Result.Succeeded;
+    }
+}
+
 internal sealed class Live : IDisposable, IExternalEventHandler
 {
     public const string ApplicationId = "ArchAI Live";
@@ -88,6 +114,12 @@ internal sealed class Live : IDisposable, IExternalEventHandler
     private readonly ExternalEvent wake;
     private readonly ConcurrentQueue<Action> queue = new ConcurrentQueue<Action>();
     private readonly Dictionary<string, ElementId> materials = new Dictionary<string, ElementId>();
+    /// <summary>ArchAI Live shapes in this model: element id → ArchAI element (edits to them are reset).</summary>
+    private readonly Dictionary<long, string> liveShapes = new Dictionary<long, string>();
+    /// <summary>Elements added or changed since the last sync.</summary>
+    private readonly HashSet<long> changed = new HashSet<long>();
+    private bool wholeModelSent;
+    private bool firstSyncDone;
 
     public Live(UIApplication ui, Document doc)
     {
@@ -98,15 +130,20 @@ internal sealed class Live : IDisposable, IExternalEventHandler
         link = new LiveLink("revit:" + (string.IsNullOrEmpty(doc.PathName) ? doc.Title : doc.PathName), "Revit", name)
         {
             OnHost = action => { queue.Enqueue(action); wake.Raise(); },
-            Export = () => new ArchaiExporter(doc).Export(),
+            // Generic meshes, and after the first sync only what changed (fast, so Revit is not held up).
+            Export = ExportChanges,
             Import = Replace,
             // Live Bridge: element by element, and every element id (hiding deletes nothing in ArchAI).
             Apply = ApplyDelta,
             AllIds = () => new FilteredElementCollector(doc).WhereElementIsNotElementType().ToElementIds().Select(id => "e" + id.Value).ToList(),
         };
-        // Slow syncs (a first sync, a big model) show a progress window; quick ones do not.
-        link.SyncProgress = progress.Report;
-        link.SyncFinished = progress.Finished;
+        // Only the first sync (the whole model) shows a progress window; later syncs are quiet.
+        link.SyncProgress = (text, fraction) => { if (!firstSyncDone) progress.Report(text, fraction); };
+        link.SyncFinished = () =>
+        {
+            progress.Finished();
+            if (link.LastStatus.StartsWith("Updated") || link.LastStatus.StartsWith("Sent")) firstSyncDone = true;
+        };
         ui.Application.DocumentChanged += Changed;
         ui.Application.DocumentClosing += Closing;
         link.Start();
@@ -127,7 +164,36 @@ internal sealed class Live : IDisposable, IExternalEventHandler
     {
         if (link.Importing || !e.GetDocument().Equals(Doc)) return;
         if (e.GetTransactionNames().Any(n => n == "ArchAI Live Bridge")) return;
-        link.ModelChanged();
+        // Another app's geometry (ArchAI Live shapes) edited or deleted here: put back as ArchAI has it.
+        var reset = new List<string>();
+        foreach (var id in e.GetModifiedElementIds().Concat(e.GetDeletedElementIds()))
+        {
+            if (liveShapes.TryGetValue(id.Value, out var archaiId)) reset.Add(archaiId);
+        }
+        if (reset.Count > 0) link.Reset(reset);
+        lock (changed)
+        {
+            foreach (var id in e.GetAddedElementIds().Concat(e.GetModifiedElementIds()))
+                if (!liveShapes.ContainsKey(id.Value)) changed.Add(id.Value);
+        }
+        if (reset.Count == 0 || changed.Count > 0) link.ModelChanged();
+    }
+
+    /// <summary>The model as generic meshes: everything on the first sync, then only what changed.</summary>
+    private Newtonsoft.Json.Linq.JObject ExportChanges()
+    {
+        List<long>? only = null;
+        if (wholeModelSent)
+        {
+            lock (changed)
+            {
+                only = changed.ToList();
+                changed.Clear();
+            }
+        }
+        var exchange = new ArchaiExporter(Doc) { MeshesOnly = true, Only = only }.Export();
+        wholeModelSent = true;
+        return exchange;
     }
 
     private void Closing(object? sender, DocumentClosingEventArgs e)
@@ -188,6 +254,7 @@ internal sealed class Live : IDisposable, IExternalEventHandler
         shape.ApplicationDataId = item.ArchaiId.Length > 0 ? item.ArchaiId : item.Type;
         shape.SetShape(geometry);
         shape.Name = Clean("ArchAI " + item.Name);
+        if (applicationId == ApplicationId && item.ArchaiId.Length > 0) liveShapes[shape.Id.Value] = item.ArchaiId;
         return shape;
     }
 
@@ -203,12 +270,15 @@ internal sealed class Live : IDisposable, IExternalEventHandler
         t.Start();
         var shapes = new FilteredElementCollector(Doc).OfClass(typeof(DirectShape)).Cast<DirectShape>().ToList();
         if (delta.Fresh) Doc.Delete(shapes.Where(IsLive).Select(s => s.Id).ToList());
+        if (delta.Fresh) liveShapes.Clear();
         var live = shapes.Where(s => IsLive(s) && !delta.Fresh).GroupBy(s => s.ApplicationDataId ?? "").ToDictionary(g => g.Key, g => g.Select(s => s.Id).ToList());
+        foreach (var shape in shapes.Where(s => IsLive(s) && !delta.Fresh && !string.IsNullOrEmpty(s.ApplicationDataId))) liveShapes[shape.Id.Value] = shape.ApplicationDataId;
         var copies = shapes.Where(s => s.ApplicationId == CopyApplicationId).GroupBy(s => s.ApplicationDataId ?? "").ToDictionary(g => g.Key, g => g.First());
         void Remove(string archaiId)
         {
             if (!live.TryGetValue(archaiId, out var ids)) return;
-            Doc.Delete(ids);
+            foreach (var id in ids) liveShapes.Remove(id.Value);
+            Doc.Delete(ids.Where(id => Doc.GetElement(id) != null).ToList());
             live.Remove(archaiId);
         }
         foreach (var removed in delta.Removed) Remove(removed);

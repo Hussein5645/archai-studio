@@ -276,6 +276,9 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
         if ((Number(payload['protocol']) || 1) >= 2) {
           // Live Bridge: only what changed since this app's last pull, plus updates for its own objects.
           const fresh = payload['fresh'] === true || payload['fresh'] === '1';
+          // Elements the app reset (someone edited ArchAI's version there): sent again.
+          const resend = typeof payload['resend'] === 'string' ? payload['resend'].split(',').filter(Boolean).slice(0, 500) : [];
+          for (const id of resend) sentTo.get(key)?.delete(id);
           const plan = pullPlan(state.doc, key, fresh ? null : (sentTo.get(key) ?? null));
           const document = { id: state.doc.id, name: state.doc.meta.name || 'Untitled' };
           glb = new Uint8Array(

@@ -288,6 +288,20 @@ module ArchAI
     raise
   end
 
+  # Each received ArchAI element's group (transformation, entity count): edits to them are noticed
+  # and reset.
+  def self.live_fingerprints(model)
+    root = model.entities.to_a.find { |e| live?(e) && e.is_a?(Sketchup::Group) }
+    prints = {}
+    return prints unless root && root.valid?
+    root.entities.to_a.each do |g|
+      id = g.respond_to?(:get_attribute) ? g.get_attribute('ArchAI', 'id') : nil
+      next unless id
+      (prints[id] ||= []) << [g.transformation.to_a.map { |v| v.round(6) }, g.respond_to?(:entities) ? g.entities.length : 0]
+    end
+    prints.transform_values(&:sort)
+  end
+
   # Removes the ArchAI Live group inside an operation already started.
   def self.clear_live_now(model)
     live = model.entities.to_a.select { |entity| live?(entity) }

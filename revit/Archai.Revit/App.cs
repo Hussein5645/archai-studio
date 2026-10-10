@@ -41,6 +41,9 @@ public sealed class App : IExternalApplication
         live.AddItem(Button("ArchaiLive", "Live\nBridge", typeof(LiveCommand), "sync",
             "Sync this model with the project open in the ArchAI desktop app as you work. Click again to stop.",
             "Your changes go to ArchAI a moment after you make them (as Send to ArchAI writes them), and ArchAI's model comes back as ArchAI Live generic models, replaced on every update and never sent back."));
+        live.AddItem(Button("ArchaiPause", "Pause /\nresume", typeof(PauseCommand), "sync",
+            "Pause the Live Bridge to work in Revit undisturbed; click again to resume.",
+            "While paused nothing is sent or received. Resuming sends everything you changed meanwhile."));
         live.AddItem(Button("ArchaiLinkProject", "Link to\nproject", typeof(LinkProjectCommand), "sync",
             "Choose the ArchAI project this model syncs with: ArchAI shows its projects.",
             "The link is remembered on this computer; until you change it, the Live Bridge only syncs this model with that project."));

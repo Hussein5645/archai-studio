@@ -14,8 +14,10 @@
  *   POST /live/bind           { key, app, name, project | newName | choose: true }  → { document,
  *                              revision } or { cancelled }: links the model to that project
  *                              (opened), a new one, or the one the user picks in ArchAI
- *   GET  /live/pull?key=K     ArchAI's model as binary glTF (X-ArchAI-Revision header), without
- *                              the elements that came from that plugin
+ *   GET  /live/pull?key=K[&protocol=2&project=P&fresh=1&resend=id,id]
+ *                              ArchAI's model as binary glTF (X-ArchAI-Revision header), without
+ *                              the elements that came from that plugin; resend: elements the plugin
+ *                              reset (edited there though they are another app's), sent again
  *   POST /live/stop           { key }   the plugin turned its link off
  *   GET  /live/account?app=A&prompt=1   { signedIn, token?, user? }  the ArchAI account, for the
  *                              plugins' cloud features (Open in VR); prompt=1 brings ArchAI to the
@@ -136,7 +138,7 @@ export function startLiveLink(board: () => BrowserWindow | null, version: string
         return send(response, 200, result);
       }
       if (request.method === 'GET' && url.pathname === '/live/pull') {
-        const result = (await ask(board(), 'pull', { key, protocol: Number(url.searchParams.get('protocol')) || 1, fresh: url.searchParams.get('fresh') === '1' })) as { glb: Uint8Array; revision: number; name: string } | null;
+        const result = (await ask(board(), 'pull', { key, protocol: Number(url.searchParams.get('protocol')) || 1, fresh: url.searchParams.get('fresh') === '1', resend: (url.searchParams.get('resend') ?? '').slice(0, 40_000) })) as { glb: Uint8Array; revision: number; name: string } | null;
         if (!result) return send(response, 204, {});
         const bytes = Buffer.from(result.glb.buffer, result.glb.byteOffset, result.glb.byteLength);
         response.writeHead(200, {
