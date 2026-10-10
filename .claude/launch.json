@@ -50,7 +50,7 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": [
         "/c",
-        "set VITE_CLOUD_URL=/__cloud&& set ARCHAI_LOCAL_CLOUD=http://127.0.0.1:8787&& npx vite --port 5175 --strictPort"
+        "set VITE_CLOUD_URL=/__cloud&& set ARCHAI_LOCAL_CLOUD=http://127.0.0.1:8787&& set VITE_VR_SHARE_URL=/__vr&& set ARCHAI_LOCAL_VR=http://127.0.0.1:8788&& npx vite --port 5175 --strictPort"
       ],
       "port": 5175
     },
@@ -74,6 +74,15 @@
         "--strictPort"
       ],
       "port": 4173
+    },
+    {
+      "name": "archai-vr-local",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd workers/vr-share && npx wrangler dev --local --port 8788 --persist-to ../archai-cloud/.wrangler/state"
+      ],
+      "port": 8788
     }
   ]
 }

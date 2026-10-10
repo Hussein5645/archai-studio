@@ -6,6 +6,7 @@ import { openAccountDialog } from './account-dialog';
 import { AccountButton } from './AccountButton';
 import { openJoinDialog } from './JoinDialog';
 import { openShareDialog } from './ShareDialog';
+import { SettingsPanel, VrLinksPanel } from './HomePanels';
 import { modelingStorage, type SavedAsset } from '@/modeling/persistence';
 import {
   deleteLocalTemplate,
@@ -60,7 +61,7 @@ export function HomeScreen() {
     () => persistence.recent(),
   );
 
-  const [activeTab, setActiveTab] = useState<'projects' | 'online' | 'templates' | 'cai'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'online' | 'templates' | 'cai' | 'vr' | 'settings'>('projects');
   const [localTemplates, setLocalTemplates] = useState<ArchaiTemplate[]>([]);
   const [savedCaiAssets, setSavedCaiAssets] = useState<SavedAsset[]>([]);
   const templateFileInputRef = useRef<HTMLInputElement>(null);
@@ -309,6 +310,22 @@ export function HomeScreen() {
           >
             {t('Saved CAI Files')} ({savedCaiAssets.length})
           </button>
+          <button
+            type="button"
+            className={`${styles.tabBtn} ${activeTab === 'vr' ? styles.tabBtnActive : ''}`}
+            onClick={() => setActiveTab('vr')}
+            data-testid="tab-vr"
+          >
+            {t('VR Links')}
+          </button>
+          <button
+            type="button"
+            className={`${styles.tabBtn} ${activeTab === 'settings' ? styles.tabBtnActive : ''}`}
+            onClick={() => setActiveTab('settings')}
+            data-testid="tab-settings"
+          >
+            {t('Settings')}
+          </button>
         </div>
       </div>
 
@@ -505,6 +522,10 @@ export function HomeScreen() {
             </div>
           )
         )}
+
+        {activeTab === 'vr' && <VrLinksPanel />}
+
+        {activeTab === 'settings' && <SettingsPanel />}
 
         {activeTab === 'cai' && (
           savedCaiAssets.length === 0 ? (

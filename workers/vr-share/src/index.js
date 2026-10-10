@@ -5,7 +5,9 @@
  *   PUT  /tours/<id>/model.glb   upload the model (upload key)
  *   PUT  /tours/<id>/tour.json   upload the tour file (upload key)
  *   GET  /tours/<id>/<file>      read them (public, CORS *), what the viewer loads
- *   GET  /v/<id>                 short link: redirects to the SJP-VR viewer with ?tour=
+ *   GET  /v/<id>                 short link: redirects to the VR viewer with ?tour=
+ *   GET  /tours                  the signed-in account's tours (VR Links on the Home screen)
+ *   DELETE /tours/<id>           deletes one of the account's tours (its link stops working)
  *
  * Writes need an ArchAI account session as `Authorization: Bearer <token>` (the app, and the
  * plugins through the app's live link), checked against the `archai` D1 database of
@@ -24,7 +26,7 @@ const ID = /^[a-z0-9]{4,16}$/;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Upload-Key',
   'Access-Control-Max-Age': '86400',
 };
@@ -105,6 +107,33 @@ async function upload(request, env, id, file, auth) {
   return json({ ok: true });
 }
 
+/** The account's tours, newest first, with the model size and number of stops. */
+async function listTours(request, env, userId) {
+  const { results } = await env.DB.prepare('SELECT id, name, created_at, updated_at FROM vr_tours WHERE user_id = ? ORDER BY updated_at DESC').bind(userId).all();
+  const origin = new URL(request.url).origin;
+  const tours = await Promise.all(
+    results.map(async (row) => {
+      const [model, tour] = await Promise.all([env.BUCKET.head(`tours/${row.id}/model.glb`), env.BUCKET.get(`tours/${row.id}/tour.json`)]);
+      let stops = null;
+      try {
+        stops = tour ? (await tour.json()).spaces?.length ?? null : null;
+      } catch {
+        stops = null;
+      }
+      return { id: row.id, name: row.name ?? 'VR tour', createdAt: row.created_at, updatedAt: row.updated_at, link: `${origin}/v/${row.id}`, modelBytes: model?.size ?? null, stops, available: Boolean(tour) };
+    }),
+  );
+  return json({ tours });
+}
+
+async function deleteTour(env, id, userId) {
+  const row = await env.DB.prepare('SELECT user_id FROM vr_tours WHERE id = ?').bind(id).first();
+  if (!row || row.user_id !== userId) return json({ error: 'This tour does not exist or is not yours' }, 404);
+  await env.BUCKET.delete([`tours/${id}/model.glb`, `tours/${id}/tour.json`, created(id)]);
+  await env.DB.prepare('DELETE FROM vr_tours WHERE id = ?').bind(id).run();
+  return json({ ok: true });
+}
+
 async function read(request, env, id, file) {
   const object = await env.BUCKET.get(`tours/${id}/${file}`, { onlyIf: request.headers });
   if (!object) return reply('Not found', 404);
@@ -136,6 +165,14 @@ export default {
       if (parts.length === 1 && request.method === 'POST') {
         const auth = await authorised(request, env);
         return auth ? reserve(request, env, auth) : json({ error: 'Sign in to ArchAI to publish VR tours' }, 401);
+      }
+      if (parts.length === 1 && request.method === 'GET') {
+        const userId = await sessionUser(request, env);
+        return userId ? listTours(request, env, userId) : json({ error: 'Sign in to ArchAI to see your VR links' }, 401);
+      }
+      if (parts.length === 2 && request.method === 'DELETE' && ID.test(parts[1])) {
+        const userId = await sessionUser(request, env);
+        return userId ? deleteTour(env, parts[1], userId) : json({ error: 'Sign in to ArchAI to manage your VR links' }, 401);
       }
       const [, id, file] = parts;
       if (parts.length !== 3 || !ID.test(id ?? '') || !(file in FILES)) return reply('Not found', 404);

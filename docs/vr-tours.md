@@ -22,6 +22,13 @@ https://archai-vr.vercel.app (see [hosting.md](hosting.md)).
 
 Commands: `create-vr-stop`, `set-vr-stop-heading`, `publish-vr-tour`.
 
+## Managing VR links
+
+Home → **VR Links** (signed in) lists every tour published with the account, from the app or a
+plugin: name, last update, stops, model size and the short link, with **Copy link**, **Open** and
+**Delete** (the link stops working for everyone). It reads `GET /tours` and calls
+`DELETE /tours/<id>` on the VR share Worker (`src/cloud/vrTours.ts`, `src/ui/HomePanels.tsx`).
+
 ## From other apps
 
 Every ArchAI plugin (Revit, AutoCAD, Rhino, SketchUp, Blender, 3ds Max, Unreal; docs/plugins.md)

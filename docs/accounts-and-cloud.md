@@ -174,7 +174,9 @@ then `npx wrangler deploy` in `workers/archai-cloud`.
 `archai-web-local-cloud` (Vite on 5175 with `VITE_CLOUD_URL=/__cloud`, proxied to 8787, WebSockets
 included, by `vite.config.ts` when `ARCHAI_LOCAL_CLOUD` is set); `archai-web-local-cloud-2` is the
 same on 5176, a second origin (its own sign-in) for a second person. Create the local tables
-first: `npx wrangler d1 execute archai --local --file schema.sql`.
+first: `npx wrangler d1 execute archai --local --file schema.sql`. `archai-vr-local` runs the VR share
+Worker on 8788 with the same local database (`--persist-to ../archai-cloud/.wrangler/state`); the
+5175 app reaches it as `VITE_VR_SHARE_URL=/__vr` (`ARCHAI_LOCAL_VR`).
 
 ## Decisions (2026-10-09)
 

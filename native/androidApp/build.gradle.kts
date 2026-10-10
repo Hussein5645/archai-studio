@@ -27,8 +27,8 @@ android {
         applicationId = "com.antai.archai"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 21
-        versionName = "0.2.2.13"
+        versionCode = 22
+        versionName = "0.2.2.14"
     }
     packaging {
         resources {
