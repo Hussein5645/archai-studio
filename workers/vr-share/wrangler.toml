@@ -9,7 +9,8 @@ binding = "BUCKET"
 bucket_name = "archai-vr"
 
 [vars]
-VIEWER_URL = "https://hussein5645.github.io/SJP-VR/"
+# The VR viewer (private repository Hussein5645/SJP-VR, deployed on Vercel; see docs/hosting.md).
+VIEWER_URL = "https://archai-vr.vercel.app/"
 
 # Account sessions (the `archai` database of workers/archai-cloud): who may publish tours.
 [[d1_databases]]

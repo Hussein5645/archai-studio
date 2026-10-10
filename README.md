@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://archai-studio-six.vercel.app">Open in the browser</a> ·
   <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-Setup-0.2.2.13.exe">Windows</a> ·
   <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-0.2.2.13.apk">Android / Meta Quest</a> ·
   <a href="../../releases">All releases</a> ·
@@ -40,8 +41,9 @@ keeps the app small, testable and easy to automate.
 | **Plugins** | Revit, AutoCAD, Rhino, SketchUp, Blender, 3ds Max and Unreal: send models, open `.AIR` files, keep a live link, open in VR ([docs](docs/plugins.md)). |
 | **Together** | Online projects edited by several people at once, with live cursors, invite links and roles ([docs](docs/accounts-and-cloud.md)). |
 
-It runs in the browser, as a Windows desktop app (Electron) and on Android tablets and Meta Quest
-(a native host around the same web app).
+It runs in the browser (https://archai-studio-six.vercel.app), as a Windows desktop app (Electron)
+and on Android tablets and Meta Quest (a native host around the same web app). Where everything is
+hosted is in [docs/hosting.md](docs/hosting.md).
 
 ## Accounts and the ArchAI cloud
 
@@ -56,6 +58,11 @@ and you will get an email and password to sign in with.
 The server code is in this repository ([`workers/`](workers)), so you can also run the whole
 cloud locally for development (see below). The hosted services, their data and their secrets are
 not part of this repository.
+
+The **VR viewer** that VR links open (https://archai-vr.vercel.app) is a separate app kept in a
+**private** repository; it is not part of this repository. ArchAI publishes tours in a documented
+format ([docs/vr-tours.md](docs/vr-tours.md)), and the VR share Worker decides which viewer opens
+them.
 
 ## Getting started (development)
 

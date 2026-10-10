@@ -4,7 +4,9 @@ Status: **implemented** (2026-10-07).
 
 Place stops (points of interest) in the 3D workspace, then publish the model with its stops as a
 short link that opens in a VR headset (Meta Quest Browser → **Enter VR**) or any browser. The
-viewer is the SJP-VR tour app (github.com/Hussein5645/SJP-VR, served on GitHub Pages).
+viewer is the ArchAI VR viewer: a separate WebXR app kept in the **private** repository
+Hussein5645/SJP-VR (not part of this repository) and deployed on Vercel at
+https://archai-vr.vercel.app (see [hosting.md](hosting.md)).
 
 ## Use
 
@@ -47,7 +49,7 @@ docs/accounts-and-cloud.md); `ARCHAI_VR_SHARE_URL` overrides the service.
 | Upload client | `src/view3d/vrShare.ts` |
 | Placement in 3D | `SceneView.setPlacingStop` / `floorAt`, UI in `View3DWorkspace.tsx` |
 | Share service | `workers/vr-share` (Cloudflare Worker, R2 bucket `archai-vr`) |
-| Viewer | SJP-VR `js/main.js`, `?tour=<url of tour.json>` |
+| Viewer | private repository SJP-VR (`js/main.js`), `?tour=<url of tour.json>`; the VR share Worker's `VIEWER_URL` |
 
 Tour file: `{ format: 'archai-vr', version: 1, name, model: 'model.glb?v=…', lighting: 'live',
 exposure, credit, start, spaces: [{ id, name, center: [x, z], look: [x, z], floor }] }` in metres;

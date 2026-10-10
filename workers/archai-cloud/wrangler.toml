@@ -31,4 +31,4 @@ new_sqlite_classes = ["Board"]
 # WEB_APP_URL (optional): where the web app runs, for the "Open in the browser" button of invite pages.
 [vars]
 CONTACT_EMAIL = "mklkoklpp@gmail.com"
-# WEB_APP_URL = "https://..."
+WEB_APP_URL = "https://archai-studio-six.vercel.app"
