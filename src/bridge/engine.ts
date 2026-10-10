@@ -197,6 +197,10 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
   /** The app's editable copies of ArchAI elements, seen for the first time: item → element. */
   const copyOf = new Map<string, string>(input.model.meshes.flatMap((mesh) => (mesh.archai ? [[`meshes/${mesh.id}`, mesh.archai] as const] : [])));
   const copies = new Map<string, string>();
+  /** Objects an older plugin sent under another id: `meshes/<new id>` → `meshes/<old id>`. */
+  const renamed = new Map<string, string>();
+  const currentIds = new Set(input.model.meshes.map((mesh) => mesh.id));
+  for (const mesh of input.model.meshes) if (mesh.was && mesh.was !== mesh.id && !currentIds.has(mesh.was)) renamed.set(`meshes/${mesh.id}`, `meshes/${mesh.was}`);
   const created: { item: string; collection: ExchangeCollection; id: string; element: string }[] = [];
   const existingMaterials = new Map(Object.values(ctx.doc.materials).flatMap((material) => (material.source ? [[material.source, material.id] as const] : [])));
 
@@ -205,6 +209,14 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
     materialSource: (material) => materialSource(key, material),
     existing: (collection, id) => {
       const item = `${collection}/${id}`;
+      const previous = renamed.get(item);
+      if (previous && !bound.has(item) && bound.has(previous)) {
+        // Same object, new id: its link follows.
+        const moved = bound.get(previous)!;
+        bound.delete(previous);
+        bound.set(item, moved);
+        bridge.elements[moved]!.refs[key]!.id = id;
+      }
       const elementId = bound.get(item);
       if (!elementId) {
         const original = copyOf.get(item);
@@ -382,7 +394,7 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
     }
     deletable.push(elementId);
   }
-  bridge.held = bridge.held.filter((held) => held.source !== key);
+  if (bridge.held.some((held) => held.source === key)) bridge.held = bridge.held.filter((held) => held.source !== key);
   const sourceSize = [...bound.values()].length;
   if (deletable.length > MASS_DELETE && deletable.length > sourceSize * MASS_SHARE) {
     bridge.held.push({ id: ctx.ids.next('hist'), source: key, elements: deletable, at: now });
@@ -397,14 +409,23 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
   }
 
   report.unsupported = imported.skipped.length;
-  source.unsupported = imported.skipped.slice(0, UNSUPPORTED_LIMIT).map((s) => ({ id: s.id.slice(0, 200), kind: s.kind.slice(0, 60), reason: s.reason.slice(0, 300) }));
+  const unsupported = imported.skipped.slice(0, UNSUPPORTED_LIMIT).map((s) => ({ id: s.id.slice(0, 200), kind: s.kind.slice(0, 60), reason: s.reason.slice(0, 300) }));
+  const sameUnsupported = JSON.stringify(unsupported) === JSON.stringify(source.unsupported);
+  // Nothing changed (an app sending what ArchAI already has): no document change at all, so
+  // the other apps are not made to pull for nothing.
+  const changedNothing = Boolean(known) && merges.length === 0 && created.length === 0 && !report.deleted && !report.held && !report.conflicts && !report.migrated && notes.length === 0 && sameUnsupported && source.complete === input.complete;
+  if (changedNothing) {
+    ctx.ui.selection = selection.filter((id) => ctx.doc.elements[id]);
+    return report;
+  }
+  if (!sameUnsupported) source.unsupported = unsupported;
   source.lastSync = now;
   source.complete = input.complete;
   source.lastChangeId = input.changeId;
   const { built: _built, skipped: _skipped, ...ack } = report;
   source.lastAck = { ...ack, built: {}, skipped: [] };
   if (report.conflicts) notes.push(`${report.conflicts} conflicts`);
-  bridgeLog(ctx, key, summary(report, notes));
+  if (report.created || report.updated || report.deleted || report.unsupported || notes.length) bridgeLog(ctx, key, summary(report, notes));
   ctx.ui.selection = selection.filter((id) => ctx.doc.elements[id]);
   return report;
 }

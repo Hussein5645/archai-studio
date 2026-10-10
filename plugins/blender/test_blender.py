@@ -1,6 +1,9 @@
 """Headless test of the Blender add-on:
    blender --background --factory-startup --python-exit-code 1 --python plugins/blender/test_blender.py -- <staging dir> [other.AIR]
-<staging dir> holds the packaged add-on folder `archai` (build-plugins.ps1 makes it)."""
+<staging dir> holds the packaged add-on folder `archai` (build-plugins.ps1 makes it).
+Set BLENDER_USER_CONFIG, BLENDER_USER_SCRIPTS, BLENDER_USER_EXTENSIONS and BLENDER_USER_DATAFILES to
+empty folders first: a --factory-startup Blender on your own profile removes the Python packages
+your installed extensions use (Blender puts them back on its next normal start)."""
 import os
 import sys
 

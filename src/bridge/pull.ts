@@ -80,7 +80,8 @@ export function pullPlan(doc: ArchaiDocument, key: string, sent: ReadonlyMap<str
       (related.get(target) ?? related.set(target, new Set()).get(target)!).add(element.id);
     }
   }
-  const nodeHash = (id: string) => hashValue([hashOf(id), [...(related.get(id) ?? [])].sort().map((other) => hashOf(other))]);
+  // What this app may edit is part of the node too: an offer sends the element again, as editable.
+  const nodeHash = (id: string) => hashValue([hashOf(id), [...(related.get(id) ?? [])].sort().map((other) => hashOf(other)), bridge?.elements[id]?.offers?.[key] ?? null]);
 
   /** Excluded with everything below them: the app's own elements and elements not shared. */
   const excluded = new Set<string>();

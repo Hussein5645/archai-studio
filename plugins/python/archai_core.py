@@ -76,6 +76,10 @@ class SceneObject:
     def __init__(self, id="", name="", category=""):
         self.id, self.name, self.category = id, name, category
         self.parts = {}
+        # Live Bridge: the ArchAI element this object is an editable copy of (it came from ArchAI),
+        # and the id an older plugin sent for it (ArchAI moves its link to the new id).
+        self.archai = None
+        self.was = None
 
     def part(self, material):
         part = self.parts.get(material.name)
@@ -103,6 +107,11 @@ def from_z_up(x, y, z, millimetres):
 def to_z_up(x, y, z, millimetres):
     """glTF metres (x, up, plan y) to a Z-up right-handed host point in host units."""
     return (x * 1000.0 / millimetres, -z * 1000.0 / millimetres, y * 1000.0 / millimetres)
+
+
+def move_to_z_up(move, millimetres):
+    """A Live Bridge move (ArchAI plan mm: x right, plan y down, elevation) as a Z-up host vector."""
+    return (move[0] / millimetres, -move[1] / millimetres, move[2] / millimetres)
 
 
 class Bounds:
@@ -228,6 +237,8 @@ class ImportObject:
     def __init__(self, name="", level="", type=""):
         self.name, self.level, self.type = name, level, type
         self.parts = []
+        # ArchAI's node extras: id, and in Live Bridge pulls hash, source, color, editable, ref.
+        self.archai = {}
 
     @property
     def triangle_count(self):
@@ -239,9 +250,7 @@ _FORMATS = {5126: ("f", 4), 5125: ("I", 4), 5123: ("H", 2), 5122: ("h", 2), 5121
 _NORMALISE = {5123: 65535.0, 5122: 32767.0, 5121: 255.0, 5120: 127.0}
 
 
-def read_glb(data):
-    """Objects of a binary glTF with world positions. Nodes with `extras.archai` (ArchAI's .AIR
-    snapshot) are one object each with everything below them; otherwise every mesh node is one."""
+def _parse_glb(data):
     if len(data) < 20 or struct.unpack_from("<I", data, 0)[0] != 0x46546C67:
         raise ValueError("Not a binary glTF file.")
     gltf, binary, offset = None, b"", 12
@@ -255,7 +264,22 @@ def read_glb(data):
         offset += 8 + length
     if gltf is None:
         raise ValueError("The glTF file has no JSON chunk.")
-    return _GltfScene(gltf, binary).objects()
+    return _GltfScene(gltf, binary)
+
+
+def read_glb(data):
+    """Objects of a binary glTF with world positions. Nodes with `extras.archai` (ArchAI's .AIR
+    snapshot) are one object each with everything below them; otherwise every mesh node is one."""
+    return _parse_glb(data).objects()
+
+
+def read_bridge_glb(data):
+    """A Live Bridge pull: (objects, bridge) where bridge is the root's `archaiBridge` extras
+    (present, updates, document, revision) or {}."""
+    scene = _parse_glb(data)
+    objects = scene.objects()
+    bridge = next((n["extras"]["archaiBridge"] for n in scene.nodes if isinstance((n.get("extras") or {}).get("archaiBridge"), dict)), {})
+    return objects, bridge
 
 
 class _GltfScene:
@@ -283,6 +307,7 @@ class _GltfScene:
                 name = self.gltf["meshes"][node["mesh"]].get("name") or ""
             kind = archai.get("type") or archai.get("kind") or ""
             owner = ImportObject(name or kind or "Object", archai.get("level") or "", kind)
+            owner.archai = archai
             self.result.append(owner)
         if "mesh" in node and owner is not None:
             self.add_mesh(node["mesh"], world, owner)
@@ -412,6 +437,10 @@ def write_exchange(name, app, app_version, source, objects):
             "size": [round(box.max[a] - box.min[a], 1) for a in range(3)],
             "glb": base64.b64encode(writer.to_glb("ArchAI %s plugin" % app)).decode("ascii"),
         })
+        if getattr(o, "archai", None):
+            meshes[-1]["archai"] = _truncate(o.archai, 64)
+        if getattr(o, "was", None) and o.was != o.id:
+            meshes[-1]["was"] = _truncate(o.was, 64)
     return {
         "archaiRevit": 1, "app": app, "name": _truncate(name or app + " model", 200),
         "source": _truncate(source, 1000), "revitVersion": _truncate("%s %s" % (app, app_version), 40),
@@ -793,10 +822,72 @@ def _protocol_registered():
         return False
 
 
+def _bridge_file():
+    base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".local", "share")
+    return os.path.join(base, "ArchAI", "live-bridge.json")
+
+
+def _bridge_state():
+    try:
+        with open(_bridge_file(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def bridge_entry(key):
+    """What this computer remembers of a model's Live Bridge link: {project: {id, name}, known: [ids]}."""
+    entry = _bridge_state().get(key)
+    return entry if isinstance(entry, dict) else {}
+
+
+def remember_bridge(key, entry):
+    state = _bridge_state()
+    if entry:
+        state[key] = entry
+    else:
+        state.pop(key, None)
+    try:
+        os.makedirs(os.path.dirname(_bridge_file()), exist_ok=True)
+        with open(_bridge_file(), "w", encoding="utf-8") as f:
+            json.dump(state, f)
+    except Exception:
+        pass
+
+
+class BridgeDelta(object):
+    """What one Live Bridge pull changes in the host (protocol 2):
+    - nodes: ImportObjects to add or replace, keyed by obj.archai["id"]; obj.archai carries hash,
+      source, color, editable (facets the host may edit: create it as an editable object of its
+      own and set SceneObject.archai to that id when sending it back) and ref (the host's own copy
+      to replace);
+    - removed: ArchAI ids the host should delete (what ArchAI sent before and no longer has);
+    - updates: the host's own objects to change, dicts with ref (host id), kind, element, token,
+      move ([dx, dy, dz] in ArchAI plan mm, see move_to_z_up) and name;
+    - fresh: True when the host should first drop everything ArchAI sent before."""
+
+    def __init__(self, name, nodes, removed, updates, fresh):
+        self.name, self.nodes, self.removed, self.updates, self.fresh = name, nodes, removed, updates, fresh
+
+    @property
+    def empty(self):
+        return not (self.nodes or self.removed or self.updates or self.fresh)
+
+
 class LiveLink(object):
     """Live link with the ArchAI desktop app (electron/liveLink.ts in ArchAI; the Python twin of
     Archai.Plugins.LiveLink). While running, the host's model goes to the open ArchAI project a
     moment after each change, and ArchAI's model comes back when it changes there.
+
+    Live Bridge (protocol 2, docs/live-bridge-proposal.md) when the host also gives:
+    - apply(delta): a BridgeDelta, applied element by element (main thread);
+    - all_ids(): the ids of every object of the host model, hidden ones included (main thread):
+      pushes are then partial (visible objects) with explicit deletions (ids gone from the model),
+      so hiding never deletes anything in ArchAI.
+    The model is bound to one ArchAI project (remembered per model key on this computer): the
+    project open when it first connects, or the one chosen with bind(); while ArchAI shows another
+    project nothing is sent.
 
     The host gives:
     - export(): its model as an exchange dict (write_exchange), called on the host's main thread;
@@ -815,10 +906,20 @@ class LiveLink(object):
     DEBOUNCE = 1.5
     POLL = 2.0
 
-    def __init__(self, key, app, name, export, import_, on_main, status=None, progress=None, finished=None):
+    def __init__(self, key, app, name, export, import_, on_main, status=None, progress=None, finished=None, apply=None, all_ids=None):
         import threading
         self._progress = progress
         self._finished = finished
+        self._apply = apply
+        self._all_ids = all_ids
+        self.protocol = 2 if apply else 1
+        entry = bridge_entry(key[:300])
+        self.project = entry.get("project") if isinstance(entry.get("project"), dict) else None
+        # Host ids ArchAI has from this model (deletions are the ones gone from it).
+        self._known = set(entry.get("known") or [])
+        # What ArchAI sent: element id -> hash; update tokens already applied.
+        self._have = {}
+        self._tokens = set()
         self.key = key[:300]
         self.app = app
         self.name = name
@@ -847,6 +948,7 @@ class LiveLink(object):
             return
         self.running = True
         self._last_pulled = -1
+        self._have = {}
         self._push_at = 0.0
         self._report("Connecting to ArchAI...")
         self._thread = threading.Thread(target=self._loop, name="ArchAI live link", daemon=True)
@@ -870,10 +972,15 @@ class LiveLink(object):
 
     def changed(self):
         import time
-        if not self.running or self.quiet():
+        if not self.running:
             return
         with self._lock:
-            self._push_at = time.time() + self.DEBOUNCE
+            if self.quiet():
+                # Most events now are ArchAI's model arriving, but an edit made meanwhile must not
+                # be lost: send once the import has settled (ArchAI ignores a model it already has).
+                self._push_at = max(self._push_at or 0.0, self._quiet_until + self.DEBOUNCE)
+            else:
+                self._push_at = time.time() + self.DEBOUNCE
         self._wake.set()
 
     # -- background thread --
@@ -991,9 +1098,46 @@ class LiveLink(object):
                 if self._finished:
                     self._finished()
 
+    # -- Live Bridge projects (protocol 2) --
+
+    def projects(self):
+        """The ArchAI projects this model can be linked to: {open, projects: [{id, name, updatedAt, online, open}]}."""
+        _, _, body = self._request("GET", "/live/projects", timeout=10)
+        return json.loads(body.decode("utf-8"))
+
+    def bind(self, project_id=None, new_name=None):
+        """Links this model to an ArchAI project (it opens in ArchAI), or to a new one."""
+        body = {"key": self.key, "app": self.app, "name": self.name}
+        if project_id:
+            body["project"] = project_id
+        else:
+            body["newName"] = new_name or self.name
+        _, _, data = self._request("POST", "/live/bind", json.dumps(body).encode("utf-8"), timeout=60)
+        document = json.loads(data.decode("utf-8")).get("document") or {}
+        self._remember_project(document)
+        return document
+
+    def _remember_project(self, document):
+        if self.project and document.get("id") != self.project.get("id"):
+            # Another project: it has none of this model yet.
+            self._known = set()
+        self.project = {"id": document.get("id", ""), "name": document.get("name", "")}
+        self._have = {}
+        self._last_pulled = -1
+        self._save_state()
+
+    def _save_state(self):
+        remember_bridge(self.key, {"project": self.project, "known": sorted(self._known)} if self.project else {})
+
+    # -- one round: status, then push or pull --
+
     def _tick(self, push):
         import time
+        import uuid
         query = "key=%s&name=%s&app=%s" % (urllib.request.quote(self.key, safe=""), urllib.request.quote(self.name, safe=""), urllib.request.quote(self.app, safe=""))
+        bridge = self.protocol >= 2
+        if bridge:
+            query += "&protocol=2&project=%s" % urllib.request.quote((self.project or {}).get("id", ""), safe="")
         try:
             _, _, body = self._request("GET", "/live/status?" + query, timeout=5)
             status = json.loads(body.decode("utf-8"))
@@ -1006,41 +1150,124 @@ class LiveLink(object):
             self._report("Opening a project in ArchAI...")
             return
         project = document.get("name") or "ArchAI"
+        if bridge and status.get("protocol", 1) >= 2:
+            if status.get("mismatch"):
+                self._report("ArchAI shows %s; this model is linked to %s. Open it in ArchAI, or link this model to the open project." % (project, (self.project or {}).get("name") or "another project"))
+                return
+            if not self.project or self.project.get("id") != document.get("id"):
+                # First connection: linked to the project ArchAI shows.
+                self.bind(document.get("id"))
+        elif bridge:
+            # An older ArchAI: the live link as before.
+            bridge = False
         up_to_date = self._last_seen == self._last_pulled and self._last_pulled >= 0
         if push:
             with self._lock:
                 self._push_at = None
             self._phase("Reading the %s model" % self.app, None)
-            exchange = self._main(self._export)
+
+            def read():
+                return self._export(), (self._all_ids() if bridge and self._all_ids else None)
+            exchange, everything = self._main(read)
             if exchange is not None:
                 exchange["app"] = self.app
-                payload = json.dumps({"key": self.key, "app": self.app, "name": self.name, "model": exchange}, separators=(",", ":")).encode("utf-8")
+                body = {"key": self.key, "app": self.app, "name": self.name, "model": exchange}
+                sent_ids = set()
+                for collection in ("levels", "walls", "openings", "slabs", "columns", "railings", "rooms", "meshes"):
+                    sent_ids.update(item.get("id") for item in exchange.get(collection) or [] if item.get("id"))
+                deleted = []
+                if bridge:
+                    complete = everything is None
+                    if not complete:
+                        everything = set(everything)
+                        deleted = sorted(i for i in self._known if i not in everything and i not in sent_ids)
+                    body.update({"protocol": 2, "project": self.project["id"], "changeId": uuid.uuid4().hex, "complete": complete, "deleted": deleted})
+                payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
 
                 def sent(done, total):
                     if done < total:
                         self._phase("Sending %s of %s to ArchAI" % (megabytes(done), megabytes(total)), 0.1 + 0.6 * done / total)
                     else:
                         self._phase("ArchAI is updating the project", 0.75)
-                code, _, body = _send(self._base + "/live/push", "POST", payload, {"X-ArchAI-Live": "1", "Content-Type": "application/json"}, sent=sent, timeout=180)
+                headers = {"X-ArchAI-Live": "1", "Content-Type": "application/json"}
+                try:
+                    code, _, data = _send(self._base + "/live/push", "POST", payload, headers, sent=sent, timeout=180)
+                except (ConnectionError, OSError):
+                    # The reply was lost: the same change again (ArchAI applies a change id once).
+                    code, _, data = _send(self._base + "/live/push", "POST", payload, headers, sent=sent, timeout=180)
                 if code >= 400:
-                    raise RuntimeError(json.loads(body.decode("utf-8") or "{}").get("error") or "ArchAI could not take the model (%d)" % code)
-                revision = json.loads(body.decode("utf-8")).get("revision", 0)
+                    raise RuntimeError(json.loads(data.decode("utf-8") or "{}").get("error") or "ArchAI could not take the model (%d)" % code)
+                reply = json.loads(data.decode("utf-8"))
+                if reply.get("refused"):
+                    self._report(reply.get("message") or "ArchAI did not take the model")
+                    return
+                if bridge:
+                    self._known = sent_ids if complete else (self._known - set(deleted)) | sent_ids
+                    self._save_state()
+                revision = reply.get("revision", 0)
                 if up_to_date:
                     self._last_pulled = revision
                 self._last_seen = revision
-                self._report("Sent to %s %s" % (project, time.strftime("%H:%M:%S")))
+                applied = reply.get("applied") or {}
+                note = ""
+                if applied.get("conflicts"):
+                    note = ", %d conflicts to resolve in ArchAI" % applied["conflicts"]
+                elif applied.get("held"):
+                    note = ", %d deletions wait for confirmation in ArchAI" % applied["held"]
+                self._report("Sent to %s %s%s" % (project, time.strftime("%H:%M:%S"), note))
             return
         revision = status.get("revision", 0)
         self._last_seen = revision
         if revision == self._last_pulled:
             return
         self._phase("ArchAI is preparing its model", None)
-        code, headers, data = self._pull("/live/pull?key=" + urllib.request.quote(self.key))
+        path = "/live/pull?key=" + urllib.request.quote(self.key)
+        fresh = bridge and not self._have
+        if bridge:
+            path += "&protocol=2&project=%s%s" % (urllib.request.quote(self.project["id"], safe=""), "&fresh=1" if fresh else "")
+        code, headers, data = self._pull(path)
         if code == 204 or not data:
             return
         lower = {k.lower(): v for k, v in headers.items()}
         pulled = int(lower.get("x-archai-revision", revision) or revision)
         name = urllib.request.unquote(lower.get("x-archai-name", project))
+        if bridge:
+            objects, extras = read_bridge_glb(data)
+            present = set(extras.get("present") or [])
+            removed = [i for i in self._have if i not in present]
+            updates = [u for u in extras.get("updates") or [] if isinstance(u, dict) and u.get("token") not in self._tokens]
+            delta = BridgeDelta(name, objects, removed, updates, fresh)
+            if not delta.empty:
+                self._phase("Updating %d objects in %s" % (len(objects) + len(removed) + len(updates), self.app), 0.65)
+
+                def apply_delta():
+                    self.importing = True
+                    try:
+                        self._apply(delta)
+                    finally:
+                        self.importing = False
+                        self._quiet_until = time.time() + 2.0
+                self._main(apply_delta)
+            if fresh:
+                self._have = {}
+            for archai_id in removed:
+                self._have.pop(archai_id, None)
+            for obj in objects:
+                if obj.archai.get("id"):
+                    self._have[obj.archai["id"]] = obj.archai.get("hash", "")
+            # Elements present but never sent (nothing shared yet) still count as known.
+            for archai_id in present:
+                self._have.setdefault(archai_id, "")
+            self._tokens.update(u.get("token") for u in updates)
+            self._last_pulled = self._last_seen = pulled
+            if updates or any(o.archai.get("editable") for o in objects):
+                # Tell ArchAI where its changes landed (and which objects are now copies) right away.
+                with self._lock:
+                    self._push_at = time.time()
+                self._wake.set()
+            if not delta.empty:
+                self._report("Updated from %s %s" % (project, time.strftime("%H:%M:%S")))
+            return
         objects = read_glb(data)
         self._phase("Building %d objects in %s" % (len(objects), self.app), 0.65)
 

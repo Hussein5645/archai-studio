@@ -104,6 +104,8 @@ export const RevitMeshSchema = z.object({
   glb: z.string().min(1),
   /** Live Bridge: the ArchAI element this object is an editable copy of (it came from ArchAI). */
   archai: z.string().max(64).optional(),
+  /** Live Bridge: the id an older plugin sent for this object (its link moves to the new id). */
+  was: z.string().max(64).optional(),
 });
 
 export const RevitExchangeSchema = z.object({

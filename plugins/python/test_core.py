@@ -1,6 +1,9 @@
 """Tests of archai_core.py. Run with any Python 3.7+ (Blender's works):
    blender --background --factory-startup --python-exit-code 1 --python plugins/python/test_core.py -- [file.AIR ...]
-Extra .AIR files (from ArchAI or another plugin) are read and summarised."""
+Extra .AIR files (from ArchAI or another plugin) are read and summarised.
+Set BLENDER_USER_CONFIG, BLENDER_USER_SCRIPTS, BLENDER_USER_EXTENSIONS and BLENDER_USER_DATAFILES to
+empty folders first: a --factory-startup Blender on your own profile removes the Python packages
+your installed extensions use (Blender puts them back on its next normal start)."""
 import os
 import sys
 import tempfile

@@ -5,7 +5,7 @@ import { withoutLink } from '@/live/sync';
 import type { BridgeSyncReport } from './engine';
 import { pullPlan, type PullPlan } from './pull';
 
-type Mesh = { id: string; name?: string; category?: string; origin: [number, number, number]; size: [number, number, number]; glb: string; archai?: string };
+type Mesh = { id: string; name?: string; category?: string; origin: [number, number, number]; size: [number, number, number]; glb: string; archai?: string; was?: string };
 type Wall = { id: string; points: [number, number][]; base: number; height: number; layers: { name: string; role: 'core'; thickness: number; material?: string }[]; level?: string };
 
 const mesh = (id: string, x = 0, name = `Object ${id}`): Mesh => ({ id, name, category: 'Generic', origin: [x, 0, 0], size: [500, 500, 900], glb: 'AAAA' });
@@ -324,5 +324,17 @@ describe('Live Bridge pulls and updates', () => {
     const report = sync(app, 'blender:viz', model({ app: 'Blender', meshes: [{ ...mesh('obj-7', 800, 'Stair B'), archai: stair }] }));
     expect(doc(app).elements[stair]).toMatchObject({ name: 'Stair B', x: 0 });
     expect(report.rejected).toBeGreaterThan(0);
+  });
+});
+
+describe('Live Bridge ids', () => {
+  it('moves a link to the new id an object now has (plugins that used to send names)', () => {
+    const app = createTestApp();
+    sync(app, 'blender:scene', model({ app: 'Blender', meshes: [mesh('Cube', 0, 'Cube')] }));
+    const id = bound(app, 'blender:scene', 'Cube')!.id;
+    const report = sync(app, 'blender:scene', model({ app: 'Blender', meshes: [{ ...mesh('uid-1', 0, 'Cube'), was: 'Cube' }] }));
+    expect(report).toMatchObject({ created: 0, deleted: 0 });
+    expect(bound(app, 'blender:scene', 'uid-1')!.id).toBe(id);
+    expect(bound(app, 'blender:scene', 'Cube')).toBeUndefined();
   });
 });

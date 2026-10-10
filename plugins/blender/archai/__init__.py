@@ -29,6 +29,8 @@ _icons = None
 _job = {"thread": None, "result": None, "error": None, "progress": None, "meter": None}
 _live = {"link": None, "queue": [], "status": ""}
 LIVE_COLLECTION = "ArchAI Live"
+# Editable copies of ArchAI elements (Live Bridge): ordinary objects, sent back to ArchAI.
+COPIES_COLLECTION = "ArchAI Copies"
 
 
 def icon(name):
@@ -63,6 +65,43 @@ def material_of(material, cache):
 def is_live(obj):
     """Objects the live link brought in from ArchAI (never sent back)."""
     return bool(obj.get("archai_live")) if obj is not None else False
+
+
+GEOMETRY_TYPES = {"MESH", "CURVE", "SURFACE", "META", "FONT"}
+
+
+def ensure_ids(scene):
+    """Gives every object of the scene a stable Live Bridge id (custom property `archai_uid`, kept
+    in the .blend file). A duplicated object carries its original's id: it gets a new one (it is
+    the object whose session doesn't match the one recorded with the id)."""
+    import uuid
+    seen = {}
+    for obj in sorted(scene.objects, key=lambda o: o.name):
+        if obj.type not in GEOMETRY_TYPES and obj.type != "EMPTY":
+            continue
+        uid = obj.get("archai_uid")
+        session = getattr(obj, "session_uid", 0)
+        if uid and uid in seen:
+            first = seen[uid]
+            # Two objects with one id: the copy is the one created in this session after it.
+            copy = obj if first.get("archai_uid_session") == getattr(first, "session_uid", 0) else first
+            if copy is first:
+                seen[uid] = obj
+                obj["archai_uid_session"] = session
+            copy["archai_uid"] = uuid.uuid4().hex[:16]
+            copy["archai_uid_session"] = getattr(copy, "session_uid", 0)
+            seen[copy["archai_uid"]] = copy
+            continue
+        if not uid:
+            uid = obj["archai_uid"] = uuid.uuid4().hex[:16]
+        if obj.get("archai_uid_session") != session:
+            obj["archai_uid_session"] = session
+        seen[uid] = obj
+    return seen
+
+
+def object_id(obj):
+    return str(obj.get("archai_uid") or obj.name[:12])
 
 
 class Progress:
@@ -142,7 +181,10 @@ def collect(context, skip_live=False, progress=None):
                 continue
             item = objects.get(owner.name)
             if item is None:
-                item = objects[owner.name] = core.SceneObject(owner.name[:12], owner.name, owner.original.users_collection[0].name if owner.original.users_collection else "")
+                item = objects[owner.name] = core.SceneObject(object_id(owner.original), owner.name, owner.original.users_collection[0].name if owner.original.users_collection else "")
+                # Live Bridge: an editable copy of an ArchAI element, and the id older plugins used.
+                item.archai = owner.original.get("archai_copy_of") or None
+                item.was = owner.name[:12]
             count = len(mesh.vertices)
             co = np.empty(count * 3, dtype=np.float32)
             mesh.vertices.foreach_get("co", co)
@@ -201,11 +243,14 @@ def clear_live(context):
         bpy.data.collections.remove(child)
 
 
-def import_objects(context, name, objects, live=False, progress=None):
+def import_objects(context, name, objects, live=False, progress=None, collection_name=None, created=None):
+    """Adds ArchAI objects: a mesh per element, a collection per level. `created` (a list) receives
+    the new objects; `collection_name` puts them in that collection (kept across calls)."""
     mm = millimetres(context.scene)
     total = len(objects)
-    if live:
-        root = bpy.data.collections.get(LIVE_COLLECTION) or bpy.data.collections.new(LIVE_COLLECTION)
+    if live or collection_name:
+        title = collection_name or LIVE_COLLECTION
+        root = bpy.data.collections.get(title) or bpy.data.collections.new(title)
         if root.name not in context.scene.collection.children:
             context.scene.collection.children.link(root)
     else:
@@ -215,8 +260,11 @@ def import_objects(context, name, objects, live=False, progress=None):
     for level, items in core.by_level(objects):
         collection = root
         if level:
-            collection = bpy.data.collections.new(level)
-            root.children.link(collection)
+            collection = next((c for c in root.children if c.get("archai_level") == level), None)
+            if collection is None:
+                collection = bpy.data.collections.new(level)
+                collection["archai_level"] = level
+                root.children.link(collection)
         for item in items:
             core.step(progress, count, total, "Adding element %d of %d" % (count + 1, total))
             vertices, faces, slots, slot_names = [], [], [], []
@@ -247,6 +295,8 @@ def import_objects(context, name, objects, live=False, progress=None):
             if live:
                 obj["archai_live"] = 1
             collection.objects.link(obj)
+            if created is not None:
+                created.append(obj)
             count += 1
     return name, count
 
@@ -288,6 +338,7 @@ class ARCHAI_OT_send(bpy.types.Operator, ExportHelper):
         meter = Progress("Send to ArchAI")
         try:
             meter.begin("Reading the scene")
+            ensure_ids(context.scene)
             objects = collect(context, progress=core.scaled(meter.update, 0.0, 0.9))
             meter.update("Writing the .AIR file", 0.95)
         finally:
@@ -444,12 +495,105 @@ def _live_status(text):
 
 
 def _live_export():
+    ensure_ids(bpy.context.scene)
     return core.write_exchange(document_name(bpy.context), "Blender", bpy.app.version_string, bpy.data.filepath, collect(bpy.context, skip_live=True))
 
 
 def _live_import(name, objects):
     clear_live(bpy.context)
     import_objects(bpy.context, name, objects, live=True)
+
+
+def _live_all_ids():
+    """Every object of the scene that could be sent (hidden ones too): what is not here was deleted."""
+    ids = ensure_ids(bpy.context.scene)
+    return [uid for uid, obj in ids.items() if obj.type in GEOMETRY_TYPES and not is_live(obj)]
+
+
+def _live_apply(delta):
+    """A Live Bridge pull, element by element: ArchAI's elements in the ArchAI Live collection
+    (replaced or removed one by one), editable copies as ordinary objects, and ArchAI's changes to
+    this scene's own objects (moves and names) applied to them."""
+    from mathutils import Vector
+    context = bpy.context
+    mm = millimetres(context.scene)
+    if delta.fresh:
+        clear_live(context)
+    live = {}
+    copies = {}
+    own = {}
+    for obj in context.scene.objects:
+        if obj.get("archai_id") and is_live(obj):
+            live[obj["archai_id"]] = obj
+        if obj.get("archai_copy_of"):
+            copies[obj["archai_copy_of"]] = obj
+        if obj.get("archai_uid"):
+            own[obj["archai_uid"]] = obj
+
+    def remove(obj):
+        mesh = obj.data if obj.type == "MESH" else None
+        bpy.data.objects.remove(obj, do_unlink=True)
+        if mesh is not None and mesh.users == 0:
+            bpy.data.meshes.remove(mesh)
+
+    for archai_id in delta.removed:
+        if archai_id in live:
+            remove(live.pop(archai_id))
+    for item in delta.nodes:
+        archai_id = item.archai.get("id")
+        target = own.get(item.archai.get("ref")) or copies.get(archai_id)
+        if target is not None and target.type == "MESH":
+            # The scene's own copy of an ArchAI element: its mesh follows ArchAI's.
+            replace_mesh(target, item, mm)
+            continue
+        if archai_id in live:
+            remove(live.pop(archai_id))
+        editable = item.archai.get("editable")
+        created = []
+        import_objects(context, delta.name, [item], live=not editable, collection_name=COPIES_COLLECTION if editable else None, created=created)
+        for obj in created:
+            obj["archai_id"] = archai_id
+            if editable:
+                obj["archai_copy_of"] = archai_id
+                obj.pop("archai_live", None)
+            colour = item.archai.get("color")
+            if colour and len(colour) == 7:
+                obj.color = (int(colour[1:3], 16) / 255.0, int(colour[3:5], 16) / 255.0, int(colour[5:7], 16) / 255.0, 1.0)
+    for update in delta.updates:
+        obj = own.get(update.get("ref"))
+        if obj is None:
+            continue
+        move = update.get("move")
+        if move:
+            matrix = obj.matrix_world.copy()
+            matrix.translation += Vector(core.move_to_z_up(move, mm))
+            obj.matrix_world = matrix
+        if update.get("name"):
+            obj.name = update["name"]
+
+
+def replace_mesh(obj, item, mm):
+    """Gives `obj` the geometry of an ArchAI node (world positions), keeping its transform."""
+    from mathutils import Vector
+    inverse = obj.matrix_world.inverted()
+    vertices, faces = [], []
+    for part in item.parts:
+        base = len(vertices)
+        p = part.positions
+        for i in range(0, len(p) - 2, 3):
+            vertices.append(tuple(inverse @ Vector(core.to_z_up(p[i], p[i + 1], p[i + 2], mm))))
+        idx = part.indices
+        faces.extend((base + idx[i], base + idx[i + 1], base + idx[i + 2]) for i in range(0, len(idx) - 2, 3))
+    mesh = bpy.data.meshes.new(obj.data.name)
+    mesh.from_pydata(vertices, [], faces)
+    for material in obj.data.materials:
+        mesh.materials.append(material)
+    mesh.validate()
+    mesh.update()
+    old = obj.data
+    obj.data = mesh
+    if old.users == 0:
+        bpy.data.meshes.remove(old)
 
 
 @bpy.app.handlers.persistent
@@ -494,7 +638,7 @@ class ARCHAI_OT_live(bpy.types.Operator):
         meter = Progress("live link")
         gate = core.DelayedProgress(meter.begin, meter.update, meter.end, _on_main)
         _live["link"] = core.LiveLink(key, "Blender", document_name(context), _live_export, _live_import, _on_main, _live_status,
-                                      progress=gate.report, finished=gate.finished)
+                                      progress=gate.report, finished=gate.finished, apply=_live_apply, all_ids=_live_all_ids)
         bpy.app.handlers.depsgraph_update_post.append(_depsgraph_changed)
         _live["link"].start()
         self.report({"INFO"}, "ArchAI live link is on.")
