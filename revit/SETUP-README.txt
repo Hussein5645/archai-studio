@@ -1,6 +1,6 @@
-ArchAI Revit Plugin Setup — 0.4.1 beta 1
+ArchAI Revit Plugin Setup — 0.5.0 beta 1
 
-Run ArchAI-Revit-Setup-0.4.1-beta.1.exe on Windows.
+Run ArchAI-Revit-Setup-0.5.0-beta.1.exe on Windows.
 Choose Revit 2024, 2025, 2026 and/or 2027, then Continue > Install.
 Close Revit first. No administrator privileges are required.
 

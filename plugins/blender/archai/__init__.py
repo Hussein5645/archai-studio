@@ -7,7 +7,7 @@ also offer ArchAI (.AIR). See docs/plugins.md in the ArchAI repository.
 bl_info = {
     "name": "ArchAI",
     "author": "ArchAI",
-    "version": (0, 4, 1),
+    "version": (0, 5, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > ArchAI; File > Import/Export > ArchAI (.AIR)",
     "description": "Send models to ArchAI, open .AIR files and walk through the scene in VR",
