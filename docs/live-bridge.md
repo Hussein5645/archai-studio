@@ -121,6 +121,42 @@ one).
 | 3ds Max | "ArchAI Live" layers, user property `archai_id` | "ArchAI Copies" layer | move | node handles |
 | Unreal | actors tagged `ArchAILive` and `archai:<id>`, one asset each | "ArchAI Copies" folder | add_actor_world_offset | actor names |
 
+## Status by app (2026-10-10, ArchAI 0.2.2.16, plugins 0.5.0)
+
+How far each app's Live Bridge has been tested, and how well its geometry travels. "Run" means
+the plugin's own code ran in the real app against the ArchAI desktop app; "built" means it
+compiles (or passes a syntax check) but has not been run in that app yet.
+
+| App | Live Bridge 0.5.0 tested | What was checked | Sent to ArchAI | Received from ArchAI | Rating |
+|---|---|---|---|---|---|
+| **Blender** 4.2 | **Run**: two Blender processes (headless) with the desktop app, `scripts/bridge-e2e.mjs` | connect and bind to one project, receive the other app's model in its colour, moves both ways, ArchAI's move applied to Blender's own object, hide (nothing deleted), delete, editable copy linked back, offered rename applied, owner wins; stable ids across duplicates | meshes, curves, surfaces, metaballs and text, with modifiers and instances applied; materials as colour, opacity, roughness, metalness | one mesh object per element in "ArchAI Live", source colour; editable copies in "ArchAI Copies" | **Good**: exact triangles both ways; tested end to end |
+| **AutoCAD** 2026 | **Run**: accoreconsole with the plugin's drawing code (`Archai.AutoCAD.BridgeTest`) next to Blender and the desktop app | join a project, receive Blender's model on an ArchAI Live layer (tagged), its box moving in ArchAI and Blender, ArchAI's move applied to its own solid, editable copy on "ArchAI Copies" linked back, delete | 3D solids, surfaces, regions, meshes, 3D faces and blocks (faceted); 2D lines and hatches are not sent | one block (SubD meshes) per element on "ArchAI Live" layers; copies refilled in place | **Good** for 3D drawings; the ribbon/Idle loop of full AutoCAD was not run, only the console |
+| **Revit** 2024–2027 | **Built** (all four versions). The released 0.4.1 plugin ran live against this ArchAI in a real Revit (85 elements bound and kept across syncs, protocol 1) | 0.5.0 element-by-element apply, Link to project and copies not run in Revit yet | walls (with layers and materials), doors and windows, floors, ceilings, columns, railings, rooms and levels as native ArchAI elements; everything else (roofs, stairs, curtain walls, families) as meshes | DirectShapes (Generic Models), one per element; copies as "ArchAI Copy" DirectShapes; ArchAI's moves of Revit elements when Revit does not own their position | **Good one way** (Revit to ArchAI, BIM elements rebuilt natively but simplified); **reference only** back into Revit (DirectShapes, not editable walls) |
+| **Rhino** 8 | **Built**. The released 0.4.1 plugin connected live to this ArchAI in a real Rhino (an empty, unsaved model, so nothing synced) | 0.5.0 not run in Rhino yet | breps, extrusions, surfaces, meshes, SubD and blocks, meshed with Rhino's render mesh settings; NURBS become triangles (lossy) | meshes on "ArchAI Live", tagged per element, source colour; copies joined into one mesh | **Expected good** (same core as AutoCAD); NURBS precision is lost both ways |
+| **SketchUp** 2021+ | **Built**: Ruby syntax checked (ruby.wasm); not run | none in SketchUp | top-level groups and components (one object each), loose faces as one object | groups in the "ArchAI Live" group; copies as top-level groups | **Not tested**: the protocol code is new and only read and syntax-checked |
+| **3ds Max** 2025+ | **Built**: Python compiles; 3ds Max is not installed here | none in 3ds Max | geometry nodes as snapshot meshes (modifiers applied) | meshes on "ArchAI Live" layers, user property per element; copies reshaped in place | **Not tested** |
+| **Unreal** 5.1+ | **Built**: Python compiles; not run | none in Unreal | static mesh actors (instanced meshes too) | one static mesh asset and actor per element, tagged; copies re-imported in place | **Not tested**; first syncs of large models import one glTF per pull and may be slow |
+
+What travels the same way for every app:
+
+- **Geometry** goes as triangle meshes in millimetres; positions are exact (up to 0.1 mm rounding).
+  Only Revit's walls, openings, slabs, columns, railings, rooms and levels become editable ArchAI
+  elements; everything else is a mesh element that can be moved, coloured and converted but not
+  reshaped in ArchAI.
+- **Materials** carry colour, opacity, roughness and metalness; textures and UV maps do not
+  travel yet.
+- **Back into the apps** everything arrives as display geometry (reference) unless offered as an
+  editable copy, which is a plain mesh there (not a native wall, solid or NURBS).
+- **ArchAI's changes to an app's own objects** are moves (plan and elevation) and names; rotations
+  made in ArchAI stay in ArchAI. AutoCAD and Revit have no object names, so only moves apply there.
+- **Ids**: stable in every app (Revit element ids, AutoCAD handles, Rhino GUIDs, SketchUp
+  persistent ids, Blender's own id property, 3ds Max handles, Unreal actor names). Objects synced
+  by 0.4.x with older ids are moved to the new ids on the first 0.5.0 sync (Blender, Rhino).
+
+To test an app that is marked "built": turn on Live Bridge in it next to the ArchAI desktop app
+0.2.2.16, then check the panel in ArchAI (top bar) and its activity log after each step: send,
+move, rename, hide, delete, and an editable copy from Inspector → Live Bridge.
+
 ## Tests
 
 - `src/bridge/bridge.test.ts`: identity, in-place updates, ArchAI edits surviving, owner wins,
@@ -133,5 +169,5 @@ one).
   ways, hide, delete, editable copies in Blender and AutoCAD, owner wins (26 checks). Run it with
   the Blender profile isolated (the script does): a factory-startup Blender on your own profile
   removes your extensions' Python packages.
-- Rhino, Revit, 3ds Max, Unreal and SketchUp compile (SketchUp: Ruby syntax checked) but were not
+- See "Status by app" above for what was run in each app. Rhino, Revit, 3ds Max, Unreal and SketchUp compile (SketchUp: Ruby syntax checked) but were not
   run here.

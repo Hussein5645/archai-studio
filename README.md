@@ -39,7 +39,7 @@ keeps the app small, testable and easy to automate.
 | **ArchAI Render** | Real-time and path-traced rendering with sun, skies, PBR materials and entourage ([docs](docs/render-studio.md)). |
 | **VR tours** | Place stops and publish a short link that opens in a Meta Quest or any browser ([docs](docs/vr-tours.md)). |
 | **Plugins** | Revit, AutoCAD, Rhino, SketchUp, Blender, 3ds Max and Unreal: send models, open `.AIR` files, open in VR ([docs](docs/plugins.md)). |
-| **Live Bridge** | Several apps linked to one project at once: element-by-element sync, each app in its colour, who owns what per part of an element, conflicts to resolve, safe deletions ([docs](docs/live-bridge.md)). |
+| **Live Bridge** | Several apps linked to one project at once: element-by-element sync, each app in its colour, who owns what per part of an element, conflicts to resolve, safe deletions ([docs](docs/live-bridge.md), [status by app](docs/live-bridge.md#status-by-app-2026-10-10-archai-02216-plugins-050)). |
 | **Together** | Online projects edited by several people at once, with live cursors, invite links and roles ([docs](docs/accounts-and-cloud.md)). |
 
 It runs in the browser (https://archai-studio-six.vercel.app), as a Windows desktop app (Electron)
