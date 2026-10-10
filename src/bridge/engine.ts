@@ -90,16 +90,28 @@ export function bridgeLog(ctx: MutationContext, source: string, text: string): v
   if (bridge.log.length > LOG_LIMIT) bridge.log.splice(0, bridge.log.length - LOG_LIMIT);
 }
 
+/** The app an element came from (its origin ref), or null for ArchAI's own elements. */
+export function originOf(binding: BridgeBinding | undefined): string | null {
+  return Object.entries(binding?.refs ?? {}).find(([, ref]) => ref.role === 'origin')?.[0] ?? null;
+}
+
 /**
  * Who decides `facet` of an element: its own override, else the authority of the source it came
  * from, else that source (`origin`). Returns a source key, `archai` or `shared`.
+ *
+ * An element that came from an app is only ever changed by that app or in ArchAI: another app can
+ * edit it only once it is released (Convert to ArchAI element) and offered to that app.
  */
 export function ownerOf(bridge: BridgeData, binding: BridgeBinding, facet: BridgeFacet): string {
-  const origin = Object.entries(binding.refs).find(([, ref]) => ref.role === 'origin')?.[0] ?? null;
+  const origin = originOf(binding);
   const owner = binding.owners?.[facet] ?? (origin ? bridge.sources[origin]?.authority[facet] : undefined) ?? 'origin';
   if (owner === 'origin') return origin ?? 'archai';
+  if (origin && owner !== 'archai' && owner !== 'shared' && owner !== origin) return origin;
   return owner;
 }
+
+/** Whether an element can be given to other apps as an editable copy: only ArchAI's own (released) elements. */
+export const editableElsewhere = (binding: BridgeBinding | undefined): boolean => originOf(binding) === null;
 
 /** How faithful ArchAI's element is to an item of each collection. */
 const FIDELITY: Record<ExchangeCollection, { fidelity: BridgeFidelity; lossy: boolean }> = {
@@ -194,6 +206,9 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
   const hashes = itemHashes(input.model);
   /** Items whose bound element is rebuilt aside: `collection/id` → bound element. */
   const changed = new Map<string, string>();
+  // Objects released into ArchAI elements (Convert to ArchAI element): ArchAI's now, not added again.
+  const released = new Set<string>();
+  for (const binding of Object.values(bridge.elements)) for (const h of binding.history ?? []) if (h.source === key) released.add(h.id);
   /** The app's editable copies of ArchAI elements, seen for the first time: item → element. */
   const copyOf = new Map<string, string>(input.model.meshes.flatMap((mesh) => (mesh.archai ? [[`meshes/${mesh.id}`, mesh.archai] as const] : [])));
   const copies = new Map<string, string>();
@@ -219,8 +234,14 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
       }
       const elementId = bound.get(item);
       if (!elementId) {
+        if (released.has(id)) return null;
         const original = copyOf.get(item);
-        if (original && ctx.doc.elements[original] && !bridge.elements[original]?.refs[key]) copies.set(item, original);
+        if (original && ctx.doc.elements[original] && !bridge.elements[original]?.refs[key]) {
+          // Only ArchAI's own elements have editable copies elsewhere; a copy of another app's
+          // element (made before this rule) is left out rather than added as a duplicate.
+          if (!editableElsewhere(bridge.elements[original])) return null;
+          copies.set(item, original);
+        }
         return undefined;
       }
       const binding = bridge.elements[elementId]!;
@@ -312,7 +333,13 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
         continue;
       }
       const owner = ownerOf(bridge, binding, facet);
-      const offered = binding.offers?.[key]?.includes(facet) ?? false;
+      const offered = (binding.offers?.[key]?.includes(facet) ?? false) && editableElsewhere(binding);
+      // Another app's element: a copy in this app never changes it (release it into ArchAI first).
+      if (ref.role !== 'origin' && !editableElsewhere(binding)) {
+        report.rejected += 1;
+        merge.kept.add(facet);
+        continue;
+      }
       if (facet === 'geometry' && theirs.kind !== mine.kind && ref.role !== 'origin') {
         report.rejected += 1;
         merge.kept.add(facet);

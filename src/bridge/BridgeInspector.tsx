@@ -6,7 +6,7 @@
 import { useAppState, useDispatch } from '@/app/context';
 import { BRIDGE_FACETS, type BridgeFacet, type BridgeShare } from '@/document';
 import { boardDoc } from '@/store';
-import { ownerOf } from './engine';
+import { editableElsewhere, ownerOf } from './engine';
 import { FACET_LABELS } from './view';
 import styles from './LiveBridgePanel.module.css';
 
@@ -70,9 +70,6 @@ export function BridgeInspector({ ids }: { ids: string[] }) {
                   <option value="origin">The app it came from</option>
                   <option value="archai">ArchAI</option>
                   <option value="shared">Shared (ask on conflict)</option>
-                  {sources.map(([key, source]) => (
-                    <option key={key} value={key}>{source.app}</option>
-                  ))}
                 </select>
               </label>
             ))}
@@ -81,7 +78,10 @@ export function BridgeInspector({ ids }: { ids: string[] }) {
       )}
       <details className={styles.authority}>
         <summary>Editable in other apps</summary>
-        {sources
+        {bindings.some((b) => !editableElsewhere(b)) && (
+          <small className={styles.meta}>Geometry from an app is edited only in that app. Convert it into an ArchAI element to let other apps edit it.</small>
+        )}
+        {bindings.every((b) => editableElsewhere(b)) && sources
           .filter(([key]) => !origins.has(key))
           .map(([key, source]) => {
             const offered = bindings.every((b) => (b?.offers?.[key]?.length ?? 0) > 0);

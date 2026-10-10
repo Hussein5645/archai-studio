@@ -124,12 +124,11 @@ function Apps({ bridge, connections, now }: { bridge: BridgeData | undefined; co
         const connection = byKey.get(key);
         const status = linkStatus(connection, now);
         const app = source?.app || connection?.app || 'App';
-        const others = keys.filter((other) => other !== key);
+        // Another app never decides this app's elements (release them into ArchAI first).
         const ownerOptions = [
           { value: 'origin', label: app },
           { value: 'archai', label: 'ArchAI' },
           { value: 'shared', label: 'Shared (ask on conflict)' },
-          ...others.map((other) => ({ value: other, label: bridge?.sources[other]?.app || byKey.get(other)?.app || other })),
         ];
         const setSource = (patch: Record<string, unknown>) => void dispatch('bridge-set-source', { key, ...patch });
         return (

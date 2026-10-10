@@ -7,7 +7,7 @@ import { defineMutation, CommandError } from '@/commands/contract';
 import { removeSubtree } from '@/commands/helpers';
 import { BRIDGE_FACETS, BRIDGE_MODES, BRIDGE_SHARES, BridgeOwnerSchema, IdSchema, type BridgeData, type JsonValue } from '@/document';
 import { RevitExchangeSchema } from '@/revit/exchange';
-import { bridgeLog, ensureBridge, runBridgeSync, unbind } from './engine';
+import { bridgeLog, editableElsewhere, ensureBridge, originOf, runBridgeSync, unbind } from './engine';
 import { childLookup, facetHashes, withFacetValue } from './facets';
 import { current, isDraft } from 'immer';
 
@@ -144,6 +144,10 @@ export const bridgeSetSource = defineMutation({
   run: (ctx, input) => {
     const source = bridgeOf(ctx.doc as { bridge?: BridgeData }).sources[input.key];
     if (!source) throw new CommandError('rejected', 'That app is not linked to this project');
+    // An app's elements are decided by that app or ArchAI, never by another app.
+    if (Object.values(input.authority ?? {}).some((owner) => !['origin', 'archai', 'shared', input.key].includes(owner))) {
+      throw new CommandError('rejected', "Another app cannot decide this app's elements. Convert them into ArchAI elements first.");
+    }
     if (input.mode) source.mode = input.mode;
     if (input.receives) source.receives = input.receives;
     if (input.authority) source.authority = { ...source.authority, ...input.authority };
@@ -163,6 +167,10 @@ export const bridgeSetOwner = defineMutation({
     const bridge = ensureBridge(ctx);
     for (const id of input.ids) {
       if (!ctx.doc.elements[id]) continue;
+      const origin = originOf(bridge.elements[id]);
+      if (origin && input.owner && !['origin', 'archai', 'shared', origin].includes(input.owner)) {
+        throw new CommandError('rejected', "Another app cannot decide an element that came from an app. Convert it into an ArchAI element first.");
+      }
       const binding = (bridge.elements[id] ??= { state: {}, refs: {} });
       const owners = { ...(binding.owners ?? {}) };
       if (input.owner === null) delete owners[input.facet];
@@ -196,7 +204,7 @@ export const bridgeSetShare = defineMutation({
 export const bridgeOffer = defineMutation({
   id: 'bridge-offer',
   label: 'Offer as editable copy',
-  description: 'Offers elements to a connected app as editable copies, with the facets it may change (geometry, transform, material, metadata); an empty list makes them reference geometry again. The app creates them as its own objects and its edits come back to the same elements.',
+  description: "Offers ArchAI's own elements (made in ArchAI, or released with Convert to ArchAI element) to a connected app as editable copies, with the facets it may change (geometry, transform, material, metadata); an empty list makes them reference geometry again. Elements that still come from an app are only edited in that app.",
   group: 'document',
   palette: false,
   history: 'record',
@@ -205,8 +213,14 @@ export const bridgeOffer = defineMutation({
     const bridge = ensureBridge(ctx);
     if (!bridge.sources[input.key]) throw new CommandError('rejected', 'That app is not linked to this project');
     let count = 0;
+    let fromApps = 0;
     for (const id of input.ids) {
       if (!ctx.doc.elements[id]) continue;
+      // Geometry from an app is edited only in that app until it is released into ArchAI.
+      if (input.facets.length && !editableElsewhere(bridge.elements[id])) {
+        fromApps += 1;
+        continue;
+      }
       const binding = (bridge.elements[id] ??= { state: {}, refs: {} });
       const offers = { ...(binding.offers ?? {}) };
       if (input.facets.length) offers[input.key] = [...new Set(input.facets)];
@@ -215,8 +229,9 @@ export const bridgeOffer = defineMutation({
       else delete binding.offers;
       count += 1;
     }
+    if (count === 0 && fromApps > 0) throw new CommandError('rejected', 'These elements came from an app: only that app edits them. Convert them into ArchAI elements first to let other apps edit them.');
     bridgeLog(ctx, input.key, input.facets.length ? `${count} elements offered as editable copies (${input.facets.join(', ')})` : `${count} elements back to reference geometry`);
-    return { offered: count };
+    return { offered: count, skipped: fromApps };
   },
 });
 

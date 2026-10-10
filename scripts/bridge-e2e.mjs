@@ -156,10 +156,16 @@ try {
   check('A no longer shows the column', liveIn('A').length === 0);
 
   send('A', 'unhide');
-  // 6. ArchAI offers A's cube to B as an editable copy (names only): B makes it its own object,
-  //    ArchAI links it, and B's rename comes back to the same element.
+  // 6. A's cube cannot be edited in B while it is A's: offering it is refused. Released into an
+  //    ArchAI element first, it can be offered to B as an editable copy (names only): B makes it
+  //    its own object, ArchAI links it, and B's rename comes back to the same element.
+  const refused = await page.evaluate(([key, id]) => window.__archai.executor.dispatchSync('bridge-offer', { ids: [id], key, facets: ['metadata'] }).ok, [keyB, wallId]);
+  check("another app cannot get an app's geometry to edit", refused === false);
   await page.evaluate(([key, id]) => {
-    const r = window.__archai.executor.dispatchSync('bridge-offer', { ids: [id], key, facets: ['metadata'] });
+    const { executor } = window.__archai;
+    let r = executor.dispatchSync('bridge-convert', { ids: [id] });
+    if (!r.ok) throw new Error(r.error.message);
+    r = executor.dispatchSync('bridge-offer', { ids: [id], key, facets: ['metadata'] });
     if (!r.ok) throw new Error(r.error.message);
   }, [keyB, wallId]);
   const copyInB = () => (blenderState('B')?.objects ?? []).find((o) => o.copy_of === wallId);
@@ -177,13 +183,13 @@ try {
   });
   check('an offered facet edited in B updates the element', Boolean(state));
 
-  // 7. A owns its cube's name: A's rename wins over B's.
+  // 7. Released, the cube is ArchAI's: A's rename of its own cube no longer changes it (and A's
+  //    cube is not added again).
   send('A', 'rename');
-  state = await waitFor('A\'s rename wins', async () => {
-    const s = await archaiState();
-    return s.elements.find((e) => e.id === wallId)?.name === 'Wall A renamed' ? s : null;
-  });
-  check('the owner\'s change wins', Boolean(state));
+  await new Promise((r) => setTimeout(r, 5000));
+  state = await archaiState();
+  check('the app no longer changes a released element', state.elements.find((e) => e.id === wallId)?.name === 'Copy renamed in B', state.elements.find((e) => e.id === wallId)?.name);
+  check('nor adds it again', state.elements.length === 1, `${state.elements.length} elements`);
 
   // 8. AutoCAD joins: a third, different app on the same project (protocol 2 in the C# core).
   if (existsSync(accore) && existsSync(agentDll)) {
@@ -254,6 +260,9 @@ try {
   } else console.log('SKIP AutoCAD (accoreconsole or the agent build missing)');
 
   console.log('ArchAI log:', (await archaiState()).log.slice(-12));
+} catch (error) {
+  failures += 1;
+  console.log('ERROR', error);
 } finally {
   send('A', 'stop');
   send('B', 'stop');

@@ -13,7 +13,7 @@
 import { invert, multiply, worldMatrix, type Mat } from '@/geometry';
 import type { ArchaiDocument, BridgeFacet, Element, ElementTable, JsonValue } from '@/document';
 import { instanceElevationOf } from '@/view3d/geometry';
-import { ownerOf } from './engine';
+import { editableElsewhere, ownerOf } from './engine';
 import { childLookup, facetHashes, hashValue } from './facets';
 import { liveLinkOf } from '@/live/sync';
 
@@ -142,7 +142,7 @@ export function pullPlan(doc: ArchaiDocument, key: string, sent: ReadonlyMap<str
       if (color) extras['color'] = color;
     }
     const offered = binding?.offers?.[key];
-    if (offered?.length) extras['editable'] = offered;
+    if (offered?.length && editableElsewhere(binding)) extras['editable'] = offered;
     plan.nodes.set(element.id, extras);
   }
   return plan;

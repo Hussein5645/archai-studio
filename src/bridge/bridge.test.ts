@@ -305,15 +305,34 @@ describe('Live Bridge pulls and updates', () => {
     expect(pullPlan(doc(app), 'blender:viz', null).updates).toEqual([]);
   });
 
-  it('links editable copies back to their element and applies the offered facets', () => {
+  it("never lets another app edit an app's geometry until it is released into ArchAI", () => {
     const app = createTestApp();
     sync(app, 'revit:tower', model({ app: 'Revit', meshes: [mesh('stair', 0, 'Stair')] }));
     sync(app, 'blender:viz', model({ app: 'Blender', meshes: [] }));
     const stair = bound(app, 'revit:tower', 'stair')!.id;
-    // Reference geometry until offered.
+    // Revit's stair cannot be offered to Blender, nor handed to Blender's authority.
+    expect(app.executor.dispatchSync('bridge-offer', { ids: [stair], key: 'blender:viz', facets: ['metadata'] }).ok).toBe(false);
+    expect(app.executor.dispatchSync('bridge-set-owner', { ids: [stair], facet: 'transform', owner: 'blender:viz' }).ok).toBe(false);
+    expect(app.executor.dispatchSync('bridge-set-source', { key: 'revit:tower', authority: { geometry: 'blender:viz' } }).ok).toBe(false);
     expect(pullPlan(doc(app), 'blender:viz', null).nodes.get(stair)!['editable']).toBeUndefined();
+    // A copy Blender made anyway (an older plugin) changes nothing and adds nothing.
+    const sneaky = sync(app, 'blender:viz', model({ app: 'Blender', meshes: [{ ...mesh('obj-1', 900, 'Stair X'), archai: stair }] }));
+    expect(sneaky).toMatchObject({ created: 0, linked: 0 });
+    expect(doc(app).elements[stair]).toMatchObject({ name: 'Stair', x: 0 });
+    expect(real(app).length).toBe(1);
+  });
+
+  it('links editable copies of released elements back to them and applies the offered facets', () => {
+    const app = createTestApp();
+    sync(app, 'revit:tower', model({ app: 'Revit', meshes: [mesh('stair', 0, 'Stair')] }));
+    sync(app, 'blender:viz', model({ app: 'Blender', meshes: [] }));
+    const stair = bound(app, 'revit:tower', 'stair')!.id;
+    // Released into an ArchAI element first: then it can be offered.
+    run(app, 'bridge-convert', { ids: [stair] });
     run(app, 'bridge-offer', { ids: [stair], key: 'blender:viz', facets: ['metadata', 'material'] });
     expect(pullPlan(doc(app), 'blender:viz', null).nodes.get(stair)!['editable']).toEqual(['metadata', 'material']);
+    // Revit's next sync does not bring its stair back as a new element: it was released.
+    expect(sync(app, 'revit:tower', model({ app: 'Revit', meshes: [mesh('stair', 0, 'Stair')] })).created).toBe(0);
     // Blender made its copy and sends it with the element it came from.
     const copy = { ...mesh('obj-7', 0, 'Stair'), archai: stair };
     const linked = sync(app, 'blender:viz', model({ app: 'Blender', meshes: [copy] }));
@@ -322,7 +341,7 @@ describe('Live Bridge pulls and updates', () => {
     expect(bridge(app).elements[stair]!.refs['blender:viz']).toMatchObject({ id: 'obj-7', role: 'copy' });
     // No longer a node for Blender (it has its own copy).
     expect(pullPlan(doc(app), 'blender:viz', null).nodes.has(stair)).toBe(false);
-    // A rename in Blender is offered: applied. A move is not: Revit keeps the transform.
+    // A rename in Blender is offered: applied. A move is not: ArchAI keeps the position.
     const report = sync(app, 'blender:viz', model({ app: 'Blender', meshes: [{ ...mesh('obj-7', 800, 'Stair B'), archai: stair }] }));
     expect(doc(app).elements[stair]).toMatchObject({ name: 'Stair B', x: 0 });
     expect(report.rejected).toBeGreaterThan(0);

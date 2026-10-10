@@ -27,12 +27,24 @@ Plugins 0.4.x (protocol 1) keep working with it.
 |---|---|---|
 | **Source identity** | Which model in which app, bound to which project? | `doc.bridge.sources[key]`; the plugin remembers its project in `%LOCALAPPDATA%\ArchAI\live-bridge.json` |
 | **Binding graph** | Which objects in which apps are this element? One element can have refs to several apps (its origin and copies) | `doc.bridge.elements[id].refs[key]` (id, kind, role origin/copy, fidelity, base hashes, where the app has it) |
-| **Authority** | Who decides each part (facet) of an element: geometry, transform, material, metadata | per source (`authority`), element overrides (`owners`); owner `origin` (default), `archai`, `shared` or another app |
+| **Authority** | Who decides each part (facet) of an element: geometry, transform, material, metadata | per source (`authority`), element overrides (`owners`); owner `origin` (default), `archai` or `shared`, never another app |
 | **Permissions** | What a link sends and receives | link `mode` (two-way, read-only, paused), `receives` (shared, nothing), element `share` (shared, source-only, archai-only), `offers` (editable copies) |
 
 Bindings are keyed by ArchAI element id inside the project, so copy/paste never duplicates them,
 undo restores them with the elements, and online projects carry them to collaborators like any
 other edit.
+
+### Geometry from an app is edited only in that app (and ArchAI)
+
+An element that came from an app (it has an `origin` ref) can be changed by that app and in
+ArchAI, never by another app: it cannot be offered as an editable copy, its parts cannot be handed
+to another app's authority, and a copy another app sends anyway changes nothing and adds nothing.
+Other apps receive it as reference geometry only.
+
+To let other apps edit it, **release** it first with **Convert to ArchAI element**: it becomes
+ArchAI's own element (the app it came from is kept as history; that app's object no longer
+changes it and is not added again). Then offer it as an editable copy to any app (Inspector →
+Live Bridge → Editable in other apps). Elements made in ArchAI can be offered directly.
 
 ### A push (an app sends its model)
 
@@ -45,10 +57,10 @@ other edit.
    |---|---|---|---|
    | no | – | – | nothing (ArchAI edits survive) |
    | yes, to what ArchAI has | – | – | in sync (an update ArchAI sent came back) |
-   | yes | no | this app, `shared`, or offered to it | applied |
+   | yes | no | this app, `shared`, or offered to it (ArchAI's own elements only) | applied |
    | yes | yes | this app | applied, logged (Undo restores) |
    | yes | yes | `shared` or offered | **conflict**, ArchAI's kept until resolved |
-   | yes | – | ArchAI or another app | not applied, logged |
+   | yes | – | ArchAI, or the app only has a copy of another app's element | not applied, logged |
 
 3. Deletions only from complete snapshots or explicit `deleted` ids (protocol-2 plugins send
    visible objects as a partial snapshot and list the ids gone from the model: hiding deletes
@@ -74,9 +86,10 @@ other edit.
 Each ref records how faithful an object is: **native**, **converted** (rebuilt as another
 editable kind, e.g. a Revit wall as an ArchAI wall), **reference** (display only) or
 **unsupported** (listed on the source in the panel, never dropped silently), and whether the
-conversion was lossy. Other apps get **reference** geometry (their ArchAI Live layer) unless an
-element is offered to them as an **editable copy**: they make it their own object, send it back
-with `archai: <element>`, and ArchAI links it as a `copy` ref of the same element.
+conversion was lossy. Other apps get **reference** geometry (their ArchAI Live layer). An
+ArchAI element (made in ArchAI or released from an app) can be offered to them as an **editable
+copy**: they make it their own object, send it back with `archai: <element>`, and ArchAI links it
+as a `copy` ref of the same element; only the offered parts of their edits apply.
 
 ### Protocol 2
 
@@ -106,8 +119,8 @@ one).
 - **Board**: each model is a group (select it, move it as one); "Show each app's elements in its
   colour" outlines and tints them.
 - **Inspector**: source, refs and fidelity, where it goes, who decides its parts, editable copies
-  for other apps, **Convert to ArchAI element** (no longer synced; the source is kept as history
-  and it is not sent back to that app).
+  for other apps (ArchAI's own elements only), **Convert to ArchAI element** (releases it: no
+  longer synced, the source is kept as history and it is not sent back to that app).
 
 ## In the plugins
 
@@ -121,7 +134,7 @@ one).
 | 3ds Max | "ArchAI Live" layers, user property `archai_id` | "ArchAI Copies" layer | move | node handles |
 | Unreal | actors tagged `ArchAILive` and `archai:<id>`, one asset each | "ArchAI Copies" folder | add_actor_world_offset | actor names |
 
-## Status by app (2026-10-10, ArchAI 0.2.2.16, plugins 0.5.0)
+## Status by app (2026-10-10, ArchAI 0.2.2.17, plugins 0.5.0)
 
 How far each app's Live Bridge has been tested, and how well its geometry travels. "Run" means
 the plugin's own code ran in the real app against the ArchAI desktop app; "built" means it
@@ -145,8 +158,9 @@ What travels the same way for every app:
   reshaped in ArchAI.
 - **Materials** carry colour, opacity, roughness and metalness; textures and UV maps do not
   travel yet.
-- **Back into the apps** everything arrives as display geometry (reference) unless offered as an
-  editable copy, which is a plain mesh there (not a native wall, solid or NURBS).
+- **Back into the apps** everything arrives as display geometry (reference). Only ArchAI's own
+  elements (made in ArchAI, or released from an app with Convert to ArchAI element) can be offered
+  as editable copies, which are plain meshes there (not native walls, solids or NURBS).
 - **ArchAI's changes to an app's own objects** are moves (plan and elevation) and names; rotations
   made in ArchAI stay in ArchAI. AutoCAD and Revit have no object names, so only moves apply there.
 - **Ids**: stable in every app (Revit element ids, AutoCAD handles, Rhino GUIDs, SketchUp
@@ -166,7 +180,8 @@ move, rename, hide, delete, and an editable copy from Inspector → Live Bridge.
   copies, id changes, source groups, conversion, export flattening, online projects.
 - `scripts/bridge-e2e.mjs`: the desktop app with two real Blender processes and AutoCAD
   (accoreconsole, `plugins/autocad/Archai.AutoCAD.BridgeTest`): connect, exchange, moves both
-  ways, hide, delete, editable copies in Blender and AutoCAD, owner wins (26 checks). Run it with
+  ways, hide, delete, another app refused an app's geometry, release then editable copies in
+  Blender and AutoCAD, a released element no longer changed by its app (28 checks). Run it with
   the Blender profile isolated (the script does): a factory-startup Blender on your own profile
   removes your extensions' Python packages.
 - See "Status by app" above for what was run in each app. Rhino, Revit, 3ds Max, Unreal and SketchUp compile (SketchUp: Ruby syntax checked) but were not
