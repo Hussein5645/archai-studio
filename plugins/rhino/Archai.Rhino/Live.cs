@@ -40,6 +40,7 @@ internal sealed class Live : IDisposable
 
     public readonly RhinoDoc Doc;
     private readonly LiveLink link;
+    private readonly RhinoLiveProgress progress = new RhinoLiveProgress();
     private string lastPrinted = "";
 
     public Live(RhinoDoc doc)
@@ -72,6 +73,9 @@ internal sealed class Live : IDisposable
             lastPrinted = kind;
             RhinoApp.InvokeOnUiThread(new Action(() => RhinoApp.WriteLine("ArchAI: " + status)));
         };
+        // Slow syncs (a first sync, a big model) show in the status bar's progress meter.
+        link.SyncProgress = progress.Report;
+        link.SyncFinished = progress.Finished;
         RhinoDoc.AddRhinoObject += Added;
         RhinoDoc.DeleteRhinoObject += Deleted;
         RhinoDoc.ReplaceRhinoObject += Replaced;
@@ -104,6 +108,7 @@ internal sealed class Live : IDisposable
         RhinoDoc.ModifyObjectAttributes -= Modified;
         RhinoDoc.CloseDocument -= Closed;
         link.Dispose();
+        progress.Dispose();
         StatusChanged?.Invoke("Off");
     }
 }

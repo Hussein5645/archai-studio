@@ -23,8 +23,8 @@ import urllib.request
 import webbrowser
 from array import array
 
-VERSION = "0.4.0"
-WEB_URL = "https://archai2-0.vercel.app/"
+VERSION = "0.4.1"
+WEB_URL = "https://archai-studio-six.vercel.app/"
 DEFAULT_SHARE_URL = "https://archai-vr-share.mklkoklpp.workers.dev"
 MAX_MODEL_BYTES = 95 * 1024 * 1024
 MAX_STOPS = 40
@@ -557,7 +557,7 @@ def build_tour(name, app, objects, cameras, start_camera=None, ground_mm=None):
     return writer.to_glb("ArchAI %s plugin" % app), tour_json(name, app + " model via ArchAI", stops, start), writer.triangle_count, len(stops)
 
 
-# ---- the share service ----------------------------------------------------------------------
+# ---- the share service: account ---------------------------------------------------------
 
 def share_config(app=""):
     """(url, token): the share service and the ArchAI account to publish with, or None.
@@ -594,8 +594,116 @@ def share_config(app=""):
     return None
 
 
-def _call(config, method, path, body, content_type):
+# ---- progress ----------------------------------------------------------------------------
+
+def megabytes(size):
+    """`4.2 MB` for status lines."""
+    return "%.1f MB" % (size / 1048576.0) if size >= 1048576 else "%d KB" % max(1, size // 1024)
+
+
+def scaled(progress, start, end):
+    """A progress(text, fraction) whose 0..1 lands in [start, end] of `progress`."""
+    if progress is None:
+        return None
+    return lambda text, fraction=None: progress(text, None if fraction is None else start + (end - start) * fraction)
+
+
+def step(progress, index, count, text):
+    """Item `index` of `count` done (at most ~50 reports per run)."""
+    if progress is None or count <= 0:
+        return
+    stride = max(1, count // 50)
+    if index % stride == 0 or index == count - 1:
+        progress(text, float(index) / count)
+
+
+def _send(url, method, body, headers, sent=None, timeout=600):
+    """An HTTP(S) request whose body is written in chunks; `sent(done, total)` follows it.
+    Returns (status, headers dict, body bytes)."""
+    import http.client
+    parts = urllib.parse.urlsplit(url)
+    connection_type = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
+    connection = connection_type(parts.hostname, parts.port, timeout=timeout)
+    try:
+        target = parts.path + ("?" + parts.query if parts.query else "")
+        connection.putrequest(method, target)
+        for name, value in headers.items():
+            connection.putheader(name, value)
+        connection.putheader("Content-Length", str(len(body)))
+        connection.endheaders()
+        chunk = 64 * 1024
+        for offset in range(0, len(body), chunk):
+            connection.send(body[offset:offset + chunk])
+            if sent:
+                sent(min(len(body), offset + chunk), len(body))
+        response = connection.getresponse()
+        return response.status, dict(response.getheaders()), response.read()
+    finally:
+        connection.close()
+
+
+class DelayedProgress(object):
+    """Shows a task's progress only when it lasts longer than `delay` seconds (live-link syncs:
+    the usual quick ones never pop anything). `begin(text)`, `update(text, fraction)` and
+    `end()` are the host's own progress UI and are called through `on_main`; `report` and
+    `finished` may be called from any thread."""
+
+    def __init__(self, begin, update, end, on_main, delay=1.0):
+        import threading
+        self._begin, self._update, self._end, self._on_main = begin, update, end, on_main
+        self._delay = delay
+        self._lock = threading.Lock()
+        self._timer = None
+        self._active = False
+        self._shown = False
+        self._last = ("", None)
+
+    def report(self, text, fraction=None):
+        import threading
+        with self._lock:
+            self._last = (text, fraction)
+            if not self._active:
+                self._active = True
+                self._timer = threading.Timer(self._delay, self._show)
+                self._timer.daemon = True
+                self._timer.start()
+            shown = self._shown
+        if shown:
+            self._on_main(lambda: self._update(text, fraction))
+
+    def _show(self):
+        with self._lock:
+            if not self._active or self._shown:
+                return
+            self._shown = True
+            text, fraction = self._last
+
+        def begin():
+            self._begin(text)
+            self._update(text, fraction)
+        self._on_main(begin)
+
+    def finished(self):
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            was_shown = self._shown
+            self._active = self._shown = False
+        if was_shown:
+            self._on_main(self._end)
+
+
+# ---- the share service ----------------------------------------------------------------------
+
+def _call(config, method, path, body, content_type, progress=None):
     url, token = config
+    if progress is not None:
+        status, _, data = _send(url + path, method, body, {"Authorization": "Bearer " + token, "Content-Type": content_type, "User-Agent": "ArchAI-plugin/" + VERSION},
+                                sent=lambda done, total: progress("Uploading %s of %s" % (megabytes(done), megabytes(total)), float(done) / total))
+        if status < 200 or status >= 300:
+            raise RuntimeError("VR share service: %d %s" % (status, data.decode("utf-8", "replace")))
+        return data.decode("utf-8")
     request = urllib.request.Request(url + path, data=body, method=method,
                                      headers={"Authorization": "Bearer " + token, "Content-Type": content_type, "User-Agent": "ArchAI-plugin/" + VERSION})
     try:
@@ -606,7 +714,8 @@ def _call(config, method, path, body, content_type):
         raise RuntimeError("VR share service: %d %s" % (error.code, detail or error.reason))
 
 
-def upload_tour(config, previous_id, model, tour):
+def upload_tour(config, previous_id, model, tour, progress=None):
+    """`progress(text, fraction)` follows the model upload."""
     if len(model) > MAX_MODEL_BYTES:
         raise RuntimeError("The model is %d MB; the VR share service takes up to 95 MB. Hide what you do not need to see and try again." % (len(model) // 1048576))
     reserved = _call(config, "POST", "/tours", json.dumps({"id": previous_id} if previous_id else {}).encode("utf-8"), "application/json")
@@ -614,7 +723,7 @@ def upload_tour(config, previous_id, model, tour):
     if not re.match(r"^[a-z0-9]{4,16}$", tour_id or ""):
         raise RuntimeError("VR share service returned an invalid tour id")
     # The model first: the tour file is what makes the link show the new version.
-    _call(config, "PUT", "/tours/%s/model.glb" % tour_id, model, "model/gltf-binary")
+    _call(config, "PUT", "/tours/%s/model.glb" % tour_id, model, "model/gltf-binary", progress)
     _call(config, "PUT", "/tours/%s/tour.json" % tour_id, json.dumps(tour, separators=(",", ":")).encode("utf-8"), "application/json")
     return tour_id, "%s/v/%s" % (config[0], tour_id)
 
@@ -632,10 +741,11 @@ def _links():
         return {}
 
 
-def publish(config, document_key, model, tour):
-    """Uploads, reusing the link this document had; returns the short link."""
+def publish(config, document_key, model, tour, progress=None):
+    """Uploads, reusing the link this document had; returns the short link. `progress(text,
+    fraction)` follows the upload."""
     links = _links()
-    tour_id, link = upload_tour(config, links.get(document_key), model, tour)
+    tour_id, link = upload_tour(config, links.get(document_key), model, tour, progress)
     links[document_key] = tour_id
     try:
         os.makedirs(os.path.dirname(_links_file()), exist_ok=True)
@@ -693,7 +803,10 @@ class LiveLink(object):
     - import_(name, objects): replace the ArchAI layer / collection with these ImportObjects
       (world glTF metres), main thread;
     - on_main(fn): run fn on the host's main thread soon (a timer, a slate tick...);
-    - status(text): optional, any thread.
+    - status(text): optional, any thread;
+    - progress(text, fraction) and finished(): optional, any thread: the phases of a sync (reading,
+      sending, ArchAI updating, receiving, building) and its end; DelayedProgress shows them only
+      for slow syncs.
     The host calls changed() from its change events; ignore events while `importing` is true or
     for a moment after an import (`quiet()`), they are ArchAI's own model arriving.
     Networking runs on a background thread; the host API is only touched through on_main.
@@ -702,8 +815,10 @@ class LiveLink(object):
     DEBOUNCE = 1.5
     POLL = 2.0
 
-    def __init__(self, key, app, name, export, import_, on_main, status=None):
+    def __init__(self, key, app, name, export, import_, on_main, status=None, progress=None, finished=None):
         import threading
+        self._progress = progress
+        self._finished = finished
         self.key = key[:300]
         self.app = app
         self.name = name
@@ -806,6 +921,27 @@ class LiveLink(object):
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.status, dict(response.headers), response.read()
 
+    def _phase(self, text, fraction):
+        if self._progress:
+            self._progress(text, fraction)
+
+    def _pull(self, path):
+        """GET with the download's progress (status, headers, bytes)."""
+        request = urllib.request.Request(self._base + path, headers={"X-ArchAI-Live": "1"})
+        with urllib.request.urlopen(request, timeout=180) as response:
+            total = int(response.headers.get("Content-Length") or 0)
+            chunks = []
+            done = 0
+            while True:
+                chunk = response.read(64 * 1024)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                done += len(chunk)
+                if total:
+                    self._phase("Receiving %s of %s" % (megabytes(done), megabytes(total)), 0.1 + 0.5 * done / total)
+            return response.status, dict(response.headers), b"".join(chunks)
+
     def _main(self, fn):
         """Runs fn on the host's main thread and waits for its result."""
         import threading
@@ -851,6 +987,9 @@ class LiveLink(object):
                 self._report("Live link: " + message)
             except Exception as error:  # noqa: BLE001
                 self._report("Live link: %s" % error)
+            finally:
+                if self._finished:
+                    self._finished()
 
     def _tick(self, push):
         import time
@@ -871,11 +1010,20 @@ class LiveLink(object):
         if push:
             with self._lock:
                 self._push_at = None
+            self._phase("Reading the %s model" % self.app, None)
             exchange = self._main(self._export)
             if exchange is not None:
                 exchange["app"] = self.app
                 payload = json.dumps({"key": self.key, "app": self.app, "name": self.name, "model": exchange}, separators=(",", ":")).encode("utf-8")
-                _, _, body = self._request("POST", "/live/push", payload)
+
+                def sent(done, total):
+                    if done < total:
+                        self._phase("Sending %s of %s to ArchAI" % (megabytes(done), megabytes(total)), 0.1 + 0.6 * done / total)
+                    else:
+                        self._phase("ArchAI is updating the project", 0.75)
+                code, _, body = _send(self._base + "/live/push", "POST", payload, {"X-ArchAI-Live": "1", "Content-Type": "application/json"}, sent=sent, timeout=180)
+                if code >= 400:
+                    raise RuntimeError(json.loads(body.decode("utf-8") or "{}").get("error") or "ArchAI could not take the model (%d)" % code)
                 revision = json.loads(body.decode("utf-8")).get("revision", 0)
                 if up_to_date:
                     self._last_pulled = revision
@@ -886,13 +1034,15 @@ class LiveLink(object):
         self._last_seen = revision
         if revision == self._last_pulled:
             return
-        code, headers, data = self._request("GET", "/live/pull?key=" + urllib.request.quote(self.key))
+        self._phase("ArchAI is preparing its model", None)
+        code, headers, data = self._pull("/live/pull?key=" + urllib.request.quote(self.key))
         if code == 204 or not data:
             return
         lower = {k.lower(): v for k, v in headers.items()}
         pulled = int(lower.get("x-archai-revision", revision) or revision)
         name = urllib.request.unquote(lower.get("x-archai-name", project))
         objects = read_glb(data)
+        self._phase("Building %d objects in %s" % (len(objects), self.app), 0.65)
 
         def apply():
             self.importing = True

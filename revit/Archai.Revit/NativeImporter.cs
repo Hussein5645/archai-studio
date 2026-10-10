@@ -45,14 +45,20 @@ internal sealed class NativeImporter
         var comments = target.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
         if (comments != null && !comments.IsReadOnly) comments.Set($"AIR: {e.Name} | {e.Id}");
     }
+    /// <summary>Progress of <see cref="Run"/> (Open .AIR shows it).</summary>
+    public Archai.Plugins.ProgressReport? Progress { get; set; }
+
     public ImportReport Run()
     {
         var report = new ImportReport { DocumentId = source.Id, RevitVersion = doc.Application.VersionNumber };
         var factory = new FamilyFactory(doc, source, batch);
         using var all = new TransactionGroup(doc, "Import ArchAI AIR model");
         all.Start();
-        foreach (var e in source.Elements.Values.OrderBy(Priority))
+        var ordered = source.Elements.Values.OrderBy(Priority).ToList();
+        for (var index = 0; index < ordered.Count; index++)
         {
+            var e = ordered[index];
+            Archai.Plugins.Progress.Step(Progress, index, ordered.Count, $"Building element {index + 1} of {ordered.Count}: {e.Name}");
             var item = new ImportItem { SourceId = e.Id, Name = e.Name, Type = e.Type.Length > 0 ? e.Type : e.Kind };
             report.Items.Add(item);
             var reason = SkipReason(e);

@@ -30,12 +30,17 @@ public sealed class ArchaiSendCommand : Command
         if (path == null) return Result.Cancel;
         try
         {
-            RhinoApp.SetCommandPrompt("Reading the model for ArchAI...");
-            var objects = RhinoScene.Collect(doc);
-            var name = Path.GetFileNameWithoutExtension(doc.Name ?? "Rhino model");
-            var exchange = Exchange.Write(name, "Rhino", RhinoApp.ExeVersion.ToString(), doc.Path ?? "", objects, out var written);
+            int written;
+            using (var progress = new RhinoProgress("Send to ArchAI"))
+            {
+                progress.Report("Reading the model", 0);
+                var objects = RhinoScene.Collect(doc, progress: ((ProgressReport)progress.Report).Range(0, 0.85));
+                var name = Path.GetFileNameWithoutExtension(doc.Name ?? "Rhino model");
+                progress.Report($"Writing {objects.Count} objects to the .AIR file", 0.9);
+                var exchange = Exchange.Write(name, "Rhino", RhinoApp.ExeVersion.ToString(), doc.Path ?? "", objects, out written);
+                if (written > 0) File.WriteAllText(path, exchange.ToString(Formatting.None));
+            }
             if (written == 0) { Dialogs.Show("Send to ArchAI", "There are no visible surfaces, polysurfaces, SubDs, meshes or blocks to send.", null, mode); return Result.Nothing; }
-            File.WriteAllText(path, exchange.ToString(Formatting.None));
             Dialogs.Show("Sent to ArchAI", $"{written} object{(written == 1 ? "" : "s")} saved to {Path.GetFileName(path)}.\n\nOpen it in ArchAI (Open file) to work on it: each object comes in as a 3D element with its materials.", null, mode);
             return Result.Success;
         }
@@ -53,9 +58,15 @@ public sealed class ArchaiOpenAirCommand : Command
         if (path == null) return Result.Cancel;
         try
         {
-            RhinoApp.SetCommandPrompt("Reading " + Path.GetFileName(path) + "...");
-            var contents = AirFile.Read(path);
-            var count = RhinoScene.Import(doc, contents);
+            AirFile.Contents contents;
+            int count;
+            using (var progress = new RhinoProgress("Open .AIR"))
+            {
+                progress.Report("Reading " + Path.GetFileName(path), null);
+                contents = AirFile.Read(path);
+                progress.Report($"Adding {contents.Objects.Count} elements", 0.1);
+                count = RhinoScene.Import(doc, contents, progress: ((ProgressReport)progress.Report).Range(0.1, 1));
+            }
             doc.Views.ActiveView?.ActiveViewport.ZoomExtents();
             Dialogs.Show("Opened .AIR", $"{contents.Name}: {count} element{(count == 1 ? "" : "s")} added as meshes on the \"ArchAI {contents.Name}\" layer, a sublayer per level.\n\nUndo removes the import.", null, mode);
             return Result.Success;
@@ -74,15 +85,23 @@ public sealed class ArchaiVrCommand : Command
         if (share == null) { Dialogs.Show("Open in VR", VrShare.NoKey, null, mode); return Result.Failure; }
         try
         {
-            RhinoApp.SetCommandPrompt("Preparing the VR model...");
             var name = Path.GetFileNameWithoutExtension(doc.Name ?? "Rhino model");
-            var tour = VrTour.Build(name, "Rhino", RhinoScene.Collect(doc), RhinoScene.Cameras(doc));
-            if (tour.Model.Length == 0) { Dialogs.Show("Open in VR", "There are no visible surfaces, polysurfaces, SubDs, meshes or blocks to show.", null, mode); return Result.Nothing; }
-            RhinoApp.SetCommandPrompt($"Uploading {Math.Max(1, tour.Model.Length / 1048576)} MB to the VR viewer...");
-            var key = "rhino|" + (string.IsNullOrEmpty(doc.Path) ? "unsaved:" + doc.RuntimeSerialNumber : doc.Path);
-            var task = Task.Run(() => VrShare.Publish(share, key, tour.Model, tour.Json));
-            while (!task.IsCompleted) { RhinoApp.Wait(); Thread.Sleep(15); }
-            var link = task.GetAwaiter().GetResult();
+            VrTour.Result tour;
+            VrShare.Published link;
+            using (var progress = new RhinoProgress("Open in VR"))
+            {
+                progress.Report("Reading the model", 0);
+                var objects = RhinoScene.Collect(doc, progress: ((ProgressReport)progress.Report).Range(0, 0.3));
+                progress.Report("Building the VR model", null);
+                tour = VrTour.Build(name, "Rhino", objects, RhinoScene.Cameras(doc));
+                if (tour.Model.Length == 0) { progress.Dispose(); Dialogs.Show("Open in VR", "There are no visible surfaces, polysurfaces, SubDs, meshes or blocks to show.", null, mode); return Result.Nothing; }
+                progress.Report($"Uploading {Progress.Megabytes(tour.Model.Length)} to the VR viewer", 0.35);
+                var key = "rhino|" + (string.IsNullOrEmpty(doc.Path) ? "unsaved:" + doc.RuntimeSerialNumber : doc.Path);
+                var upload = ((ProgressReport)progress.Report).Range(0.35, 1);
+                var task = Task.Run(() => VrShare.Publish(share, key, tour.Model, tour.Json, upload));
+                while (!task.IsCompleted) { RhinoApp.Wait(); Thread.Sleep(15); }
+                link = task.GetAwaiter().GetResult();
+            }
             VrShare.OpenInBrowser(link.Url);
             try { System.Windows.Forms.Clipboard.SetText(link.Url); } catch { }
             RhinoApp.WriteLine("ArchAI VR: " + link.Url);

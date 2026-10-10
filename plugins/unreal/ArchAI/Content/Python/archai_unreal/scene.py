@@ -65,10 +65,45 @@ def is_live(actor):
         return False
 
 
-def collect(skip_live=False):
+class Progress:
+    """Unreal's progress dialog (ScopedSlowTask, kept open across calls). `update(text,
+    fraction)` works as a core progress callback; game thread only."""
+
+    def __init__(self, title):
+        self.title = title
+        self.task = None
+        self.done = 0.0
+
+    def begin(self, text=""):
+        if self.task is None:
+            self.task = unreal.ScopedSlowTask(100.0, "ArchAI " + self.title)
+            self.task.__enter__()
+            self.task.make_dialog(False)
+            self.done = 0.0
+        self.update(text, None)
+
+    def update(self, text, fraction=None):
+        if self.task is None:
+            self.begin(text)
+        amount = 0.0
+        if fraction is not None:
+            target = max(0.0, min(1.0, fraction)) * 100.0
+            amount = max(0.0, target - self.done)
+            self.done += amount
+        self.task.enter_progress_frame(amount, "ArchAI %s: %s" % (self.title, text))
+
+    def end(self):
+        if self.task is not None:
+            self.task.__exit__(None, None, None)
+            self.task = None
+
+
+def collect(skip_live=False, progress=None):
     """Static meshes (and instanced static meshes) of the level's visible actors."""
     objects, cache = [], {}
-    for actor in _actors.get_all_level_actors():
+    actors = list(_actors.get_all_level_actors())
+    for index, actor in enumerate(actors):
+        core.step(progress, index, len(actors), "Reading actor %d of %d" % (index + 1, len(actors)))
         if actor.is_hidden_ed() or actor.is_temporarily_hidden_in_editor():
             continue
         if skip_live and is_live(actor):
@@ -112,8 +147,11 @@ def document_key():
     return "unreal|" + (world.get_path_name() if world else level_name())
 
 
-def send(path):
-    exchange = core.write_exchange(level_name(), "Unreal", unreal.SystemLibrary.get_engine_version(), document_key()[7:], collect())
+def send(path, progress=None):
+    objects = collect(progress=core.scaled(progress, 0.0, 0.9))
+    if progress:
+        progress("Writing the .AIR file", 0.95)
+    exchange = core.write_exchange(level_name(), "Unreal", unreal.SystemLibrary.get_engine_version(), document_key()[7:], objects)
     if not exchange["meshes"]:
         raise ValueError("There are no visible static meshes in the level to send.")
     core.save_exchange(path, exchange)
@@ -259,7 +297,10 @@ def _determinant(m):
             + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
 
 
-def prepare_tour():
+def prepare_tour(progress=None):
     name = level_name()
-    glb, tour, triangles, stops = core.build_tour(name, "Unreal", collect(), cameras())
+    objects = collect(progress=progress)
+    if progress:
+        progress("Building the VR model", None)
+    glb, tour, triangles, stops = core.build_tour(name, "Unreal", objects, cameras())
     return glb, tour, triangles, stops, name, document_key()

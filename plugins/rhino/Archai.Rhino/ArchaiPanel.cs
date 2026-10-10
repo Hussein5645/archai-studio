@@ -66,7 +66,7 @@ public sealed class ArchaiPanel : Panel
         };
         button.Click += (_, _) =>
         {
-            if (command == null) VrShare.OpenInBrowser("https://archai2-0.vercel.app/");
+            if (command == null) VrShare.OpenInBrowser("https://archai-studio-six.vercel.app/");
             else RhinoApp.RunScript(command, false);
         };
         return new StackLayout

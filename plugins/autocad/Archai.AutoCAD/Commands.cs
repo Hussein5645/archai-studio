@@ -42,7 +42,7 @@ public sealed class Commands
     }
 
     [CommandMethod("ARCHAIWEB")]
-    public void OpenWeb() => VrShare.OpenInBrowser("https://archai2-0.vercel.app/");
+    public void OpenWeb() => VrShare.OpenInBrowser("https://archai-studio-six.vercel.app/");
 
     /// <summary>Send to ArchAI: the drawing's 3D objects as an exchange .AIR file.</summary>
     [CommandMethod("ARCHAIEXPORT")]
@@ -63,8 +63,9 @@ public sealed class Commands
             List<SceneObject> objects;
             using (var progress = new ArchaiProgress("Send to ArchAI"))
             {
-                progress.Report("Reading the drawing's 3D objects...");
-                objects = DrawingScene.Collect(doc.Database);
+                progress.Report("Reading the drawing's 3D objects...", 0);
+                objects = DrawingScene.Collect(doc.Database, progress: ((ProgressReport)progress.Report).Range(0, 0.85));
+                progress.Report($"Writing {objects.Count} objects to the .AIR file", 0.9);
                 var exchange = Exchange.Write(Path.GetFileNameWithoutExtension(doc.Name), "AutoCAD", AcApp.Version.ToString(), doc.Name, objects, out var written);
                 if (written == 0)
                 {
@@ -93,11 +94,11 @@ public sealed class Commands
             string name;
             using (var progress = new ArchaiProgress("Open .AIR"))
             {
-                progress.Report("Reading " + Path.GetFileName(picker.FileName) + "...");
+                progress.Report("Reading " + Path.GetFileName(picker.FileName) + "...", null);
                 var contents = AirFile.Read(picker.FileName);
                 name = contents.Name;
-                progress.Report($"Adding {contents.Objects.Count} elements to the drawing...");
-                using (doc.LockDocument()) count = DrawingScene.Import(doc.Database, contents);
+                progress.Report($"Adding {contents.Objects.Count} elements to the drawing...", 0.1);
+                using (doc.LockDocument()) count = DrawingScene.Import(doc.Database, contents, progress: ((ProgressReport)progress.Report).Range(0.1, 1));
             }
             doc.Editor.Regen();
             ArchaiDialog.Show("Opened .AIR", $"{name}: {count} element{(count == 1 ? "" : "s")} added as blocks at their ArchAI position, on ArchAI layers per level.\n\nUndo removes the import.");
@@ -120,9 +121,10 @@ public sealed class Commands
             var name = Path.GetFileNameWithoutExtension(doc.Name);
             using (var progress = new ArchaiProgress("Open in VR"))
             {
-                progress.Report("Reading the drawing's 3D objects...");
-                var objects = DrawingScene.Collect(doc.Database);
+                progress.Report("Reading the drawing's 3D objects...", 0);
+                var objects = DrawingScene.Collect(doc.Database, progress: ((ProgressReport)progress.Report).Range(0, 0.3));
                 var cameras = DrawingScene.Cameras(doc.Database);
+                progress.Report("Building the VR model", null);
                 tour = VrTour.Build(name, "AutoCAD", objects, cameras);
                 if (tour.Model.Length == 0)
                 {
@@ -130,8 +132,9 @@ public sealed class Commands
                     ArchaiDialog.Show("Open in VR", "There are no 3D objects (solids, surfaces, meshes, 3D faces) in model space to show.");
                     return;
                 }
-                progress.Report($"Uploading {Math.Max(1, tour.Model.Length / 1048576)} MB to the VR viewer...");
-                link = progress.Run(() => VrShare.Publish(share, "autocad|" + doc.Name, tour.Model, tour.Json));
+                progress.Report($"Uploading {Progress.Megabytes(tour.Model.Length)} to the VR viewer...", 0.35);
+                var upload = ((ProgressReport)progress.Report).Range(0.35, 1);
+                link = progress.Run(() => VrShare.Publish(share, "autocad|" + doc.Name, tour.Model, tour.Json, upload));
             }
             VrShare.OpenInBrowser(link.Url);
             try { System.Windows.Clipboard.SetText(link.Url); } catch { }
@@ -165,15 +168,19 @@ internal static class DrawingScene
         _ => 1,
     };
 
-    public static List<SceneObject> Collect(Database db, bool skipLive = false)
+    public static List<SceneObject> Collect(Database db, bool skipLive = false, ProgressReport? progress = null)
     {
         var objects = new List<SceneObject>();
         var mm = Millimetres(db);
         var materials = new Dictionary<string, GlbMaterial>();
         using var tr = db.TransactionManager.StartOpenCloseTransaction();
         var space = (BlockTableRecord)tr.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(db), OpenMode.ForRead);
-        foreach (ObjectId id in space)
+        var ids = new List<ObjectId>();
+        foreach (ObjectId each in space) ids.Add(each);
+        for (var index = 0; index < ids.Count; index++)
         {
+            var id = ids[index];
+            progress.Step(index, ids.Count, $"Reading object {index + 1} of {ids.Count}");
             if (!(tr.GetObject(id, OpenMode.ForRead) is Entity entity) || !entity.Visible) continue;
             var layer = (LayerTableRecord)tr.GetObject(entity.LayerId, OpenMode.ForRead);
             if (layer.IsOff || layer.IsFrozen) continue;
@@ -324,10 +331,11 @@ internal static class DrawingScene
         tr.Commit();
     }
 
-    public static int Import(Database db, AirFile.Contents contents, string layerPrefix = "ArchAI")
+    public static int Import(Database db, AirFile.Contents contents, string layerPrefix = "ArchAI", ProgressReport? progress = null)
     {
         var mm = Millimetres(db);
         var count = 0;
+        var total = contents.Objects.Count;
         using var tr = db.TransactionManager.StartTransaction();
         var blocks = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForWrite);
         var layers = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForWrite);
@@ -344,6 +352,7 @@ internal static class DrawingScene
             }
             foreach (var item in level)
             {
+                progress.Step(count, total, $"Adding element {count + 1} of {total}");
                 var name = Unique(blocks, Clean($"{prefix} {item.Name}", 200));
                 var definition = new BlockTableRecord { Name = name, Origin = Point3d.Origin };
                 blocks.Add(definition);

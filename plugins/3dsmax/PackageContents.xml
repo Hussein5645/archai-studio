@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- ArchAI in 3ds Max: an Autodesk application plugin bundle. Install by copying ArchAI.bundle to
      %ProgramData%\Autodesk\ApplicationPlugins or %AppData%\Autodesk\ApplicationPlugins. -->
-<ApplicationPackage SchemaVersion="1.0" AutodeskProduct="3ds Max" ProductType="Application" Name="ArchAI" AppVersion="0.4.0"
+<ApplicationPackage SchemaVersion="1.0" AutodeskProduct="3ds Max" ProductType="Application" Name="ArchAI" AppVersion="0.4.1"
     Description="Send models to ArchAI, open .AIR files and walk through scenes in VR" Author="ArchAI" ProductCode="{4E2B7A1C-6D3F-4B8E-A1C9-5F0E2D7B3A64}" UpgradeCode="{9C1D4E6A-2B7F-4A3E-8D5C-1E9F3B6A7D20}">
-  <CompanyDetails Name="ArchAI" Url="https://archai2-0.vercel.app/" />
+  <CompanyDetails Name="ArchAI" Url="https://archai-studio-six.vercel.app/" />
   <Components Description="post-start-up scripts parts">
     <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2025" SeriesMax="2027" />
-    <ComponentEntry AppName="ArchAI" Version="0.4.0" ModuleName="./Contents/archai_startup.ms" />
+    <ComponentEntry AppName="ArchAI" Version="0.4.1" ModuleName="./Contents/archai_startup.ms" />
   </Components>
 </ApplicationPackage>

@@ -7,6 +7,7 @@ import { IdSchema, type JsonValue } from '@/document';
 import { POINT_SIZE } from '@/document/point';
 import { normaliseHeading, vrStopOf, VR_STOP_COLOUR } from '@/document/vrStop';
 import { CommandError, defineEffect, defineMutation } from '../contract';
+import { megabytes, startProgress } from '@/progress';
 import { setSelection, snapshot } from '../helpers';
 import { createRect } from './create';
 
@@ -86,12 +87,20 @@ export const publishVrTour = defineEffect({
     const config = vrShareConfig();
     if (!config) throw new CommandError('rejected', VR_SIGN_IN_MESSAGE);
     const previousId = input.newLink ? null : await ctx.platform.storage.get(tourKey(doc.id)).catch(() => null);
-    const model = await exportVrModel(doc, ctx.catalog);
+    const task = startProgress('Publishing the VR link', 'Building the 3D model (high detail)', null);
+    let model: ArrayBuffer;
     let published;
     try {
+      await task.paint();
+      model = await exportVrModel(doc, ctx.catalog);
+      task.update(`Uploading ${megabytes(model.byteLength)}`, 0.25);
       // The version query lets headsets cache the model yet pick up a republished one.
-      published = await uploadVrTour(config, { previousId, model, tour: vrTourJson(doc, stops, `model.glb?v=${Date.now().toString(36)}`) });
+      published = await uploadVrTour(config, { previousId, model, tour: vrTourJson(doc, stops, `model.glb?v=${Date.now().toString(36)}`) }, (fraction, loaded, total) =>
+        task.update(`Uploading ${megabytes(loaded)} of ${megabytes(total)}`, 0.25 + fraction * 0.7),
+      );
+      task.done();
     } catch (error) {
+      task.failed();
       throw new CommandError('failed', error instanceof Error ? error.message : 'Upload failed');
     }
     await ctx.platform.storage.set(tourKey(doc.id), published.id).catch(() => undefined);

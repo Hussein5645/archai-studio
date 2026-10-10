@@ -1,12 +1,12 @@
 schema_version = "1.0.0"
 
 id = "archai"
-version = "0.4.0"
+version = "0.4.1"
 name = "ArchAI"
 tagline = "Send models to ArchAI, open .AIR files and walk through the scene in VR"
 maintainer = "ArchAI"
 type = "add-on"
-website = "https://archai2-0.vercel.app/download.html"
+website = "https://archai-studio-six.vercel.app/download.html"
 tags = ["Import-Export", "3D View"]
 blender_version_min = "4.2.0"
 license = ["SPDX:GPL-3.0-or-later"]

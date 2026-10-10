@@ -8,6 +8,7 @@ import { SYSTEM_TYPES, parseSystemParameters, wallThickness } from '@/catalog';
 import { CurvePathSchema, IdSchema, JsonValueSchema, type Element, type ElementTable, type GroupElement, type InstanceElement, type JsonValue, type TemplateDefinition } from '@/document';
 import { applyToPoint, distance, invert, worldMatrix, enclosureArea, localBounds, localMatrix, polygonCentroid, rotate, sampleCurvePath, transformRect, unionRects } from '@/geometry';
 import { bytesToBase64 } from '@/persistence/base64';
+import { megabytes, withProgress } from '@/progress';
 import { storedLibraryUrl } from '@/cloud/library';
 import type { ToolId } from '@/store';
 import { joinWallBody, joinWallEnd, WALL_JOIN_TOLERANCE, withWallJoint } from './wallJoints';
@@ -1131,7 +1132,12 @@ export const importCaiPackage = defineEffect({
     if (!ctx.catalog.addLocalPackage) {
       throw new CommandError('rejected', 'Catalog does not support local packages');
     }
-    const asset = await ctx.catalog.addLocalPackage(fileBytes);
+    const add = ctx.catalog.addLocalPackage.bind(ctx.catalog);
+    const asset = await withProgress(`Importing ${input.name ?? '.CAI package'}`, async (task) => {
+      task.update(`Unpacking ${megabytes(fileBytes.byteLength)}`, null);
+      await task.paint();
+      return add(fileBytes);
+    });
     ctx.dispatchSync(showAssets, undefined);
     return asset;
   },

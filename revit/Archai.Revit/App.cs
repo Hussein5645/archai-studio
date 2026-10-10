@@ -77,7 +77,7 @@ public sealed class App : IExternalApplication
 [Transaction(TransactionMode.ReadOnly)]
 public sealed class OpenArchaiCommand : IExternalCommand
 {
-    public const string Url = "https://archai2-0.vercel.app/";
+    public const string Url = "https://archai-studio-six.vercel.app/";
     public Result Execute(ExternalCommandData data, ref string message, ElementSet elements)
     {
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Url) { UseShellExecute = true }); return Result.Succeeded; }
@@ -110,8 +110,8 @@ public sealed class ExportCommand : IExternalCommand
             string summary;
             using (var progress = new ArchaiProgress("Send to ArchAI"))
             {
-                progress.Report("Reading the model...");
-                summary = Write(doc, picker.FileName);
+                progress.Report("Reading the model...", 0);
+                summary = Write(doc, picker.FileName, progress.Report);
             }
             ArchaiDialog.Show("Sent to ArchAI", summary + "\n\nOpen " + Path.GetFileName(picker.FileName) + " in ArchAI (Open file) to work on it.");
             return Result.Succeeded;
@@ -120,9 +120,9 @@ public sealed class ExportCommand : IExternalCommand
     }
 
     /// <summary>Exports a document to an ArchAI .AIR file; returns a one-paragraph summary.</summary>
-    public static string Write(Document doc, string path)
+    public static string Write(Document doc, string path, Archai.Plugins.ProgressReport? progress = null)
     {
-        var exporter = new ArchaiExporter(doc);
+        var exporter = new ArchaiExporter(doc) { Progress = progress };
         var model = exporter.Export();
         File.WriteAllText(path, model.ToString(Formatting.None));
         var counts = string.Join(", ", exporter.Counts.OrderByDescending(c => c.Value).Select(c => $"{c.Value} {c.Key}{(c.Value == 1 ? "" : "s")}"));
@@ -160,7 +160,8 @@ public sealed class ImportCommand : IExternalCommand
             ImportReport report;
             using (var progress = new ArchaiProgress("Open .AIR"))
             {
-                progress.Report($"Building {source.Elements.Count} elements in Revit...");
+                progress.Report($"Building {source.Elements.Count} elements in Revit...", 0);
+                importer.Progress = progress.Report;
                 report = importer.Run();
             }
             var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ArchAI", "Revit", "Reports");

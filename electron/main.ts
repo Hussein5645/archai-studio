@@ -361,6 +361,15 @@ function registerIpc(): void {
   ipcMain.handle(IPC.windowOpenRender, () => openRenderWindow());
   // Live link with the modelling-app plugins: the board's answers.
   ipcMain.handle(IPC.liveReply, (_e, raw) => liveReply(raw));
+  // Long tasks (exports, imports, live-link syncs) on the taskbar button of the window doing them.
+  ipcMain.handle(IPC.windowSetProgress, (event, raw: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    const progress = (raw as { progress?: unknown } | null)?.progress;
+    if (progress === 'indeterminate') win.setProgressBar(2, { mode: 'indeterminate' });
+    else if (typeof progress === 'number' && Number.isFinite(progress)) win.setProgressBar(Math.max(0, Math.min(1, progress)));
+    else win.setProgressBar(-1);
+  });
   ipcMain.handle(IPC.linkTake, () => {
     const link = pendingLink;
     pendingLink = null;

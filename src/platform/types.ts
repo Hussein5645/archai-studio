@@ -52,6 +52,11 @@ export interface Platform {
     openModeling(params: { assetId: string; name: string; projectId?: string }): void;
     /** Opens the ArchAI Render studio (`/render`); null on hosts without it (the tablet app). */
     openRender: (() => void) | null;
+    /**
+     * Progress of long tasks on the host's own indicator (the desktop taskbar button): a fraction,
+     * 'indeterminate', or null to clear it. Absent where the host has none.
+     */
+    setProgress?: (progress: number | 'indeterminate' | null) => void;
   };
   /**
    * Messages between this window and the Render studio window (IPC relay on desktop, a

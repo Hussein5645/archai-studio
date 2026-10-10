@@ -6,7 +6,7 @@ using Rhino.PlugIns;
 
 [assembly: Guid("6F3C2A61-9E1B-4C7A-B0D4-1A5E3C8F72B9")]
 [assembly: PlugInDescription(DescriptionType.Organization, "ArchAI")]
-[assembly: PlugInDescription(DescriptionType.WebSite, "https://archai2-0.vercel.app/")]
+[assembly: PlugInDescription(DescriptionType.WebSite, "https://archai-studio-six.vercel.app/")]
 [assembly: PlugInDescription(DescriptionType.Icon, "archai.logo.ico")]
 
 namespace Archai.Rhino;

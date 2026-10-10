@@ -8,7 +8,7 @@ export interface ViewportLike {
   readonly zoom: number;
 }
 
-export const MIN_ZOOM = 0.001; // 1 km across 1000 px
+export const MIN_ZOOM = 0.00002; // 50 km across 1000 px
 export const MAX_ZOOM = 5; // 1 mm = 5 px
 
 export const clampZoom = (zoom: number): number => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));

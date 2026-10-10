@@ -6,6 +6,7 @@ import { isRevitExchange } from '@/revit/exchange';
 import { createDocumentFromTemplate, ArchaiTemplateSchema } from '@/persistence/templates';
 import { DEFAULT_VIEWPORT } from '@/store';
 import { CommandError, defineEffect, defineMutation, type EffectContext } from '../contract';
+import { megabytes, startProgress, withProgress, type ProgressHandle } from '@/progress';
 
 /**
  * Whether replacing the current document would lose work: either it has unsaved changes, or it
@@ -225,26 +226,47 @@ export const openDocument = defineEffect({
     ctx.dispatchSync(setDocumentPrompt, { kind: null });
     const file = await ctx.platform.files.openDocument();
     if (!file) return null;
-    if (/.(rvt|rfa|rte)$/i.test(file.name)) {
-      throw new CommandError('rejected', `${file.name}: Revit files open through the ArchAI add-in for Revit. In Revit choose ArchAI > Send to ArchAI, then open the exported .AIR file here.`);
+    const task = startProgress(`Opening ${file.name}`, `Reading ${megabytes(file.text.length)}`, 0.1);
+    try {
+      const result = await openFile(ctx, file, task);
+      task.done();
+      return result;
+    } catch (error) {
+      task.failed();
+      throw error;
     }
-    const revit = revitExchangeOf(file.text);
-    if (revit) {
-      // A Revit export: a new project built from it with ArchAI's own commands (one undo step).
-      const name = typeof revit['name'] === 'string' && revit['name'].trim() ? revit['name'] : file.name.replace(/.[^.]+$/, '');
-      ctx.dispatchSync('new-document', { name });
-      const imported = ctx.dispatchSync('import-revit-model', { model: revit });
-      if (!imported.ok) throw new CommandError(imported.error.code, `${file.name}: ${imported.error.message}`, imported.error.details);
-      ctx.dispatchSync('zoom-to-fit', {});
-      return { id: ctx.getState().doc.id, path: null, migratedFrom: null, revit: imported.value };
-    }
-    const parsed = parseDocument(file.text);
-    if (!parsed.ok) throw new CommandError('rejected', `${file.name}: ${parsed.error.message}`, parsed.error.details);
-    const result = ctx.dispatchSync(loadDocument, { document: parsed.document, filePath: file.path });
-    if (!result.ok) throw new CommandError(result.error.code, result.error.message, result.error.details);
-    return { id: parsed.document.id, path: file.path, migratedFrom: parsed.migratedFrom };
   },
 });
+
+/** Opens a picked .AIR (or Revit export) file, reporting each step. */
+async function openFile(ctx: EffectContext, file: { name: string; text: string; path: string | null }, task: ProgressHandle) {
+  await task.paint();
+  if (/.(rvt|rfa|rte)$/i.test(file.name)) {
+    throw new CommandError('rejected', `${file.name}: Revit files open through the ArchAI add-in for Revit. In Revit choose ArchAI > Send to ArchAI, then open the exported .AIR file here.`);
+  }
+  const revit = revitExchangeOf(file.text);
+  if (revit) {
+    // A Revit export: a new project built from it with ArchAI's own commands (one undo step).
+    const name = typeof revit['name'] === 'string' && revit['name'].trim() ? revit['name'] : file.name.replace(/.[^.]+$/, '');
+    ctx.dispatchSync('new-document', { name });
+    const count = Array.isArray(revit['elements']) ? revit['elements'].length : null;
+    task.update(count ? `Building ${count} elements` : 'Building the model', null);
+    await task.paint();
+    const imported = ctx.dispatchSync('import-revit-model', { model: revit });
+    if (!imported.ok) throw new CommandError(imported.error.code, `${file.name}: ${imported.error.message}`, imported.error.details);
+    ctx.dispatchSync('zoom-to-fit', {});
+    return { id: ctx.getState().doc.id, path: null, migratedFrom: null, revit: imported.value };
+  }
+  task.update('Checking the project', 0.35);
+  await task.paint();
+  const parsed = parseDocument(file.text);
+  if (!parsed.ok) throw new CommandError('rejected', `${file.name}: ${parsed.error.message}`, parsed.error.details);
+  task.update(`Loading ${Object.keys(parsed.document.elements).length} elements`, 0.7);
+  await task.paint();
+  const result = ctx.dispatchSync(loadDocument, { document: parsed.document, filePath: file.path });
+  if (!result.ok) throw new CommandError(result.error.code, result.error.message, result.error.details);
+  return { id: parsed.document.id, path: file.path, migratedFrom: parsed.migratedFrom };
+}
 
 /** The parsed JSON when a file is a Revit export (see src/revit/exchange.ts), else null. */
 function revitExchangeOf(text: string): Record<string, unknown> | null {
@@ -260,12 +282,16 @@ function revitExchangeOf(text: string): Record<string, unknown> | null {
  * The text of a saved .AIR file: the document plus its 3D snapshot (`scene3d`, what the ArchAI
  * plugins for other apps import; docs/plugins.md). Saving never fails over the snapshot.
  */
-async function fileText(ctx: EffectContext): Promise<string> {
+async function fileText(ctx: EffectContext, task?: ProgressHandle): Promise<string> {
   const doc = ctx.getState().doc;
   try {
+    task?.update('Building the 3D snapshot for the plugins', 0.05);
+    await task?.paint();
     // Loaded on demand: the exporter and three.js stay out of the command registry's import graph.
     const [{ exportSceneSnapshot }, { bytesToBase64 }] = await Promise.all([import('@/view3d/vrExport'), import('@/persistence/base64')]);
     const glb = await exportSceneSnapshot(doc, ctx.catalog);
+    task?.update(`Writing the file (3D snapshot ${megabytes(glb.byteLength)})`, 0.8);
+    await task?.paint();
     return serializeDocument(doc, { format: 'glb', version: 1, units: 'm', up: 'y', data: bytesToBase64(new Uint8Array(glb)) });
   } catch {
     return serializeDocument(doc);
@@ -274,7 +300,8 @@ async function fileText(ctx: EffectContext): Promise<string> {
 
 async function saveAs(ctx: EffectContext): Promise<{ path: string | null } | null> {
   const state = ctx.getState();
-  const text = await fileText(ctx);
+  // The file is prepared first (with progress), then the Save dialog asks where it goes.
+  const text = await withProgress('Preparing the .AIR file', (task) => fileText(ctx, task));
   const saved = await ctx.platform.files.saveDocumentAs(text, state.doc.meta.name || 'Untitled');
   if (!saved) return null;
   ctx.dispatchSync(markSaved, { filePath: saved.path, savedAt: ctx.now() });
@@ -302,8 +329,11 @@ export const saveDocument = defineEffect({
   run: async (ctx) => {
     const state = ctx.getState();
     if (!state.session.filePath) return saveAs(ctx);
-    const text = await fileText(ctx);
-    const saved = await ctx.platform.files.saveDocumentTo(state.session.filePath, text);
+    const saved = await withProgress('Saving', async (task) => {
+      const text = await fileText(ctx, task);
+      task.update('Writing to disk', 0.9);
+      return ctx.platform.files.saveDocumentTo(state.session.filePath!, text);
+    });
     if (!saved) return null;
     ctx.dispatchSync(markSaved, { filePath: saved.path, savedAt: ctx.now() });
     return saved;

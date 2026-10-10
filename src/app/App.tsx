@@ -12,6 +12,7 @@ import { HomeScreen } from '@/ui/HomeScreen';
 import { AccountDialog } from '@/ui/AccountDialog';
 import { ShareDialog } from '@/ui/ShareDialog';
 import { JoinDialog } from '@/ui/JoinDialog';
+import { ProgressCenter } from '@/ui/ProgressCenter';
 import { Inspector } from '@/ui/Inspector';
 import { LeftPanel } from '@/ui/LeftPanel';
 import { SaveTemplateModal } from '@/ui/TemplateModal';
@@ -139,6 +140,7 @@ export function App() {
         <AccountDialog />
         <ShareDialog />
         <JoinDialog />
+        <ProgressCenter />
         <Toasts />
       </div>
     );
@@ -168,6 +170,7 @@ export function App() {
       <AccountDialog />
       <ShareDialog />
       <JoinDialog />
+      <ProgressCenter />
       <Toasts />
       <div className={styles.narrowGuard} role="alert">
         <strong>{t('Window too narrow')}</strong>

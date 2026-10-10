@@ -135,5 +135,6 @@ export function StatusBar() {
 function formatZoom(zoom: number): string {
   const percent = zoom * 1000; // 1 m = 100 px is the "100 %" reference
   if (percent >= 10) return `${Math.round(percent)} %`;
-  return `${percent.toFixed(1)} %`;
+  if (percent >= 0.1) return `${percent.toFixed(1)} %`;
+  return `${percent.toFixed(2)} %`;
 }

@@ -8,6 +8,7 @@ import { IdSchema, type ArchaiDocument } from '@/document';
 import { boardDoc } from '@/store';
 import { CommandError, defineEffect, defineMutation, type EffectContext } from '../contract';
 import { paperOf } from './views';
+import { startProgress, type ProgressHandle } from '@/progress';
 
 export const EXPORT_FORMATS = ['pdf', 'png', 'jpg', 'svg', 'dxf'] as const;
 export const COLOR_MODES = ['color', 'grayscale', 'black'] as const;
@@ -179,12 +180,39 @@ async function exportSheets(
   input: ExportSettings,
   base: string,
 ): Promise<string | string[]> {
+  const format = input.format.toUpperCase();
+  const task = startProgress(sheets.length === 1 ? `Exporting ${format}` : `Exporting ${sheets.length} sheets as ${format}`, '', 0);
+  try {
+    return await exportWithProgress(ctx, doc, sheets, input, base, task);
+  } catch (error) {
+    task.failed();
+    throw error;
+  }
+}
+
+async function exportWithProgress(
+  ctx: EffectContext,
+  doc: ArchaiDocument,
+  sheets: SheetTarget[],
+  input: ExportSettings,
+  base: string,
+  task: ProgressHandle,
+): Promise<string | string[]> {
+  // The progress card closes before the Save dialog opens.
+  const save = async (bytes: Uint8Array, name: string, mime: string) => {
+    task.done();
+    await ctx.platform.files.saveBinary(bytes, name, mime);
+  };
   if (sheets.length === 1) {
+    task.update(`Rendering ${sheets[0]!.title} at ${input.dpi} dpi`, null);
+    await task.paint();
     const bytes = await encodeSheet(doc, sheets[0]!, input);
-    await ctx.platform.files.saveBinary(bytes, `${base}.${input.format}`, MIME[input.format]);
+    await save(bytes, `${base}.${input.format}`, MIME[input.format]);
     return sheets[0]!.id;
   }
   if (input.format === 'pdf') {
+    task.update(`Rendering ${sheets.length} pages at ${input.dpi} dpi`, null);
+    await task.paint();
     const { papersPdf } = await import('@/export/pdf');
     const bytes = await papersPdf(
       doc,
@@ -196,21 +224,21 @@ async function exportSheets(
       })),
       { dpi: input.dpi, colorMode: input.colorMode, title: doc.meta.name },
     );
-    await ctx.platform.files.saveBinary(bytes, `${base}.pdf`, MIME.pdf);
+    await save(bytes, `${base}.pdf`, MIME.pdf);
     return sheets.map((sheet) => sheet.id);
   }
   // Several image files: one ZIP, names numbered in board order.
   const { zipSync } = await import('fflate');
   const files: Record<string, Uint8Array> = {};
   for (const [index, sheet] of sheets.entries()) {
+    task.step(index, sheets.length, `Sheet ${index + 1} of ${sheets.length}: ${sheet.title}`, 0, 0.95);
+    await task.paint();
     const name = `${String(index + 1).padStart(2, '0')} ${safeName(sheet.title, 'paper')}.${input.format}`;
     files[name] = await encodeSheet(doc, sheet, input);
   }
-  await ctx.platform.files.saveBinary(
-    zipSync(files, { level: 0 }),
-    `${base}.zip`,
-    'application/zip',
-  );
+  task.update('Packing the ZIP', 0.97);
+  await task.paint();
+  await save(zipSync(files, { level: 0 }), `${base}.zip`, 'application/zip');
   return sheets.map((sheet) => sheet.id);
 }
 

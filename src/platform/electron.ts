@@ -61,6 +61,7 @@ export function createElectronPlatform(bridge: ArchaiBridge): Platform {
       setTitle: (title) => void bridge.invoke(IPC.windowSetTitle, { title }),
       openModeling: (params) => void bridge.invoke(IPC.windowOpenModeling, params),
       openRender: () => void bridge.invoke(IPC.windowOpenRender),
+      setProgress: (progress) => void bridge.invoke(IPC.windowSetProgress, { progress }),
     },
     studio: bridge.onStudio
       ? {

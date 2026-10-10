@@ -41,6 +41,12 @@ public sealed class LiveLink : IDisposable
     public Action<Action> OnHost = action => action();
     /// <summary>Short status for the UI ("Synced 2 s ago", "Start ArchAI…"); may come from any thread.</summary>
     public Action<string>? StatusChanged;
+    /// <summary>
+    /// Progress of the sync under way (reading, sending, ArchAI updating, receiving, building); may
+    /// come from any thread. <see cref="SyncFinished"/> follows when that sync is over.
+    /// </summary>
+    public ProgressReport? SyncProgress;
+    public Action? SyncFinished;
 
     public string Key { get; }
     public string App { get; }
@@ -137,11 +143,17 @@ public sealed class LiveLink : IDisposable
             if (pushPending)
             {
                 pushPending = false;
+                SyncProgress?.Invoke($"Reading the {App} model", null);
                 var exchange = await OnHostAsync(() => Export?.Invoke()).ConfigureAwait(false);
                 if (exchange != null)
                 {
                     exchange["app"] = App;
-                    var result = await Post("/live/push", new JObject { ["key"] = Key, ["app"] = App, ["name"] = Name, ["model"] = exchange }).ConfigureAwait(false);
+                    var body = new JObject { ["key"] = Key, ["app"] = App, ["name"] = Name, ["model"] = exchange };
+                    var result = await Post("/live/push", body, (sent, total) =>
+                    {
+                        if (sent < total) SyncProgress?.Invoke($"Sending {Progress.Megabytes(sent)} of {Progress.Megabytes(total)} to ArchAI", 0.1 + 0.6 * sent / total);
+                        else SyncProgress?.Invoke("ArchAI is updating the project", 0.75);
+                    }).ConfigureAwait(false);
                     var revision = (long?)result["revision"] ?? 0;
                     // Up to date before this push: nothing new to bring back.
                     if (upToDate) lastPulled = revision;
@@ -153,13 +165,15 @@ public sealed class LiveLink : IDisposable
             lastSeen = status.Revision;
             // Changed by someone else since the last pull (our own pushes move lastPulled along).
             if (status.Revision == lastPulled) return;
-            using var response = await http.GetAsync(baseUrl + "/live/pull?key=" + Uri.EscapeDataString(Key)).ConfigureAwait(false);
+            SyncProgress?.Invoke("ArchAI is preparing its model", null);
+            using var response = await http.GetAsync(baseUrl + "/live/pull?key=" + Uri.EscapeDataString(Key), HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
             if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return;
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await ErrorOf(response).ConfigureAwait(false));
-            var glb = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            var glb = await ReadWithProgress(response, (read, total) => SyncProgress?.Invoke($"Receiving {Progress.Megabytes(read)} of {Progress.Megabytes(total)}", 0.1 + 0.5 * read / total)).ConfigureAwait(false);
             long.TryParse(HeaderOf(response, "X-ArchAI-Revision"), out var pulled);
             var contents = new AirFile.Contents { Name = Uri.UnescapeDataString(HeaderOf(response, "X-ArchAI-Name") ?? "ArchAI") };
             contents.Objects.AddRange(GlbReader.Read(glb));
+            SyncProgress?.Invoke($"Building {contents.Objects.Count} objects in {App}", 0.65);
             await OnHostAsync<object?>(() =>
             {
                 Importing = true;
@@ -177,6 +191,7 @@ public sealed class LiveLink : IDisposable
         finally
         {
             Interlocked.Exchange(ref busy, 0);
+            SyncFinished?.Invoke();
         }
     }
 
@@ -242,13 +257,35 @@ public sealed class LiveLink : IDisposable
         return done.Task;
     }
 
-    private async Task<JObject> Post(string path, JObject body)
+    private async Task<JObject> Post(string path, JObject body, Action<long, long>? sent = null)
     {
-        using var content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
+        using HttpContent content = sent == null
+            ? new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json")
+            : new ProgressContent(Encoding.UTF8.GetBytes(body.ToString(Formatting.None)), "application/json", sent);
         using var response = await http.PostAsync(baseUrl + path, content).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await ErrorOf(response).ConfigureAwait(false));
         var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         return text.Length > 0 ? JObject.Parse(text) : new JObject();
+    }
+
+    /// <summary>The body, reporting bytes read when the length is known.</summary>
+    private static async Task<byte[]> ReadWithProgress(HttpResponseMessage response, Action<long, long> read)
+    {
+        var total = response.Content.Headers.ContentLength ?? 0;
+        if (total <= 0) return await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+        using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+        var data = new byte[total];
+        var offset = 0;
+        while (offset < total)
+        {
+            var count = await stream.ReadAsync(data, offset, (int)Math.Min(64 * 1024, total - offset)).ConfigureAwait(false);
+            if (count <= 0) break;
+            offset += count;
+            read(offset, total);
+        }
+        if (offset == total) return data;
+        Array.Resize(ref data, offset);
+        return data;
     }
 
     private static async Task<string> ErrorOf(HttpResponseMessage response)

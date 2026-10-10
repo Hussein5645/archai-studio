@@ -22,6 +22,7 @@ import type { PersistenceService } from '@/persistence/service';
 import { withoutLink } from './sync';
 import { account } from '@/cloud/account';
 import { openAccountDialog } from '@/ui/account-dialog';
+import { startProgress } from '@/progress';
 
 export interface LiveConnection {
   key: string;
@@ -155,7 +156,14 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       const app = str(payload['app'], 60) || 'App';
       const name = str(payload['name']);
       const first = !connections.get(key)?.lastSync;
+      // Shown when the sync takes a moment (a first sync or a big model); quick ones never appear.
+      const model = payload['model'] as { elements?: unknown[] } | undefined;
+      const count = Array.isArray(model?.elements) ? model.elements.length : null;
+      const task = startProgress(`Live link: ${app}`, count ? `Updating ${count} elements from ${app}` : `Updating the model from ${app}`, null);
+      await task.paint();
       const result = await executor.dispatch('sync-live-link', { key, app, model: payload['model'] });
+      if (result.ok) task.done();
+      else task.failed();
       // The project this model syncs with, to reopen next time.
       void platform.storage.set(`live:project:${key}`, state.doc.id).catch(() => undefined);
       if (!result.ok) throw new Error(result.error.message);
@@ -166,9 +174,19 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       return { revision, created: report.created, skipped: report.skipped.length };
     }
     if (kind === 'pull') {
+      const app = str(payload['app'], 60) || connections.get(key)?.app || 'the plugin';
+      const task = startProgress(`Live link: ${app}`, `Sending ArchAI's model to ${app}`, null);
+      await task.paint();
       const { exportSceneSnapshot } = await import('@/view3d/vrExport');
       const doc = withoutLink(state.doc, key);
-      const glb = new Uint8Array(await exportSceneSnapshot(doc, catalog));
+      let glb: Uint8Array;
+      try {
+        glb = new Uint8Array(await exportSceneSnapshot(doc, catalog));
+        task.done();
+      } catch (error) {
+        task.failed();
+        throw error;
+      }
       touch(key, {});
       return { glb, revision, name: state.doc.meta.name || 'ArchAI' };
     }

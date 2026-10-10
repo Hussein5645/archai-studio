@@ -55,11 +55,13 @@ module ArchAI
   end
 
   # Top-level groups and components are one object each; loose faces are one more.
-  def self.collect(model, skip_live = false)
+  def self.collect(model, skip_live = false, progress = nil)
     cache = {}
     objects = []
     loose = Core::SceneObject.new('loose', 'Loose geometry', 'Model')
-    model.entities.each do |entity|
+    entities = model.entities.to_a
+    entities.each_with_index do |entity, index|
+      Core.step(progress, index, entities.length, "Reading #{index + 1} of #{entities.length}")
       next unless visible?(entity)
       next if skip_live && live?(entity)
       case entity
@@ -99,8 +101,14 @@ module ArchAI
     path = UI.savepanel('Send to ArchAI', File.dirname(model.path.empty? ? Dir.home : model.path), "#{document_name(model)}.AIR")
     return unless path
     path += '.AIR' unless path.downcase.end_with?('.air')
-    objects = collect(model)
-    exchange = Core.write_exchange(document_name(model), 'SketchUp', Sketchup.version, model.path, objects)
+    progress = Core::Progress.new('Send to ArchAI')
+    begin
+      objects = collect(model, false, Core.scaled(progress.method(:update), 0.0, 0.9))
+      progress.update('Writing the .AIR file', 0.95)
+      exchange = Core.write_exchange(document_name(model), 'SketchUp', Sketchup.version, model.path, objects)
+    ensure
+      progress.finish
+    end
     if exchange['meshes'].empty?
       show_result('Send to ArchAI', 'There are no visible faces, groups or components to send.')
       return
@@ -116,8 +124,14 @@ module ArchAI
     path = UI.openpanel('Open .AIR in SketchUp', Dir.home, 'ArchAI document|*.AIR;*.air||')
     return unless path
     model = Sketchup.active_model
-    name, objects = Core.read_air(path)
-    count = import_objects(model, name, objects)
+    progress = Core::Progress.new('Open .AIR')
+    begin
+      progress.update("Reading #{File.basename(path)}")
+      name, objects = Core.read_air(path)
+      count = import_objects(model, name, objects, false, Core.scaled(progress.method(:update), 0.1, 1.0))
+    ensure
+      progress.finish
+    end
     Sketchup.active_model.active_view.zoom_extents
     show_result('Opened .AIR', "#{name}: #{count} element#{count == 1 ? '' : 's'} added in the group \"ArchAI #{name}\", a tag per level.\n\nUndo removes the import.")
   rescue StandardError => e
@@ -134,16 +148,18 @@ module ArchAI
   end
 
   # Adds imported objects: a group per element inside one group, a tag per level. Returns the count.
-  def self.import_objects(model, name, objects, live = false)
+  def self.import_objects(model, name, objects, live = false, progress = nil)
     model.start_operation(live ? 'ArchAI live link' : 'Open .AIR', true, false, live)
     materials = {}
     count = 0
+    total = objects.length
     root = model.entities.add_group
     root.name = live ? 'ArchAI Live' : "ArchAI #{name}"
     root.set_attribute('ArchAI', 'live', true) if live
     Core.by_level(objects).each do |level, items|
       tag = model.layers.add("#{live ? 'ArchAI Live' : 'ArchAI'} #{level.empty? ? name : level}")
       items.each do |item|
+        Core.step(progress, count, total, "Adding element #{count + 1} of #{total}")
         group = root.entities.add_group
         group.name = item.name
         group.layer = tag
@@ -188,7 +204,11 @@ module ArchAI
     model = Sketchup.active_model
     name = document_name(model)
     start = model.pages.selected_page ? model.pages.selected_page.name : nil
-    glb, tour, triangles, stops = Core.build_tour(name, 'SketchUp', collect(model), cameras(model), start)
+    progress = Core::Progress.new('Open in VR')
+    objects = collect(model, false, Core.scaled(progress.method(:update), 0.0, 0.9))
+    progress.update('Building the VR model')
+    glb, tour, triangles, stops = Core.build_tour(name, 'SketchUp', objects, cameras(model), start)
+    progress.finish
     unless glb
       show_result('Open in VR', 'There are no visible faces, groups or components to show.')
       return

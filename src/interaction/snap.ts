@@ -4,7 +4,7 @@
  */
 import type { Rect, Vec2 } from '@/geometry';
 
-const STEP_MULTIPLIERS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+const STEP_MULTIPLIERS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
 export const MIN_GRID_PIXELS = 18;
 
 /** The grid step (mm) drawn at this zoom: the smallest multiple that is at least 18 px apart. */

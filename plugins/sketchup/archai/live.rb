@@ -139,7 +139,9 @@ module ArchAI
       if @link[:push_at] && now >= @link[:push_at]
         @link[:push_at] = nil
         model = @link[:model]
-        exchange = Core.write_exchange(@link[:name], 'SketchUp', Sketchup.version, model.path, ArchAI.collect(model, true))
+        reading = ->(text, fraction = nil) { status(fraction ? "#{text} (#{(fraction * 100).round}%)" : text) }
+        exchange = Core.write_exchange(@link[:name], 'SketchUp', Sketchup.version, model.path, ArchAI.collect(model, true, reading))
+        status('Sending the model to ArchAI...')
         exchange['app'] = 'SketchUp'
         body = JSON.generate('key' => @link[:key], 'app' => 'SketchUp', 'name' => @link[:name], 'model' => exchange)
         result = request(Net::HTTP::Post, '/live/push', body)
@@ -163,7 +165,8 @@ module ArchAI
       @link[:quiet_until] = Time.now.to_f + 60
       begin
         ArchAI.clear_live(model)
-        ArchAI.import_objects(model, name, objects, true)
+        building = ->(text, fraction = nil) { status(fraction ? "#{text} (#{(fraction * 100).round}%)" : text) }
+        ArchAI.import_objects(model, name, objects, true, building)
       ensure
         @link[:quiet_until] = Time.now.to_f + 1.0 if @link
       end

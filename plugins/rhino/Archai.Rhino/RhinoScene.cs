@@ -24,7 +24,7 @@ internal static class RhinoScene
             if (IsLive(obj.Attributes)) doc.Objects.Delete(obj, true, true);
     }
 
-    public static List<SceneObject> Collect(RhinoDoc doc, bool skipLive = false)
+    public static List<SceneObject> Collect(RhinoDoc doc, bool skipLive = false, ProgressReport? progress = null)
     {
         var mm = Millimetres(doc);
         var materials = new Dictionary<string, GlbMaterial>();
@@ -36,8 +36,11 @@ internal static class RhinoScene
             LockedObjects = true,
             ObjectTypeFilter = ObjectType.Brep | ObjectType.Extrusion | ObjectType.Surface | ObjectType.Mesh | ObjectType.SubD | ObjectType.InstanceReference,
         };
-        foreach (var obj in doc.Objects.GetObjectList(settings))
+        var all = doc.Objects.GetObjectList(settings).ToList();
+        for (var index = 0; index < all.Count; index++)
         {
+            var obj = all[index];
+            progress.Step(index, all.Count, $"Reading object {index + 1} of {all.Count}");
             var layer = doc.Layers[obj.Attributes.LayerIndex];
             if (layer != null && !layer.IsVisible) continue;
             if (skipLive && IsLive(obj.Attributes)) continue;
@@ -138,8 +141,10 @@ internal static class RhinoScene
     }
 
     /// <summary>Adds imported objects as meshes under an "ArchAI &lt;name&gt;" layer with a sublayer per level; returns the count.</summary>
-    public static int Import(RhinoDoc doc, AirFile.Contents contents, string? rootLayer = null, bool live = false)
+    public static int Import(RhinoDoc doc, AirFile.Contents contents, string? rootLayer = null, bool live = false, ProgressReport? progress = null)
     {
+        var total = contents.Objects.Count;
+        var done = 0;
         var mm = Millimetres(doc);
         var root = LayerIndex(doc, rootLayer ?? "ArchAI " + contents.Name, Guid.Empty);
         var materialIndex = new Dictionary<string, int>();
@@ -149,6 +154,8 @@ internal static class RhinoScene
             var layer = level.Key.Length > 0 ? LayerIndex(doc, level.Key, doc.Layers[root].Id) : root;
             foreach (var item in level)
             {
+                progress.Step(done, total, $"Adding element {done + 1} of {total}");
+                done++;
                 var ids = new List<Guid>();
                 foreach (var part in item.Parts)
                 {

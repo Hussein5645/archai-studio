@@ -9,6 +9,7 @@ import { getElectronBridge } from '@/platform/electron';
 import { IdSchema, type JsonValue } from '@/document';
 import { base64ToBytes, bytesToBase64 } from '@/persistence/base64';
 import { CommandError, defineEffect, defineMutation } from '../contract';
+import { megabytes, withProgress } from '@/progress';
 import { setSelection, snapshot } from '../helpers';
 import { createRect, ensureBlob } from './create';
 
@@ -133,9 +134,14 @@ export const importModel = defineEffect({
     if (files.length === 0) return null;
     const primary = primaryModelFile(files);
     if (!primary) throw new CommandError('rejected', `${files.map((file) => file.name).join(', ')}: not a supported 3D format`);
+    const bytes = files.reduce((sum, file) => sum + file.bytes.byteLength, 0);
     let model;
     try {
-      model = await convertModel(files, { unit: input.unit, up: input.up });
+      model = await withProgress(`Importing ${primary.name}`, async (task) => {
+        task.update(`Reading ${megabytes(bytes)} and converting to glTF`, null);
+        await task.paint();
+        return convertModel(files, { unit: input.unit, up: input.up });
+      });
     } catch (error) {
       throw new CommandError('failed', `${primary.name}: ${error instanceof Error ? error.message : 'could not be read'}`);
     }

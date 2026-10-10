@@ -14,7 +14,7 @@ if (!work) throw new Error('usage: node scripts/material-library.mjs <work dir> 
 const out = join(work, 'out', 'materials');
 const cache = join(work, 'cache', 'materials');
 const only = process.argv[3] ? new Set(process.argv[3].split(',')) : null;
-const UA = { 'User-Agent': 'ArchAI-material-library/1.0 (https://archai2-0.vercel.app)' };
+const UA = { 'User-Agent': 'ArchAI-material-library/1.0 (https://archai-studio-six.vercel.app)' };
 
 // [Poly Haven id, name, ArchAI category, library group]
 const MATERIALS = [

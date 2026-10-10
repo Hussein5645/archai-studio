@@ -7,12 +7,12 @@ also offer ArchAI (.AIR). See docs/plugins.md in the ArchAI repository.
 bl_info = {
     "name": "ArchAI",
     "author": "ArchAI",
-    "version": (0, 4, 0),
+    "version": (0, 4, 1),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > ArchAI; File > Import/Export > ArchAI (.AIR)",
     "description": "Send models to ArchAI, open .AIR files and walk through the scene in VR",
     "category": "Import-Export",
-    "doc_url": "https://archai2-0.vercel.app/download.html",
+    "doc_url": "https://archai-studio-six.vercel.app/download.html",
 }
 
 import os
@@ -26,7 +26,7 @@ from bpy_extras.io_utils import ExportHelper, ImportHelper
 from . import archai_core as core
 
 _icons = None
-_job = {"thread": None, "result": None, "error": None}
+_job = {"thread": None, "result": None, "error": None, "progress": None, "meter": None}
 _live = {"link": None, "queue": [], "status": ""}
 LIVE_COLLECTION = "ArchAI Live"
 
@@ -65,13 +65,63 @@ def is_live(obj):
     return bool(obj.get("archai_live")) if obj is not None else False
 
 
-def collect(context, skip_live=False):
-    """Visible objects (with their modifiers, instances and geometry nodes) as ArchAI objects."""
+class Progress:
+    """Blender's own progress display: the counter on the mouse cursor (0-100) and the status bar
+    text. `update(text, fraction)` works as a core progress callback; main thread only."""
+
+    def __init__(self, title):
+        self.title = title
+        self.started = False
+
+    def begin(self, text=""):
+        if not self.started:
+            try:
+                bpy.context.window_manager.progress_begin(0, 100)
+            except Exception:  # noqa: BLE001 - no window (background mode)
+                pass
+            self.started = True
+        self._status(text, None)
+
+    def update(self, text, fraction=None):
+        if not self.started:
+            self.begin(text)
+        if fraction is not None:
+            try:
+                bpy.context.window_manager.progress_update(int(round(max(0.0, min(1.0, fraction)) * 100)))
+            except Exception:  # noqa: BLE001
+                pass
+        self._status(text, fraction)
+
+    def end(self):
+        if self.started:
+            try:
+                bpy.context.window_manager.progress_end()
+            except Exception:  # noqa: BLE001
+                pass
+        self.started = False
+        try:
+            bpy.context.workspace.status_text_set(None)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _status(self, text, fraction):
+        line = "ArchAI %s: %s" % (self.title, text) + ("" if fraction is None else "  (%d%%)" % int(round(fraction * 100)))
+        try:
+            bpy.context.workspace.status_text_set(line)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def collect(context, skip_live=False, progress=None):
+    """Visible objects (with their modifiers, instances and geometry nodes) as ArchAI objects.
+    `progress(text, fraction)` follows the objects read."""
     import numpy as np
     depsgraph = context.evaluated_depsgraph_get()
     mm = millimetres(context.scene)
     objects, materials = {}, {}
-    for instance in depsgraph.object_instances:
+    total = max(1, len(context.view_layer.objects))
+    for index, instance in enumerate(depsgraph.object_instances):
+        core.step(progress, min(index, total - 1), total, "Reading object %d" % (index + 1))
         source = instance.object
         if source.type not in {"MESH", "CURVE", "SURFACE", "META", "FONT"}:
             continue
@@ -129,9 +179,11 @@ def cameras(context):
     return stops
 
 
-def import_air(context, path):
+def import_air(context, path, progress=None):
+    if progress:
+        progress("Reading " + os.path.basename(path), None)
     name, objects = core.read_air(path)
-    return import_objects(context, name, objects)
+    return import_objects(context, name, objects, progress=core.scaled(progress, 0.1, 1.0))
 
 
 def clear_live(context):
@@ -149,8 +201,9 @@ def clear_live(context):
         bpy.data.collections.remove(child)
 
 
-def import_objects(context, name, objects, live=False):
+def import_objects(context, name, objects, live=False, progress=None):
     mm = millimetres(context.scene)
+    total = len(objects)
     if live:
         root = bpy.data.collections.get(LIVE_COLLECTION) or bpy.data.collections.new(LIVE_COLLECTION)
         if root.name not in context.scene.collection.children:
@@ -165,6 +218,7 @@ def import_objects(context, name, objects, live=False):
             collection = bpy.data.collections.new(level)
             root.children.link(collection)
         for item in items:
+            core.step(progress, count, total, "Adding element %d of %d" % (count + 1, total))
             vertices, faces, slots, slot_names = [], [], [], []
             for part in item.parts:
                 base = len(vertices)
@@ -231,7 +285,13 @@ class ARCHAI_OT_send(bpy.types.Operator, ExportHelper):
     filter_glob: StringProperty(default="*.AIR;*.air", options={"HIDDEN"})
 
     def execute(self, context):
-        objects = collect(context)
+        meter = Progress("Send to ArchAI")
+        try:
+            meter.begin("Reading the scene")
+            objects = collect(context, progress=core.scaled(meter.update, 0.0, 0.9))
+            meter.update("Writing the .AIR file", 0.95)
+        finally:
+            meter.end()
         if not objects:
             self.report({"WARNING"}, "There are no visible meshes, curves or text objects to send.")
             return {"CANCELLED"}
@@ -251,7 +311,11 @@ class ARCHAI_OT_open_air(bpy.types.Operator, ImportHelper):
 
     def execute(self, context):
         try:
-            name, count = import_air(context, self.filepath)
+            meter = Progress("Open .AIR")
+            try:
+                name, count = import_air(context, self.filepath, meter.update)
+            finally:
+                meter.end()
         except (ValueError, OSError) as error:
             self.report({"ERROR"}, str(error))
             return {"CANCELLED"}
@@ -274,29 +338,43 @@ class ARCHAI_OT_vr(bpy.types.Operator):
             return {"CANCELLED"}
         name = document_name(context)
         start = context.scene.camera.name if context.scene.camera else None
-        glb, tour, triangles, stops = core.build_tour(name, "Blender", collect(context), cameras(context), start)
+        meter = Progress("Open in VR")
+        meter.begin("Reading the scene")
+        objects = collect(context, progress=core.scaled(meter.update, 0.0, 0.3))
+        meter.update("Building the VR model", None)
+        glb, tour, triangles, stops = core.build_tour(name, "Blender", objects, cameras(context), start)
         if not glb:
+            meter.end()
             self.report({"WARNING"}, "There are no visible meshes, curves or text objects to show.")
             return {"CANCELLED"}
         key = "blender|" + (bpy.data.filepath or "unsaved:" + name)
         wm = context.window_manager
         wm.archai_status = "Uploading %d MB to the VR viewer..." % max(1, len(glb) // 1048576)
+        meter.update("Uploading %s" % core.megabytes(len(glb)), 0.35)
+        _job["meter"] = meter
 
         def work():
             try:
-                _job["result"] = (core.publish(config, key, glb, tour), name, triangles, stops)
+                upload = core.scaled(lambda text, fraction=None: _job.__setitem__("progress", (text, fraction)), 0.35, 1.0)
+                _job["result"] = (core.publish(config, key, glb, tour, upload), name, triangles, stops)
             except Exception as error:  # noqa: BLE001 - shown to the user
                 _job["error"] = str(error)
 
         _job.update(result=None, error=None, thread=threading.Thread(target=work, daemon=True))
         _job["thread"].start()
-        bpy.app.timers.register(_poll, first_interval=0.5)
+        bpy.app.timers.register(_poll, first_interval=0.2)
         return {"FINISHED"}
 
 
 def _poll():
+    meter = _job["meter"]
     if _job["thread"] is not None and _job["thread"].is_alive():
-        return 0.5
+        if meter is not None and _job["progress"] is not None:
+            meter.update(*_job["progress"])
+        return 0.2
+    if meter is not None:
+        meter.end()
+    _job["meter"] = _job["progress"] = None
     wm = bpy.context.window_manager
     _job["thread"] = None
     if _job["error"]:
@@ -413,7 +491,10 @@ class ARCHAI_OT_live(bpy.types.Operator):
             self.report({"INFO"}, "ArchAI live link is off.")
             return {"FINISHED"}
         key = "blender:" + (bpy.data.filepath or "unsaved")
-        _live["link"] = core.LiveLink(key, "Blender", document_name(context), _live_export, _live_import, _on_main, _live_status)
+        meter = Progress("live link")
+        gate = core.DelayedProgress(meter.begin, meter.update, meter.end, _on_main)
+        _live["link"] = core.LiveLink(key, "Blender", document_name(context), _live_export, _live_import, _on_main, _live_status,
+                                      progress=gate.report, finished=gate.finished)
         bpy.app.handlers.depsgraph_update_post.append(_depsgraph_changed)
         _live["link"].start()
         self.report({"INFO"}, "ArchAI live link is on.")

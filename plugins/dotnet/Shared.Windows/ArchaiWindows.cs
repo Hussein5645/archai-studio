@@ -1,5 +1,5 @@
 // Shared WPF user interface of the ArchAI plugins for Windows hosts (Revit, AutoCAD): the icon set
-// (plugins/icons, embedded as "archai.<name>-<size>.png"), a progress window and a result dialog.
+// (plugins/icons, embedded as "archai.<name>-<size>.png"), progress windows and a result dialog.
 // Linked into each plugin project; it has no dependency on the host's API.
 using System;
 using System.Threading;
@@ -31,10 +31,18 @@ public static class ArchaiIcons
 
 internal static class Theme
 {
-    public static readonly Brush Ink = new SolidColorBrush(Color.FromRgb(0x1F, 0x21, 0x26));
-    public static readonly Brush Muted = new SolidColorBrush(Color.FromRgb(0x6B, 0x70, 0x7A));
-    public static readonly Brush Accent = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED));
-    public static readonly Brush Border = new SolidColorBrush(Color.FromRgb(0xE4, 0xE4, 0xE7));
+    // Frozen: windows on other threads (the progress window) use them too.
+    public static readonly Brush Ink = Frozen(Color.FromRgb(0x1F, 0x21, 0x26));
+    public static readonly Brush Muted = Frozen(Color.FromRgb(0x6B, 0x70, 0x7A));
+    public static readonly Brush Accent = Frozen(Color.FromRgb(0x2F, 0x6F, 0xED));
+    public static readonly Brush Border = Frozen(Color.FromRgb(0xE4, 0xE4, 0xE7));
+
+    private static Brush Frozen(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
     public static readonly Brush Surface = Brushes.White;
     public static readonly FontFamily Font = new FontFamily("Segoe UI");
 
@@ -92,29 +100,73 @@ internal static class Theme
     }
 }
 
-/// <summary>A small always-on-top progress window while the host is busy (export, upload).</summary>
+/// <summary>
+/// A small always-on-top progress window while the host is busy (Send to ArchAI, Open .AIR, Open in
+/// VR, live-link syncs): a status line, a percentage and a bar that fills (or sweeps while the
+/// amount of work is unknown). It runs on its own UI thread, so it keeps moving while the host's
+/// main thread reads or builds geometry, and <see cref="Report"/> may be called from any thread.
+/// </summary>
 public sealed class ArchaiProgress : IDisposable
 {
-    private readonly Window window;
-    private readonly TextBlock message;
+    private readonly Dispatcher dispatcher;
+    private Window? window;
+    private TextBlock? message;
+    private TextBlock? percent;
+    private ProgressBar? bar;
+    private int disposed;
 
     public ArchaiProgress(string title)
     {
-        var (frame, body) = Theme.Frame(title, 400);
-        window = frame;
-        message = new TextBlock { FontSize = 13, Foreground = Theme.Muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
-        body.Children.Add(message);
-        body.Children.Add(new ProgressBar { IsIndeterminate = true, Height = 4, Foreground = Theme.Accent, BorderThickness = new Thickness(0), Background = Theme.Border });
+        Dispatcher? created = null;
+        using var ready = new ManualResetEventSlim(false);
+        var thread = new Thread(() =>
+        {
+            var (frame, body) = Theme.Frame(title, 420);
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 10), LastChildFill = true };
+            percent = new TextBlock { FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = Theme.Ink, Margin = new Thickness(12, 0, 0, 0) };
+            DockPanel.SetDock(percent, Dock.Right);
+            row.Children.Add(percent);
+            message = new TextBlock { FontSize = 13, Foreground = Theme.Muted, TextTrimming = TextTrimming.CharacterEllipsis };
+            row.Children.Add(message);
+            body.Children.Add(row);
+            bar = new ProgressBar { IsIndeterminate = true, Height = 6, Minimum = 0, Maximum = 100, Foreground = Theme.Accent, BorderThickness = new Thickness(0), Background = Theme.Border };
+            body.Children.Add(bar);
+            window = frame;
+            created = Dispatcher.CurrentDispatcher;
+            ready.Set();
+            Dispatcher.Run();
+        })
+        { IsBackground = true, Name = "ArchAI progress" };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        ready.Wait();
+        dispatcher = created!;
     }
 
-    public void Report(string text)
+    /// <summary>New status line; <paramref name="fraction"/> 0..1 fills the bar, null makes it sweep.</summary>
+    public void Report(string text, double? fraction = null)
     {
-        message.Text = text;
-        if (!window.IsVisible) window.Show();
-        Pump();
+        if (Volatile.Read(ref disposed) != 0) return;
+        dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (window == null || message == null || bar == null || percent == null) return;
+            message.Text = text;
+            if (fraction is double f)
+            {
+                bar.IsIndeterminate = false;
+                bar.Value = Math.Max(0, Math.Min(1, f)) * 100;
+                percent.Text = $"{Math.Round(bar.Value)}%";
+            }
+            else
+            {
+                bar.IsIndeterminate = true;
+                percent.Text = "";
+            }
+            if (!window.IsVisible) window.Show();
+        }));
     }
 
-    /// <summary>Runs work off the UI thread while the window keeps animating; rethrows its error.</summary>
+    /// <summary>Runs work off the host's UI thread while the host stays responsive; rethrows its error.</summary>
     public T Run<T>(Func<T> work)
     {
         var task = Task.Run(work);
@@ -131,8 +183,72 @@ public sealed class ArchaiProgress : IDisposable
 
     public void Dispose()
     {
-        if (window.IsVisible) window.Close();
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        dispatcher.BeginInvoke(new Action(() =>
+        {
+            window?.Close();
+            Dispatcher.CurrentDispatcher.InvokeShutdown();
+        }));
     }
+}
+
+/// <summary>
+/// The live link's sync progress (<see cref="LiveLink.SyncProgress"/>) in an
+/// <see cref="ArchaiProgress"/> window, only for syncs that take longer than <see cref="ShowAfter"/>:
+/// the usual quick syncs after an edit never pop a window; a first sync or a big model does.
+/// </summary>
+public sealed class LiveProgress : IDisposable
+{
+    public static readonly TimeSpan ShowAfter = TimeSpan.FromSeconds(1);
+    private readonly object gate = new object();
+    private readonly string title;
+    private ArchaiProgress? window;
+    private Timer? timer;
+    private bool active;
+    private string text = "";
+    private double? fraction;
+
+    public LiveProgress(string app) => title = "ArchAI live link · " + app;
+
+    public void Report(string status, double? value)
+    {
+        lock (gate)
+        {
+            text = status;
+            fraction = value;
+            if (!active)
+            {
+                active = true;
+                timer = new Timer(_ => Show(), null, ShowAfter, Timeout.InfiniteTimeSpan);
+            }
+            window?.Report(status, value);
+        }
+    }
+
+    private void Show()
+    {
+        lock (gate)
+        {
+            if (!active || window != null) return;
+            window = new ArchaiProgress(title);
+            window.Report(text, fraction);
+        }
+    }
+
+    /// <summary>The sync is over (also called after syncs that had nothing to do).</summary>
+    public void Finished()
+    {
+        lock (gate)
+        {
+            active = false;
+            timer?.Dispose();
+            timer = null;
+            window?.Dispose();
+            window = null;
+        }
+    }
+
+    public void Dispose() => Finished();
 }
 
 /// <summary>The end of a command: a message, an optional link to copy or open, and Close.</summary>

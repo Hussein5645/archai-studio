@@ -65,7 +65,8 @@ public static class VrShare
     /// <summary>Why <see cref="Config"/> returned null.</summary>
     public static string NoKey { get; private set; } = "Open in VR publishes with your ArchAI account: start ArchAI and sign in (top right).";
 
-    public static async Task<Published> Upload(Settings settings, string? previousId, byte[] model, JObject tour)
+    /// <summary><paramref name="progress"/> follows the model upload (the slow part).</summary>
+    public static async Task<Published> Upload(Settings settings, string? previousId, byte[] model, JObject tour, ProgressReport? progress = null)
     {
         if (model.Length > MaxModelBytes) throw new InvalidOperationException($"The model is {model.Length / 1048576} MB; the VR share service takes up to 95 MB. Hide what you do not need to see and try again.");
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
@@ -84,7 +85,9 @@ public static class VrShare
         var id = JObject.Parse(reserved)["id"]?.ToString() ?? "";
         if (!System.Text.RegularExpressions.Regex.IsMatch(id, "^[a-z0-9]{4,16}$")) throw new InvalidOperationException("VR share service returned an invalid tour id");
         // The model first: the tour file is what makes the link show the new version.
-        var glb = new ByteArrayContent(model);
+        HttpContent glb = progress == null
+            ? new ByteArrayContent(model)
+            : new ProgressContent(model, "model/gltf-binary", (sent, total) => progress($"Uploading {Progress.Megabytes(sent)} of {Progress.Megabytes(total)}", (double)sent / total));
         glb.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("model/gltf-binary");
         await Call(HttpMethod.Put, $"/tours/{id}/model.glb", glb).ConfigureAwait(false);
         await Call(HttpMethod.Put, $"/tours/{id}/tour.json", Json(tour.ToString(Formatting.None))).ConfigureAwait(false);
@@ -95,9 +98,9 @@ public static class VrShare
     /// Uploads a tour for the model at <paramref name="documentKey"/> (an app name and file path),
     /// reusing its earlier link, and remembers the link. Blocks; run it off the UI thread if you can.
     /// </summary>
-    public static Published Publish(Settings settings, string documentKey, byte[] model, JObject tour)
+    public static Published Publish(Settings settings, string documentKey, byte[] model, JObject tour, ProgressReport? progress = null)
     {
-        var link = Task.Run(() => Upload(settings, PreviousId(documentKey), model, tour)).GetAwaiter().GetResult();
+        var link = Task.Run(() => Upload(settings, PreviousId(documentKey), model, tour, progress)).GetAwaiter().GetResult();
         Remember(documentKey, link.Id);
         return link;
     }

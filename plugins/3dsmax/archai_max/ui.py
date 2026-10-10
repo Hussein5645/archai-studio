@@ -60,7 +60,11 @@ def toggle_live(status=None):
         scene.import_objects(name, objects, live=True)
         _live["signature"] = scene.signature()
 
-    link = core.LiveLink(scene.document_key().replace("3dsmax|", "3dsmax:"), "3ds Max", scene.document_name(), scene.live_exchange, do_import, _main.call.emit, _main.status.emit)
+    # Slow syncs (a first sync, a big scene) show 3ds Max's progress bar; quick ones do not.
+    meter = scene.Progress("live link")
+    gate = core.DelayedProgress(meter.begin, meter.update, meter.end, _main.call.emit)
+    link = core.LiveLink(scene.document_key().replace("3dsmax|", "3dsmax:"), "3ds Max", scene.document_name(), scene.live_exchange, do_import, _main.call.emit, _main.status.emit,
+                         progress=gate.report, finished=gate.finished)
     _live["link"] = link
     _live["signature"] = scene.signature()
 
@@ -134,8 +138,12 @@ def send():
     path, _ = QtWidgets.QFileDialog.getSaveFileName(_main_window(), "Send to ArchAI", scene.document_name() + ".AIR", "ArchAI document (*.AIR)")
     if not path:
         return
+    meter = scene.Progress("Send to ArchAI")
     try:
-        count = scene.send(path)
+        try:
+            count = scene.send(path, meter.update)
+        finally:
+            meter.end()
         message("Sent to ArchAI", "%d object%s saved to %s.\n\nOpen it in ArchAI (Open file) to work on it: each object comes in as a 3D element with its materials." % (count, "" if count == 1 else "s", os.path.basename(path)))
     except Exception as error:  # noqa: BLE001
         message("Send to ArchAI", str(error))
@@ -145,21 +153,27 @@ def open_air():
     path, _ = QtWidgets.QFileDialog.getOpenFileName(_main_window(), "Open .AIR in 3ds Max", "", "ArchAI document (*.AIR)")
     if not path:
         return
+    meter = scene.Progress("Open .AIR")
     try:
-        name, count = scene.import_air(path)
+        try:
+            name, count = scene.import_air(path, meter.update)
+        finally:
+            meter.end()
         message("Opened .AIR", "%s: %d element%s added, on an ArchAI layer per level.\n\nUndo removes the import." % (name, count, "" if count == 1 else "s"))
     except Exception as error:  # noqa: BLE001
         message("Open .AIR", str(error))
 
 
 class _Upload(QtCore.QObject):
-    """Uploads off the UI thread and reports back on it."""
+    """Uploads off the UI thread and reports back on it (progress included)."""
     finished = QtCore.Signal(object, object)
+    progress = QtCore.Signal(str, object)
 
     def start(self, config, key, glb, tour):
         def work():
             try:
-                self.finished.emit(core.publish(config, key, glb, tour), None)
+                upload = core.scaled(lambda text, fraction=None: self.progress.emit(text, fraction), 0.35, 1.0)
+                self.finished.emit(core.publish(config, key, glb, tour, upload), None)
             except Exception as error:  # noqa: BLE001
                 self.finished.emit(None, str(error))
         threading.Thread(target=work, daemon=True).start()
@@ -174,14 +188,19 @@ def open_vr(status=None):
     if config is None:
         message("Open in VR", core.NO_KEY)
         return
-    glb, tour, triangles, stops, name, key = scene.prepare_tour()
+    meter = scene.Progress("Open in VR")
+    meter.begin("Reading the scene")
+    glb, tour, triangles, stops, name, key = scene.prepare_tour(core.scaled(meter.update, 0.0, 0.3))
     if not glb:
+        meter.end()
         message("Open in VR", "There are no visible geometry objects to show.")
         return
+    meter.update("Uploading %s" % core.megabytes(len(glb)), 0.35)
     if status:
         status("Uploading %d MB to the VR viewer..." % max(1, len(glb) // 1048576))
 
     def done(link, error):
+        meter.end()
         if status:
             status("")
         if error:
@@ -193,6 +212,7 @@ def open_vr(status=None):
 
     _upload = _Upload()
     _upload.finished.connect(done, QtCore.Qt.QueuedConnection)
+    _upload.progress.connect(meter.update, QtCore.Qt.QueuedConnection)
     _upload.start(config, key, glb, tour)
 
 

@@ -6,6 +6,7 @@
  * listed under the account (docs/accounts-and-cloud.md).
  */
 import { account } from '@/cloud/account';
+import { uploadWithProgress } from '@/progress';
 
 export interface VrShareConfig {
   /** Service root without a trailing slash. */
@@ -52,7 +53,8 @@ async function call(config: VrShareConfig, path: string, init: RequestInit): Pro
   return response;
 }
 
-export async function uploadVrTour(config: VrShareConfig, upload: VrUpload): Promise<VrPublished> {
+/** `onProgress` follows the model upload (0..1, bytes sent, bytes total). */
+export async function uploadVrTour(config: VrShareConfig, upload: VrUpload, onProgress?: (fraction: number, loaded: number, total: number) => void): Promise<VrPublished> {
   const reserved = await call(config, '/tours', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -61,7 +63,8 @@ export async function uploadVrTour(config: VrShareConfig, upload: VrUpload): Pro
   const { id } = (await reserved.json()) as { id: string };
   if (typeof id !== 'string' || !/^[a-z0-9]{4,16}$/.test(id)) throw new Error('VR share service returned an invalid tour id');
   // The model first: the tour file is what makes the link show the new version.
-  await call(config, `/tours/${id}/model.glb`, { method: 'PUT', headers: { 'Content-Type': 'model/gltf-binary' }, body: upload.model });
+  const sent = await uploadWithProgress(`${config.url}/tours/${id}/model.glb`, upload.model, { method: 'PUT', headers: { 'Content-Type': 'model/gltf-binary', Authorization: `Bearer ${config.token}` } }, (fraction, loaded, total) => onProgress?.(fraction, loaded, total));
+  if (sent.status < 200 || sent.status >= 300) throw new Error(`VR share service: ${sent.status} ${sent.text}`.trim());
   await call(config, `/tours/${id}/tour.json`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(upload.tour) });
   return { id, link: `${config.url}/v/${id}` };
 }

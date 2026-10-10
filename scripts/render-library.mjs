@@ -14,7 +14,7 @@ const work = process.argv[2];
 if (!work) throw new Error('usage: node scripts/render-library.mjs <work dir>');
 const out = join(work, 'out', 'render');
 const cache = join(work, 'cache');
-const UA = { 'User-Agent': 'ArchAI-render-library/1.0 (https://archai2-0.vercel.app)' };
+const UA = { 'User-Agent': 'ArchAI-render-library/1.0 (https://archai-studio-six.vercel.app)' };
 
 const HDRIS = [
   ['kloofendal_48d_partly_cloudy_puresky', 'Clear day'],

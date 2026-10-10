@@ -5,6 +5,7 @@ import { account as currentAccount, initAccount, type AccountState } from '@/clo
 import { libraryRoot } from '@/cloud/library';
 import { CloudProjects, inviteToken } from '@/cloud/projects';
 import { openJoinDialog } from '@/ui/JoinDialog';
+import { setHostProgressReporter } from '@/progress';
 import { builtinCommands, CommandExecutor, CommandRegistry, newDocument, setScreen } from '@/commands';
 import { randomIds } from '@/document';
 import { canvasMeasurer } from '@/geometry';
@@ -164,6 +165,10 @@ async function boot(): Promise<void> {
   // A board link to an online project (reload, or a link opened on another device) gets the latest version.
   const openId = store.getState().doc.id;
   if (store.getState().ui.screen !== 'home' && persistence.entry(openId)?.cloud) void account.restore().then(() => cloud.open(openId));
+
+  // Long tasks also show on the desktop taskbar button.
+  const setHostProgress = platform.window.setProgress;
+  if (setHostProgress) setHostProgressReporter((fraction, active) => setHostProgress(!active ? null : fraction === null ? 'indeterminate' : fraction));
 
   // Invite links: archai://invite/<token> (desktop) or ?invite=<token> (web) open the Join dialog.
   const showInvite = (text: string) => {

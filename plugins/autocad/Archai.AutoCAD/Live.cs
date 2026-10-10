@@ -41,6 +41,7 @@ internal sealed class Live : IDisposable
 
     public readonly Document Document;
     private readonly LiveLink link;
+    private readonly LiveProgress progress = new LiveProgress("AutoCAD");
     private readonly ConcurrentQueue<Action> queue = new ConcurrentQueue<Action>();
     private bool idleHooked;
     private string lastShown = "";
@@ -63,6 +64,9 @@ internal sealed class Live : IDisposable
             },
         };
         link.StatusChanged = status => Enqueue(() => Show(status));
+        // Slow syncs (a first sync, a big drawing) show a progress window; quick ones do not.
+        link.SyncProgress = progress.Report;
+        link.SyncFinished = progress.Finished;
         doc.Database.ObjectAppended += Changed;
         doc.Database.ObjectModified += Changed;
         doc.Database.ObjectErased += Changed;
@@ -109,6 +113,7 @@ internal sealed class Live : IDisposable
     public void Dispose()
     {
         if (Current == this) Current = null;
+        progress.Dispose();
         try
         {
             Document.Database.ObjectAppended -= Changed;

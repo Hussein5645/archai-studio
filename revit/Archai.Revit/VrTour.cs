@@ -41,7 +41,7 @@ public sealed class VrCommand : IExternalCommand
             VrShare.Published link;
             using (var progress = new ArchaiProgress("Open in VR"))
             {
-                progress.Report("Collecting the model's geometry...");
+                progress.Report("Collecting the model's geometry...", null);
                 tour = VrModel.Build(doc, ui!.ActiveView, out var scoped);
                 if (tour.Model.Length == 0)
                 {
@@ -49,9 +49,10 @@ public sealed class VrCommand : IExternalCommand
                     ArchaiDialog.Show("Open in VR", "There is no model geometry to show" + (scoped ? " in this 3D view." : "."));
                     return Result.Cancelled;
                 }
-                progress.Report($"Uploading {Math.Max(1, tour.Model.Length / 1048576)} MB to the VR viewer...");
+                progress.Report($"Uploading {Archai.Plugins.Progress.Megabytes(tour.Model.Length)} to the VR viewer...", 0.3);
                 var key = "revit|" + (string.IsNullOrEmpty(doc.PathName) ? "unsaved:" + doc.Title : doc.PathName);
-                link = progress.Run(() => VrShare.Publish(share, key, tour.Model, tour.Json));
+                var upload = ((Archai.Plugins.ProgressReport)progress.Report).Range(0.3, 1);
+                link = progress.Run(() => VrShare.Publish(share, key, tour.Model, tour.Json, upload));
             }
             VrShare.OpenInBrowser(link.Url);
             try { System.Windows.Clipboard.SetText(link.Url); } catch { }

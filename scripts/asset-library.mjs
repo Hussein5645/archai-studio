@@ -20,7 +20,7 @@ const work = process.argv[2];
 if (!work) throw new Error('usage: node scripts/asset-library.mjs <work dir>');
 const out = join(work, 'out', 'assets');
 const cache = join(work, 'cache');
-const UA = { 'User-Agent': 'ArchAI-asset-library/1.0 (https://archai2-0.vercel.app)' };
+const UA = { 'User-Agent': 'ArchAI-asset-library/1.0 (https://archai-studio-six.vercel.app)' };
 const only = process.argv[3] ? new Set(process.argv[3].split(',')) : null;
 
 const TREES = 'Populate/Plants/Trees';

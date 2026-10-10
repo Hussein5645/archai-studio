@@ -93,11 +93,57 @@ def is_live(node):
         return False
 
 
-def collect(skip_live=False):
+class Progress:
+    """3ds Max's progress bar (MAXScript progressStart / progressUpdate) and the prompt line.
+    `update(text, fraction)` works as a core progress callback; main thread only."""
+
+    def __init__(self, title):
+        self.title = title
+        self.started = False
+
+    def begin(self, text=""):
+        if not self.started:
+            try:
+                rt.progressStart("ArchAI " + self.title)
+            except Exception:  # noqa: BLE001
+                pass
+            self.started = True
+        self._prompt(text, None)
+
+    def update(self, text, fraction=None):
+        if not self.started:
+            self.begin(text)
+        if fraction is not None:
+            try:
+                rt.progressUpdate(int(round(max(0.0, min(1.0, fraction)) * 100)))
+            except Exception:  # noqa: BLE001
+                pass
+        self._prompt(text, fraction)
+
+    def end(self):
+        if self.started:
+            try:
+                rt.progressEnd()
+            except Exception:  # noqa: BLE001
+                pass
+        self.started = False
+        self._prompt("", None)
+
+    def _prompt(self, text, fraction):
+        line = "" if not text else "ArchAI %s: %s" % (self.title, text) + ("" if fraction is None else "  (%d%%)" % int(round(fraction * 100)))
+        try:
+            rt.replacePrompt(line)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def collect(skip_live=False, progress=None):
     """Visible geometry nodes as ArchAI objects (world space, modifiers applied)."""
     mm = millimetres()
     objects, cache = [], {}
-    for node in rt.geometry:
+    nodes = list(rt.geometry)
+    for index, node in enumerate(nodes):
+        core.step(progress, index, len(nodes), "Reading object %d of %d" % (index + 1, len(nodes)))
         if node.isHidden or rt.classOf(node) == rt.Targetobject:
             continue
         if skip_live and is_live(node):
@@ -152,8 +198,10 @@ def document_key():
     return "3dsmax|" + (path if str(rt.maxFileName) else "unsaved:" + document_name())
 
 
-def send(path):
-    objects = collect()
+def send(path, progress=None):
+    objects = collect(progress=core.scaled(progress, 0.0, 0.9))
+    if progress:
+        progress("Writing the .AIR file", 0.95)
     exchange = core.write_exchange(document_name(), "3ds Max", str(rt.maxVersion()[0]), os.path.join(str(rt.maxFilePath), str(rt.maxFileName)), objects)
     if not exchange["meshes"]:
         raise ValueError("There are no visible geometry objects to send.")
@@ -179,10 +227,12 @@ def _make_material(source, cache):
     return material
 
 
-def import_air(path):
+def import_air(path, progress=None):
     """Adds an .AIR file's elements: a mesh per material, grouped per element, a layer per level."""
+    if progress:
+        progress("Reading " + os.path.basename(path), None)
     name, objects = core.read_air(path)
-    return name, import_objects(name, objects)
+    return name, import_objects(name, objects, progress=core.scaled(progress, 0.1, 1.0))
 
 
 def clear_live():
@@ -206,14 +256,16 @@ def signature():
     return hash(tuple(parts))
 
 
-def import_objects(name, objects, live=False):
+def import_objects(name, objects, live=False, progress=None):
     mm = millimetres()
     cache, count = {}, 0
+    total = len(objects)
     with pymxs.undo(not live, "Open .AIR"):
         for level, items in core.by_level(objects):
             layer_name = (LIVE_LAYER + " " + level).strip() if live else "ArchAI " + (level or name)
             layer = rt.LayerManager.getLayerFromName(layer_name) or rt.LayerManager.newLayerFromName(layer_name)
             for item in items:
+                core.step(progress, count, total, "Adding element %d of %d" % (count + 1, total))
                 nodes = []
                 for part in item.parts:
                     p = part.positions
@@ -248,10 +300,13 @@ def live_exchange():
     return core.write_exchange(document_name(), "3ds Max", str(rt.maxVersion()[0]), os.path.join(str(rt.maxFilePath), str(rt.maxFileName)), collect(skip_live=True))
 
 
-def prepare_tour():
+def prepare_tour(progress=None):
     """(glb, tour, triangles, stops, name, key) of the visible scene."""
     name = document_name()
     active = rt.viewport.getCamera()
     start = str(active.name) if active is not None else None
-    glb, tour, triangles, stops = core.build_tour(name, "3ds Max", collect(), cameras(), start)
+    objects = collect(progress=progress)
+    if progress:
+        progress("Building the VR model", None)
+    glb, tour, triangles, stops = core.build_tour(name, "3ds Max", objects, cameras(), start)
     return glb, tour, triangles, stops, name, document_key()

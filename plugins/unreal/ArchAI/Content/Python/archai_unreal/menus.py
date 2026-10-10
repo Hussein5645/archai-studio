@@ -7,7 +7,7 @@ import unreal
 from . import archai_core as core
 from . import scene
 
-_job = {"thread": None, "result": None, "error": None, "tick": None, "info": None}
+_job = {"thread": None, "result": None, "error": None, "tick": None, "info": None, "progress": None, "meter": None}
 _live = {"link": None, "tick": None, "queue": [], "signature": None, "since": 0.0}
 
 
@@ -48,7 +48,11 @@ def toggle_live():
     def status(text):
         unreal.log("ArchAI live link: " + text)
 
-    link = core.LiveLink(scene.document_key().replace("unreal|", "unreal:"), "Unreal", scene.level_name(), scene.live_exchange, do_import, _live["queue"].append, status)
+    # Slow syncs (a first sync, a big level) show Unreal's progress dialog; quick ones do not.
+    meter = scene.Progress("live link")
+    gate = core.DelayedProgress(meter.begin, meter.update, meter.end, _live["queue"].append)
+    link = core.LiveLink(scene.document_key().replace("unreal|", "unreal:"), "Unreal", scene.level_name(), scene.live_exchange, do_import, _live["queue"].append, status,
+                         progress=gate.report, finished=gate.finished)
     _live["link"] = link
     _live["signature"] = scene.signature()
     _live["tick"] = unreal.register_slate_post_tick_callback(_live_tick)
@@ -97,8 +101,12 @@ def send():
     path = _file_dialog(True, "Send to ArchAI", scene.level_name() + ".AIR")
     if not path:
         return
+    meter = scene.Progress("Send to ArchAI")
     try:
-        count = scene.send(path)
+        try:
+            count = scene.send(path, meter.update)
+        finally:
+            meter.end()
         _message("Sent to ArchAI", "%d actor%s saved to %s.\n\nOpen it in ArchAI (Open file) to work on it." % (count, "" if count == 1 else "s", os.path.basename(path)))
     except Exception as error:  # noqa: BLE001
         _message("Send to ArchAI", str(error))
@@ -123,15 +131,21 @@ def open_vr():
     if config is None:
         _message("Open in VR", core.NO_KEY)
         return
-    glb, tour, triangles, stops, name, key = scene.prepare_tour()
+    meter = scene.Progress("Open in VR")
+    meter.begin("Reading the level")
+    glb, tour, triangles, stops, name, key = scene.prepare_tour(core.scaled(meter.update, 0.0, 0.3))
     if not glb:
+        meter.end()
         _message("Open in VR", "There are no visible static meshes in the level to show.")
         return
+    meter.update("Uploading %s" % core.megabytes(len(glb)), 0.35)
+    _job["meter"] = meter
     unreal.log("ArchAI: uploading %d MB to the VR viewer..." % max(1, len(glb) // 1048576))
 
     def work():
         try:
-            _job["result"] = core.publish(config, key, glb, tour)
+            upload = core.scaled(lambda text, fraction=None: _job.__setitem__("progress", (text, fraction)), 0.35, 1.0)
+            _job["result"] = core.publish(config, key, glb, tour, upload)
         except Exception as error:  # noqa: BLE001
             _job["error"] = str(error)
 
@@ -141,9 +155,15 @@ def open_vr():
 
 
 def _poll(_delta):
+    meter = _job["meter"]
     if _job["thread"] is None or _job["thread"].is_alive():
+        if meter is not None and _job["progress"] is not None:
+            meter.update(*_job["progress"])
         return
     unreal.unregister_slate_post_tick_callback(_job["tick"])
+    if meter is not None:
+        meter.end()
+    _job["meter"] = _job["progress"] = None
     _job["thread"] = None
     if _job["error"]:
         _message("Open in VR", _job["error"])

@@ -17,6 +17,7 @@ import type { AppStore } from '@/store';
 import type { ToastStore } from '@/ui/toast-store';
 import { CLOUD_URL, CloudError, type AccountService } from './account';
 import { LiveSession, type LiveState, type Peer } from './live';
+import { megabytes, readWithProgress, uploadWithProgress, withProgress, type ProgressHandle } from '@/progress';
 
 export type Role = 'owner' | 'editor' | 'viewer';
 
@@ -168,7 +169,7 @@ export class CloudProjects {
       body: JSON.stringify({ name: local.meta.name }),
     });
     const online: ArchaiDocument = { ...local, id };
-    const { version } = await this.upload(online, 0);
+    const { version } = await withProgress(`Putting "${local.meta.name}" online`, (task) => this.upload(online, 0, task));
     await this.persistence.storeDocument(online, { cloud: { version, role: 'owner' } });
     void this.refresh();
     await this.open(id);
@@ -180,7 +181,8 @@ export class CloudProjects {
     const entry = this.persistence.entry(id);
     if (entry?.cloud?.pending) await this.pushPending(id, entry.cloud);
     try {
-      const { document, cloud } = await this.download(id);
+      const name = entry?.name ?? this.listState.projects.find((project) => project.id === id)?.name ?? 'the project';
+      const { document, cloud } = await withProgress(`Opening "${name}"`, (task) => this.download(id, task), 'Downloading');
       await this.persistence.storeDocument(document, { cloud });
     } catch (error) {
       const offline = error instanceof CloudError && error.status === 0;
@@ -346,17 +348,47 @@ export class CloudProjects {
     }
   }
 
-  private async upload(doc: ArchaiDocument, baseVersion: number): Promise<{ version: number }> {
-    return this.account.json<{ version: number }>(`/projects/${doc.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Base-Version': String(baseVersion) },
-      body: JSON.stringify(doc),
-    });
+  /** Saves a whole document; with `task`, the upload's progress is reported on it. */
+  private async upload(doc: ArchaiDocument, baseVersion: number, task?: ProgressHandle): Promise<{ version: number }> {
+    const token = this.account.token();
+    if (!task || !token) {
+      return this.account.json<{ version: number }>(`/projects/${doc.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Base-Version': String(baseVersion) },
+        body: JSON.stringify(doc),
+      });
+    }
+    const text = JSON.stringify(doc);
+    task.update(`Uploading ${megabytes(text.length)}`, 0);
+    let sent;
+    try {
+      sent = await uploadWithProgress(
+        `${CLOUD_URL}/projects/${doc.id}`,
+        text,
+        { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Base-Version': String(baseVersion), Authorization: `Bearer ${token}` } },
+        (fraction, loaded, total) => task.update(`Uploading ${megabytes(loaded)} of ${megabytes(total)}`, fraction * 0.95),
+      );
+    } catch {
+      throw new CloudError(0, 'Could not reach ArchAI online: check the internet connection');
+    }
+    let body: Record<string, unknown> = {};
+    try {
+      body = JSON.parse(sent.text) as Record<string, unknown>;
+    } catch {
+      // not JSON
+    }
+    if (sent.status < 200 || sent.status >= 300) throw new CloudError(sent.status, typeof body['error'] === 'string' ? body['error'] : `ArchAI online: ${sent.status}`, body);
+    return { version: Number(body['version']) };
   }
 
-  private async download(id: string): Promise<{ document: ArchaiDocument; cloud: CloudInfo }> {
+  private async download(id: string, task?: ProgressHandle): Promise<{ document: ArchaiDocument; cloud: CloudInfo }> {
     const response = await this.account.request(`/projects/${id}`);
-    const parsed = parseDocument(await response.text());
+    const bytes = task
+      ? await readWithProgress(response, (fraction, loaded, total) => task.update(`Downloading ${megabytes(loaded)} of ${megabytes(total)}`, fraction * 0.9))
+      : new Uint8Array(await response.arrayBuffer());
+    task?.update('Reading the project', 0.95);
+    await task?.paint();
+    const parsed = parseDocument(new TextDecoder().decode(bytes));
     if (!parsed.ok) throw new Error(`This online project could not be read: ${parsed.error.message}`);
     const role = response.headers.get('X-Role');
     return {

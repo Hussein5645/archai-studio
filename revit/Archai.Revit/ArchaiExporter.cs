@@ -38,16 +38,27 @@ internal sealed class ArchaiExporter
     private static JArray Point((double X, double Y) p) => new JArray(p.X, p.Y);
     private void Count(string kind) => Counts[kind] = Counts.TryGetValue(kind, out var n) ? n + 1 : 1;
 
+    /// <summary>Progress of <see cref="Export"/> (Send to ArchAI shows it).</summary>
+    public ProgressReport? Progress { get; set; }
+
     public JObject Export()
     {
+        Progress?.Invoke("Reading levels", 0.02);
         var levels = ExportLevels();
+        Progress?.Invoke("Reading walls", 0.06);
         var walls = ExportWalls();
+        Progress?.Invoke("Reading doors and windows", 0.2);
         var openings = ExportOpenings();
+        Progress?.Invoke("Reading floors and roofs", 0.3);
         var slabs = ExportSlabs();
+        Progress?.Invoke("Reading columns", 0.38);
         var columns = ExportColumns();
+        Progress?.Invoke("Reading railings", 0.42);
         var railings = ExportRailings();
+        Progress?.Invoke("Reading rooms", 0.46);
         var rooms = ExportRooms();
         var meshes = ExportMeshes();
+        Progress?.Invoke("Writing the .AIR file", 0.98);
         return new JObject
         {
             ["archaiRevit"] = 1,
@@ -540,8 +551,13 @@ internal sealed class ArchaiExporter
     {
         var list = new JArray();
         var candidates = new FilteredElementCollector(doc).WhereElementIsNotElementType().WhereElementIsViewIndependent();
+        var total = candidates.GetElementCount();
+        var index = 0;
+        var meshProgress = Progress.Range(0.5, 0.97);
         foreach (var element in candidates)
         {
+            meshProgress.Step(index, total, $"Reading 3D geometry: element {index + 1} of {total}");
+            index++;
             try
             {
                 // Doors and windows in exported walls are rebuilt; ArchAI's own model (live link) never goes back.

@@ -50,6 +50,7 @@ internal sealed class Live : IDisposable, IExternalEventHandler
     public readonly Document Doc;
     private readonly UIApplication ui;
     private readonly LiveLink link;
+    private readonly LiveProgress progress = new LiveProgress("Revit");
     private readonly ExternalEvent wake;
     private readonly ConcurrentQueue<Action> queue = new ConcurrentQueue<Action>();
     private readonly Dictionary<string, ElementId> materials = new Dictionary<string, ElementId>();
@@ -66,6 +67,9 @@ internal sealed class Live : IDisposable, IExternalEventHandler
             Export = () => new ArchaiExporter(doc).Export(),
             Import = Replace,
         };
+        // Slow syncs (a first sync, a big model) show a progress window; quick ones do not.
+        link.SyncProgress = progress.Report;
+        link.SyncFinished = progress.Finished;
         ui.Application.DocumentChanged += Changed;
         ui.Application.DocumentClosing += Closing;
         link.Start();
@@ -169,6 +173,7 @@ internal sealed class Live : IDisposable, IExternalEventHandler
     public void Dispose()
     {
         if (Current == this) Current = null;
+        progress.Dispose();
         ui.Application.DocumentChanged -= Changed;
         ui.Application.DocumentClosing -= Closing;
         link.Dispose();

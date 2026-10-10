@@ -7,8 +7,8 @@ require 'base64'
 
 module ArchAI
   module Core
-    VERSION = '0.4.0'.freeze
-    WEB_URL = 'https://archai2-0.vercel.app/'.freeze
+    VERSION = '0.4.1'.freeze
+    WEB_URL = 'https://archai-studio-six.vercel.app/'.freeze
     DEFAULT_SHARE_URL = 'https://archai-vr-share.mklkoklpp.workers.dev'.freeze
     MAX_MODEL_BYTES = 95 * 1024 * 1024
     MAX_STOPS = 40
@@ -28,6 +28,44 @@ module ArchAI
     end
 
     DEFAULT_MATERIAL = Material.new('Default', 0.78, 0.79, 0.81)
+
+    # Progress in SketchUp's status bar (its Ruby API has no progress bar for extensions): the
+    # step and, when the amount of work is known, a text bar with the percentage.
+    #   progress = Core::Progress.new('Send to ArchAI'); report = progress.method(:update)
+    class Progress
+      WIDTH = 20
+
+      def initialize(title)
+        @title = title
+      end
+
+      def update(text, fraction = nil)
+        line = "ArchAI #{@title}: #{text}"
+        if fraction
+          f = [[fraction.to_f, 0.0].max, 1.0].min
+          filled = (f * WIDTH).round
+          line = "#{line}   [#{'#' * filled}#{'-' * (WIDTH - filled)}] #{(f * 100).round}%"
+        end
+        Sketchup.status_text = line if defined?(Sketchup)
+      end
+
+      def finish
+        Sketchup.status_text = '' if defined?(Sketchup)
+      end
+    end
+
+    # A report(text, fraction) whose 0..1 lands in [from, to] of `report`.
+    def self.scaled(report, from, to)
+      return nil unless report
+      ->(text, fraction = nil) { report.call(text, fraction.nil? ? nil : from + (to - from) * fraction) }
+    end
+
+    # Item `index` of `count` done (at most about 50 reports per run).
+    def self.step(report, index, count, text)
+      return if report.nil? || count <= 0
+      stride = [1, count / 50].max
+      report.call(text, index.to_f / count) if (index % stride).zero? || index == count - 1
+    end
 
     def self.linear(c)
       c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055)**2.4
