@@ -37,6 +37,9 @@ public static class Exchange
                 ["size"] = new JArray(Math.Round(box.MaxX - box.MinX, 1), Math.Round(box.MaxY - box.MinY, 1), Math.Round(box.MaxZ - box.MinZ, 1)),
                 ["glb"] = Convert.ToBase64String(writer.ToGlb("ArchAI " + app + " plugin")),
             });
+            // Live Bridge: the ArchAI element this object is an editable copy of, and an older id.
+            if (!string.IsNullOrEmpty(o.Archai)) ((JObject)meshes.Last!)["archai"] = Truncate(o.Archai!, 64);
+            if (!string.IsNullOrEmpty(o.Was) && o.Was != o.Id) ((JObject)meshes.Last!)["was"] = Truncate(o.Was!, 64);
         }
         written = meshes.Count;
         return new JObject

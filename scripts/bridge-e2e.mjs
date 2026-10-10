@@ -1,6 +1,8 @@
-// Live Bridge end to end with two real Blender processes (A and B) and the ArchAI desktop app.
-//   1. npm run dev (Vite on 5173) and npm run build:electron
-//   2. node scripts/bridge-e2e.mjs [path to blender.exe]
+// Live Bridge end to end with two real Blender processes (A and B), AutoCAD (C, accoreconsole,
+// when installed) and the ArchAI desktop app.
+//   1. npm run dev (Vite on 5173), npm run build:electron and
+//      dotnet build plugins/autocad/Archai.AutoCAD.BridgeTest -c Release
+//   2. node scripts/bridge-e2e.mjs [path to blender.exe] [path to accoreconsole.exe]
 // ArchAI runs with a throwaway profile on ARCHAI_LIVE_PORT 47899 (an installed ArchAI keeps the
 // normal port), the Blenders with a throwaway LOCALAPPDATA (the plugin's project links).
 import { _electron as electron } from 'playwright';
@@ -11,6 +13,8 @@ import { join, resolve } from 'node:path';
 
 const repo = resolve(import.meta.dirname, '..');
 const blender = process.argv[2] ?? 'C:/Program Files/Blender Foundation/Blender 4.2/blender.exe';
+const accore = process.argv[3] ?? 'C:/Program Files/Autodesk/AutoCAD 2026/accoreconsole.exe';
+const agentDll = join(repo, 'plugins/autocad/Archai.AutoCAD.BridgeTest/bin/Release/net8.0-windows/Archai.AutoCAD.BridgeTest.dll');
 const PORT = 47899;
 const work = mkdtempSync(join(tmpdir(), 'archai-bridge-e2e-'));
 const stage = join(work, 'stage');
@@ -18,7 +22,7 @@ mkdirSync(join(stage, 'archai'), { recursive: true });
 cpSync(join(repo, 'plugins/blender/archai'), join(stage, 'archai'), { recursive: true });
 cpSync(join(repo, 'plugins/python/archai_core.py'), join(stage, 'archai/archai_core.py'));
 const control = join(work, 'control.json');
-const steps = { A: [], B: [] };
+const steps = { A: [], B: [], C: [] };
 const send = (role, step) => {
   steps[role].push(step);
   writeFileSync(control, JSON.stringify(steps));
@@ -180,12 +184,82 @@ try {
     return s.elements.find((e) => e.id === wallId)?.name === 'Wall A renamed' ? s : null;
   });
   check('the owner\'s change wins', Boolean(state));
-  console.log('ArchAI log:', (await archaiState()).log.slice(-8));
+
+  // 8. AutoCAD joins: a third, different app on the same project (protocol 2 in the C# core).
+  if (existsSync(accore) && existsSync(agentDll)) {
+    const appdata = join(work, 'appdata-C');
+    mkdirSync(appdata, { recursive: true });
+    const script = join(work, 'agent.scr');
+    // SECURELOAD goes back to 1 (its default) before quitting.
+    writeFileSync(script, ['SECURELOAD', '0', 'NETLOAD', '"' + agentDll.split('/').join('\\') + '"', 'INSUNITS', '4', 'ARCHAIBRIDGEAGENT', 'SECURELOAD', '1', 'QUIT', 'Y', ''].join('\r\n'));
+    const child = spawn(accore, ['/s', script], { env: { ...process.env, ARCHAI_LIVE_PORT: String(PORT), LOCALAPPDATA: appdata, ARCHAI_BRIDGE_CONTROL: control, ARCHAI_BRIDGE_STATUS: join(work, 'status-C.json') }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let log = '';
+    child.stdout.on('data', (d) => (log += d));
+    child.stderr.on('data', (d) => (log += d));
+    agents.C = { child, log: () => log };
+    const acad = () => blenderState('C')?.entities ?? [];
+    await waitFor('AutoCAD agent runs', () => blenderState('C'), 120000);
+    send('C', 'start');
+    const keyC = 'autocad:C:/bridge-test/C.dwg';
+    state = await waitFor('AutoCAD sends its box', async () => {
+      const s = await archaiState();
+      return ofSource(s, keyC).length === 1 ? s : null;
+    }, 60000);
+    check('AutoCAD joined the project and sent its box', Boolean(state));
+    const boxId = state ? ofSource(state, keyC)[0].id : '';
+    await waitFor('AutoCAD receives the Blender cube, tagged', () => acad().some((e) => e.archai_id === wallId && e.layer.startsWith('ArchAI Live')));
+    check('AutoCAD has the Blender cube on an ArchAI Live layer', acad().some((e) => e.archai_id === wallId && e.layer.startsWith('ArchAI Live')), JSON.stringify(acad().map((e) => e.layer)));
+    await waitFor('Blender A receives the AutoCAD box', () => liveIn('A').some((o) => o.archai_id === boxId));
+    check('Blender A has the AutoCAD box', liveIn('A').some((o) => o.archai_id === boxId));
+    // AutoCAD moves its box: the same element moves in ArchAI, and in Blender A.
+    const boxX = (await archaiState()).elements.find((e) => e.id === boxId).x;
+    send('C', 'move');
+    state = await waitFor('ArchAI moves the AutoCAD box', async () => {
+      const s = await archaiState();
+      const box = s.elements.find((e) => e.id === boxId);
+      return box && Math.abs(box.x - boxX - 2000) < 1 ? s : null;
+    });
+    check("AutoCAD's move updated the same element", Boolean(state));
+    await waitFor('Blender A follows', () => liveIn('A').some((o) => o.archai_id === boxId && Math.abs(o.center[0] - 12.5) < 0.01));
+    check("Blender A's view of the box moved", liveIn('A').some((o) => o.archai_id === boxId && Math.abs(o.center[0] - 12.5) < 0.01), JSON.stringify(liveIn('A').find((o) => o.archai_id === boxId)?.center));
+    // ArchAI moves the box (transform shared): AutoCAD's own solid moves.
+    await page.evaluate(([key, id]) => {
+      const { executor } = window.__archai;
+      executor.dispatchSync('bridge-set-source', { key, authority: { transform: 'shared' } });
+      executor.dispatchSync('select', { ids: [id] });
+      const result = executor.dispatchSync('move-selection', { ids: [id], dx: 0, dy: -1000 });
+      if (!result.ok) throw new Error(result.error.message);
+    }, [keyC, boxId]);
+    const solid = () => acad().find((e) => !e.archai_id && !e.copy_of);
+    await waitFor("AutoCAD's solid moves where ArchAI moved it", () => solid() && Math.abs(solid().center[1] - 1500) < 1);
+    check("ArchAI's move reached AutoCAD's own solid (plan y down = AutoCAD y up)", Boolean(solid()) && Math.abs(solid().center[1] - 1500) < 1, JSON.stringify(solid()?.center));
+    // ArchAI offers the Blender cube to AutoCAD as an editable copy.
+    await page.evaluate(([key, id]) => window.__archai.executor.dispatchSync('bridge-offer', { ids: [id], key, facets: ['transform'] }), [keyC, wallId]);
+    await waitFor('AutoCAD makes an editable copy', () => acad().some((e) => e.copy_of === wallId && e.layer === 'ArchAI Copies'));
+    check('AutoCAD has an editable copy on "ArchAI Copies"', acad().some((e) => e.copy_of === wallId && e.layer === 'ArchAI Copies'));
+    state = await waitFor("ArchAI links AutoCAD's copy", async () => {
+      const s = await archaiState();
+      return s.elements.find((e) => e.id === wallId)?.refs[keyC]?.role === 'copy' ? s : null;
+    });
+    check("ArchAI linked AutoCAD's copy to the Blender element", Boolean(state));
+    // AutoCAD deletes its box: deleted in ArchAI and gone from Blender A.
+    send('C', 'delete');
+    state = await waitFor('ArchAI deletes the box', async () => {
+      const s = await archaiState();
+      return s.elements.some((e) => e.id === boxId) ? null : s;
+    });
+    check('deleting in AutoCAD deleted the element', Boolean(state));
+    await waitFor('Blender A drops the box', () => !liveIn('A').some((o) => o.archai_id === boxId));
+    check('Blender A no longer shows the box', !liveIn('A').some((o) => o.archai_id === boxId));
+  } else console.log('SKIP AutoCAD (accoreconsole or the agent build missing)');
+
+  console.log('ArchAI log:', (await archaiState()).log.slice(-12));
 } finally {
   send('A', 'stop');
   send('B', 'stop');
+  send('C', 'stop');
   await new Promise((r) => setTimeout(r, 3000));
-  for (const role of ['A', 'B']) {
+  for (const role of Object.keys(agents)) {
     if (agents[role].child.exitCode === null) agents[role].child.kill();
     const tail = agents[role].log().split('\n').filter((l) => /Error|Traceback|error/i.test(l)).slice(-10);
     if (tail.length) console.log(`Blender ${role} errors:\n${tail.join('\n')}`);

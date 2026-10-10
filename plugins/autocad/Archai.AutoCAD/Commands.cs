@@ -191,6 +191,8 @@ internal static class DrawingScene
                 Id = "h" + entity.Handle,
                 Name = entity is BlockReference block ? BlockName(tr, block) : entity.GetRXClass().DxfName.ToLowerInvariant() is var dxf && dxf.Length > 0 ? char.ToUpperInvariant(dxf[0]) + dxf.Substring(1) : "Object",
                 Category = entity.Layer,
+                // Live Bridge: an editable copy of an ArchAI element.
+                Archai = BridgeTags.Read(entity).CopyOf,
             };
             try { Add(tr, entity, Matrix3d.Identity, null, item, mm, materials, 0); } catch { continue; }
             if (item.Triangles.Count > 0) objects.Add(item);
@@ -331,7 +333,9 @@ internal static class DrawingScene
         tr.Commit();
     }
 
-    public static int Import(Database db, AirFile.Contents contents, string layerPrefix = "ArchAI", ProgressReport? progress = null)
+    /// <param name="created">Live Bridge: each new block reference with the object it was made of.</param>
+    /// <param name="layer">Puts everything on this layer instead of a layer per level.</param>
+    public static int Import(Database db, AirFile.Contents contents, string layerPrefix = "ArchAI", ProgressReport? progress = null, Action<ImportObject, ObjectId>? created = null, string? layer = null)
     {
         var mm = Millimetres(db);
         var count = 0;
@@ -343,7 +347,7 @@ internal static class DrawingScene
         var prefix = Clean(contents.Name, 40);
         foreach (var level in AirFile.ByLevel(contents.Objects))
         {
-            var layerName = Clean(layerPrefix + " " + (level.Key.Length > 0 ? level.Key : contents.Name), 200);
+            var layerName = layer ?? Clean(layerPrefix + " " + (level.Key.Length > 0 ? level.Key : contents.Name), 200);
             if (!layers.Has(layerName))
             {
                 var record = new LayerTableRecord { Name = layerName };
@@ -357,39 +361,46 @@ internal static class DrawingScene
                 var definition = new BlockTableRecord { Name = name, Origin = Point3d.Origin };
                 blocks.Add(definition);
                 tr.AddNewlyCreatedDBObject(definition, true);
-                foreach (var part in item.Parts)
-                {
-                    var vertices = new Point3dCollection();
-                    for (int i = 0; i + 2 < part.Positions.Length; i += 3)
-                    {
-                        var (x, y, z) = HostAxes.ToZUp(part.Positions[i], part.Positions[i + 1], part.Positions[i + 2], mm);
-                        vertices.Add(new Point3d(x, y, z));
-                    }
-                    var faces = new Int32Collection();
-                    for (int i = 0; i + 2 < part.Indices.Length; i += 3)
-                    {
-                        // glTF to Z-up keeps handedness, so the winding stays.
-                        faces.Add(3); faces.Add(part.Indices[i]); faces.Add(part.Indices[i + 1]); faces.Add(part.Indices[i + 2]);
-                    }
-                    if (faces.Count == 0) continue;
-                    var mesh = new SubDMesh();
-                    mesh.SetDatabaseDefaults(db);
-                    mesh.SetSubDMesh(vertices, faces, 0);
-                    mesh.Layer = "0";
-                    var m = part.Material;
-                    mesh.Color = Color.FromRgb((byte)Math.Round(m.R * 255), (byte)Math.Round(m.G * 255), (byte)Math.Round(m.B * 255));
-                    if (m.Opacity < 0.999) mesh.Transparency = new Transparency((byte)Math.Round(m.Opacity * 255));
-                    definition.AppendEntity(mesh);
-                    tr.AddNewlyCreatedDBObject(mesh, true);
-                }
+                Fill(tr, db, definition, item, mm, Matrix3d.Identity);
                 var reference = new BlockReference(Point3d.Origin, definition.ObjectId) { Layer = layerName };
                 space.AppendEntity(reference);
                 tr.AddNewlyCreatedDBObject(reference, true);
+                created?.Invoke(item, reference.ObjectId);
                 count++;
             }
         }
         tr.Commit();
         return count;
+    }
+
+    /// <summary>Adds an object's meshes to a block definition; <paramref name="toLocal"/> maps world to the definition.</summary>
+    public static void Fill(Transaction tr, Database db, BlockTableRecord definition, ImportObject item, double mm, Matrix3d toLocal)
+    {
+        foreach (var part in item.Parts)
+        {
+            var vertices = new Point3dCollection();
+            for (int i = 0; i + 2 < part.Positions.Length; i += 3)
+            {
+                var (x, y, z) = HostAxes.ToZUp(part.Positions[i], part.Positions[i + 1], part.Positions[i + 2], mm);
+                vertices.Add(new Point3d(x, y, z).TransformBy(toLocal));
+            }
+            var faces = new Int32Collection();
+            for (int i = 0; i + 2 < part.Indices.Length; i += 3)
+            {
+                // glTF to Z-up keeps handedness, so the winding stays.
+                faces.Add(3); faces.Add(part.Indices[i]); faces.Add(part.Indices[i + 1]); faces.Add(part.Indices[i + 2]);
+            }
+            if (faces.Count == 0) continue;
+            var mesh = new SubDMesh();
+            mesh.SetDatabaseDefaults(db);
+            mesh.SetSubDMesh(vertices, faces, 0);
+            mesh.Layer = "0";
+            var m = part.Material;
+            mesh.Color = Color.FromRgb((byte)Math.Round(m.R * 255), (byte)Math.Round(m.G * 255), (byte)Math.Round(m.B * 255));
+            if (m.Opacity < 0.999) mesh.Transparency = new Transparency((byte)Math.Round(m.Opacity * 255));
+            definition.AppendEntity(mesh);
+            tr.AddNewlyCreatedDBObject(mesh, true);
+        }
     }
 
     private static string Clean(string name, int length)

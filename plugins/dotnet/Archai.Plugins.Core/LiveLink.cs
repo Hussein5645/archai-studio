@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
@@ -7,6 +10,36 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace Archai.Plugins;
+
+/// <summary>An ArchAI change to one of the host's own objects (Live Bridge).</summary>
+public sealed class BridgeUpdate
+{
+    /// <summary>The host object's id (what the plugin sent as its id) and exchange collection.</summary>
+    public string Ref = "";
+    public string Kind = "";
+    public string Element = "";
+    public string Token = "";
+    /// <summary>Plan translation and elevation change in ArchAI millimetres (see <see cref="HostAxes.MoveToZUp"/>), or null.</summary>
+    public double[]? Move;
+    public string? Name;
+}
+
+/// <summary>
+/// What one Live Bridge pull changes in the host: <see cref="Nodes"/> to add or replace (by
+/// <see cref="ImportObject.ArchaiId"/>; <c>Archai["editable"]</c> asks for an editable object of the
+/// host's own, sent back with <see cref="SceneObject.Archai"/> set; <c>Archai["ref"]</c> names the
+/// host's own copy to replace), <see cref="Removed"/> ArchAI ids to delete, <see cref="Updates"/>
+/// for the host's own objects, and <see cref="Fresh"/> (drop everything ArchAI sent before).
+/// </summary>
+public sealed class BridgeDelta
+{
+    public string Name = "ArchAI";
+    public readonly List<ImportObject> Nodes = new List<ImportObject>();
+    public readonly List<string> Removed = new List<string>();
+    public readonly List<BridgeUpdate> Updates = new List<BridgeUpdate>();
+    public bool Fresh;
+    public bool Empty => Nodes.Count == 0 && Removed.Count == 0 && Updates.Count == 0 && !Fresh;
+}
 
 /// <summary>
 /// Live link with the ArchAI desktop app (electron/liveLink.ts in ArchAI): while it is on, the
@@ -17,7 +50,15 @@ namespace Archai.Plugins;
 /// <see cref="Exchange"/>), <see cref="Import"/> (replace the ArchAI layer with these objects),
 /// <see cref="OnHost"/> (run an action where the host API may be used, e.g. Revit's ExternalEvent,
 /// AutoCAD's Idle, Rhino's UI thread) and calls <see cref="ModelChanged"/> from its change events.
-/// While <see cref="Importing"/> is true the host's own change events are ArchAI's import: ignore them.
+/// While <see cref="Importing"/> is true the host's own change events are ArchAI's import.
+///
+/// Live Bridge (protocol 2, docs/live-bridge-proposal.md) when the host also supplies
+/// <see cref="Apply"/> (a <see cref="BridgeDelta"/>, applied element by element) and
+/// <see cref="AllIds"/> (every object id of the model, hidden ones too: pushes are then partial with
+/// explicit deletions, so hiding never deletes in ArchAI). The model is bound to one ArchAI project
+/// (remembered per model in %LOCALAPPDATA%\ArchAI\live-bridge.json, shared with the Python
+/// plugins): the one open when it first connects, or the one chosen with <see cref="BindAsync"/>;
+/// while ArchAI shows another project nothing is sent.
 /// </summary>
 public sealed class LiveLink : IDisposable
 {
@@ -29,14 +70,21 @@ public sealed class LiveLink : IDisposable
     {
         public bool Running;
         public string? Project;
+        public string? ProjectId;
         public long Revision;
         public long? Own;
+        public int Protocol = 1;
+        public bool Mismatch;
     }
 
     /// <summary>The host's model now (runs through <see cref="OnHost"/>).</summary>
     public Func<JObject>? Export;
     /// <summary>Replaces the ArchAI layer with ArchAI's model (runs through <see cref="OnHost"/>).</summary>
     public Action<AirFile.Contents>? Import;
+    /// <summary>Live Bridge: applies a pull element by element (runs through <see cref="OnHost"/>).</summary>
+    public Action<BridgeDelta>? Apply;
+    /// <summary>Live Bridge: ids of every object of the host model, hidden ones too (runs through <see cref="OnHost"/>).</summary>
+    public Func<IEnumerable<string>>? AllIds;
     /// <summary>Runs an action where the host API may be used.</summary>
     public Action<Action> OnHost = action => action();
     /// <summary>Short status for the UI ("Synced 2 s ago", "Start ArchAI…"); may come from any thread.</summary>
@@ -54,6 +102,9 @@ public sealed class LiveLink : IDisposable
     public bool Running { get; private set; }
     public bool Importing { get; private set; }
     public string LastStatus { get; private set; } = "";
+    /// <summary>The ArchAI project this model is bound to (Live Bridge), or null.</summary>
+    public (string Id, string Name)? Project { get; private set; }
+    private bool Bridge => Apply != null;
 
     private readonly HttpClient http;
     private readonly string baseUrl;
@@ -63,6 +114,11 @@ public sealed class LiveLink : IDisposable
     private long lastPulled = -1;
     private long lastSeen = -1;
     private bool pushPending;
+    private DateTime quietUntil = DateTime.MinValue;
+    /// <summary>Host ids ArchAI has from this model; ArchAI element id → hash it sent; update tokens applied.</summary>
+    private HashSet<string> known = new HashSet<string>();
+    private Dictionary<string, string> have = new Dictionary<string, string>();
+    private readonly HashSet<string> tokens = new HashSet<string>();
 
     public LiveLink(string key, string app, string name)
     {
@@ -73,6 +129,9 @@ public sealed class LiveLink : IDisposable
         baseUrl = "http://127.0.0.1:" + port;
         http = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
         http.DefaultRequestHeaders.Add("X-ArchAI-Live", "1");
+        var entry = BridgeState.Entry(Key);
+        if (entry?["project"] is JObject project && (string?)project["id"] is { Length: > 0 } id) Project = (id, (string?)project["name"] ?? "");
+        if (entry?["known"] is JArray ids) known = new HashSet<string>(ids.Select(i => (string?)i ?? "").Where(i => i.Length > 0));
     }
 
     /// <summary>Starts syncing: sends the model now, then follows edits both ways.</summary>
@@ -81,6 +140,7 @@ public sealed class LiveLink : IDisposable
         if (Running) return;
         Running = true;
         lastPulled = -1;
+        have = new Dictionary<string, string>();
         Report("Connecting to ArchAI…");
         pushPending = true;
         poll = new Timer(_ => _ = Tick(), null, TimeSpan.Zero, PollEvery);
@@ -101,26 +161,65 @@ public sealed class LiveLink : IDisposable
     /// <summary>The host's model changed: send it after a short pause.</summary>
     public void ModelChanged()
     {
-        if (!Running || Importing) return;
+        if (!Running) return;
         pushPending = true;
         debounce?.Dispose();
-        debounce = new Timer(_ => _ = Tick(), null, Debounce, Timeout.InfiniteTimeSpan);
+        // While ArchAI's model arrives most events are that import; an edit made meanwhile is sent
+        // once it has settled (ArchAI ignores a model it already has).
+        var wait = Importing || DateTime.UtcNow < quietUntil ? (quietUntil > DateTime.UtcNow ? quietUntil - DateTime.UtcNow : TimeSpan.Zero) + Debounce : Debounce;
+        debounce = new Timer(_ => _ = Tick(), null, wait, Timeout.InfiniteTimeSpan);
     }
+
+    /// <summary>The ArchAI projects this model can be linked to (Live Bridge): { open, projects: [{ id, name, updatedAt, online, open }] }.</summary>
+    public async Task<JObject> ProjectsAsync()
+    {
+        using var response = await http.GetAsync(baseUrl + "/live/projects").ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await ErrorOf(response).ConfigureAwait(false));
+        return JObject.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+    }
+
+    /// <summary>Links this model to an ArchAI project (opened there), or to a new one when <paramref name="projectId"/> is null.</summary>
+    public async Task<(string Id, string Name)> BindAsync(string? projectId, string? newName = null)
+    {
+        var body = new JObject { ["key"] = Key, ["app"] = App, ["name"] = Name };
+        if (!string.IsNullOrEmpty(projectId)) body["project"] = projectId;
+        else body["newName"] = newName ?? Name;
+        var result = await Post("/live/bind", body).ConfigureAwait(false);
+        var id = (string?)result["document"]?["id"] ?? "";
+        var name = (string?)result["document"]?["name"] ?? "";
+        if (Project?.Id != id) known = new HashSet<string>();
+        Project = (id, name);
+        have = new Dictionary<string, string>();
+        lastPulled = -1;
+        SaveState();
+        return (id, name);
+    }
+
+    private void SaveState() => BridgeState.Save(Key, Project == null ? null : new JObject
+    {
+        ["project"] = new JObject { ["id"] = Project.Value.Id, ["name"] = Project.Value.Name },
+        ["known"] = new JArray(known.OrderBy(i => i, StringComparer.Ordinal)),
+    });
 
     /// <summary>Asks ArchAI whether it is running and has a project open (null: not running).</summary>
     public async Task<Status> StatusAsync()
     {
         try
         {
-            using var response = await http.GetAsync(baseUrl + "/live/status?key=" + Uri.EscapeDataString(Key) + "&name=" + Uri.EscapeDataString(Name) + "&app=" + Uri.EscapeDataString(App)).ConfigureAwait(false);
+            var query = "?key=" + Uri.EscapeDataString(Key) + "&name=" + Uri.EscapeDataString(Name) + "&app=" + Uri.EscapeDataString(App);
+            if (Bridge) query += "&protocol=2&project=" + Uri.EscapeDataString(Project?.Id ?? "");
+            using var response = await http.GetAsync(baseUrl + "/live/status" + query).ConfigureAwait(false);
             var body = JObject.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
             if (!response.IsSuccessStatusCode) return new Status { Running = true, Project = null };
             return new Status
             {
                 Running = true,
                 Project = (string?)body["document"]?["name"],
+                ProjectId = (string?)body["document"]?["id"],
                 Revision = (long?)body["revision"] ?? 0,
                 Own = (long?)body["own"],
+                Protocol = (int?)body["protocol"] ?? 1,
+                Mismatch = body["mismatch"] is JObject,
             };
         }
         catch (Exception) { return new Status { Running = false }; }
@@ -139,26 +238,72 @@ public sealed class LiveLink : IDisposable
             }
             // ArchAI opens a project for this model on its own (the one linked before, or a new one).
             if (status.Project == null) { Report("Opening a project in ArchAI…"); return; }
+            var bridge = Bridge && status.Protocol >= 2;
+            if (bridge)
+            {
+                if (status.Mismatch)
+                {
+                    Report($"ArchAI shows {status.Project}; this model is linked to {Project?.Name ?? "another project"}. Open it in ArchAI, or link this model to the open project.");
+                    return;
+                }
+                // First connection: linked to the project ArchAI shows.
+                if (Project == null || Project.Value.Id != status.ProjectId) await BindAsync(status.ProjectId).ConfigureAwait(false);
+            }
             var upToDate = lastSeen == lastPulled && lastPulled >= 0;
             if (pushPending)
             {
                 pushPending = false;
                 SyncProgress?.Invoke($"Reading the {App} model", null);
-                var exchange = await OnHostAsync(() => Export?.Invoke()).ConfigureAwait(false);
+                var read = await OnHostAsync(() => (Model: Export?.Invoke(), Ids: bridge ? AllIds?.Invoke()?.ToList() : null)).ConfigureAwait(false);
+                var exchange = read.Model;
                 if (exchange != null)
                 {
                     exchange["app"] = App;
                     var body = new JObject { ["key"] = Key, ["app"] = App, ["name"] = Name, ["model"] = exchange };
-                    var result = await Post("/live/push", body, (sent, total) =>
+                    var sentIds = new HashSet<string>();
+                    foreach (var collection in new[] { "levels", "walls", "openings", "slabs", "columns", "railings", "rooms", "meshes" })
+                        if (exchange[collection] is JArray items) foreach (var item in items) if ((string?)item["id"] is { Length: > 0 } id) sentIds.Add(id);
+                    var deleted = new List<string>();
+                    var complete = read.Ids == null;
+                    if (bridge)
+                    {
+                        if (!complete)
+                        {
+                            var everything = new HashSet<string>(read.Ids!);
+                            deleted = known.Where(i => !everything.Contains(i) && !sentIds.Contains(i)).OrderBy(i => i, StringComparer.Ordinal).ToList();
+                        }
+                        body["protocol"] = 2;
+                        body["project"] = Project?.Id ?? "";
+                        body["changeId"] = Guid.NewGuid().ToString("N");
+                        body["complete"] = complete;
+                        body["deleted"] = new JArray(deleted);
+                    }
+                    void Sent(long sent, long total)
                     {
                         if (sent < total) SyncProgress?.Invoke($"Sending {Progress.Megabytes(sent)} of {Progress.Megabytes(total)} to ArchAI", 0.1 + 0.6 * sent / total);
                         else SyncProgress?.Invoke("ArchAI is updating the project", 0.75);
-                    }).ConfigureAwait(false);
+                    }
+                    JObject result;
+                    try { result = await Post("/live/push", body, Sent).ConfigureAwait(false); }
+                    catch (HttpRequestException) { result = await Post("/live/push", body, Sent).ConfigureAwait(false); } // the reply was lost: the same change again
+                    if ((string?)result["refused"] is { Length: > 0 })
+                    {
+                        Report((string?)result["message"] ?? "ArchAI did not take the model");
+                        return;
+                    }
+                    if (bridge)
+                    {
+                        known = complete ? sentIds : new HashSet<string>(known.Where(i => !deleted.Contains(i)).Concat(sentIds));
+                        SaveState();
+                    }
                     var revision = (long?)result["revision"] ?? 0;
                     // Up to date before this push: nothing new to bring back.
                     if (upToDate) lastPulled = revision;
                     lastSeen = revision;
-                    Report($"Sent to {status.Project} · {DateTime.Now:HH:mm:ss}");
+                    var conflicts = (int?)result["applied"]?["conflicts"] ?? 0;
+                    var held = (int?)result["applied"]?["held"] ?? 0;
+                    var note = conflicts > 0 ? $", {conflicts} conflicts to resolve in ArchAI" : held > 0 ? $", {held} deletions wait for confirmation in ArchAI" : "";
+                    Report($"Sent to {status.Project} · {DateTime.Now:HH:mm:ss}{note}");
                 }
                 return;
             }
@@ -166,19 +311,66 @@ public sealed class LiveLink : IDisposable
             // Changed by someone else since the last pull (our own pushes move lastPulled along).
             if (status.Revision == lastPulled) return;
             SyncProgress?.Invoke("ArchAI is preparing its model", null);
-            using var response = await http.GetAsync(baseUrl + "/live/pull?key=" + Uri.EscapeDataString(Key), HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+            var fresh = bridge && have.Count == 0;
+            var path = "/live/pull?key=" + Uri.EscapeDataString(Key);
+            if (bridge) path += "&protocol=2&project=" + Uri.EscapeDataString(Project?.Id ?? "") + (fresh ? "&fresh=1" : "");
+            using var response = await http.GetAsync(baseUrl + path, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
             if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return;
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await ErrorOf(response).ConfigureAwait(false));
             var glb = await ReadWithProgress(response, (read, total) => SyncProgress?.Invoke($"Receiving {Progress.Megabytes(read)} of {Progress.Megabytes(total)}", 0.1 + 0.5 * read / total)).ConfigureAwait(false);
             long.TryParse(HeaderOf(response, "X-ArchAI-Revision"), out var pulled);
-            var contents = new AirFile.Contents { Name = Uri.UnescapeDataString(HeaderOf(response, "X-ArchAI-Name") ?? "ArchAI") };
+            var name = Uri.UnescapeDataString(HeaderOf(response, "X-ArchAI-Name") ?? "ArchAI");
+            if (bridge)
+            {
+                var objects = GlbReader.Read(glb, out var extras);
+                var present = new HashSet<string>((extras["present"] as JArray ?? new JArray()).Select(i => (string?)i ?? ""));
+                var delta = new BridgeDelta { Name = name, Fresh = fresh };
+                delta.Nodes.AddRange(objects);
+                delta.Removed.AddRange(have.Keys.Where(id => !present.Contains(id)));
+                foreach (var u in extras["updates"] as JArray ?? new JArray())
+                {
+                    var token = (string?)u["token"] ?? "";
+                    if (tokens.Contains(token)) continue;
+                    delta.Updates.Add(new BridgeUpdate
+                    {
+                        Ref = (string?)u["ref"] ?? "",
+                        Kind = (string?)u["kind"] ?? "",
+                        Element = (string?)u["element"] ?? "",
+                        Token = token,
+                        Move = (u["move"] as JArray)?.Select(v => (double)v).ToArray(),
+                        Name = (string?)u["name"],
+                    });
+                }
+                if (!delta.Empty)
+                {
+                    SyncProgress?.Invoke($"Updating {delta.Nodes.Count + delta.Removed.Count + delta.Updates.Count} objects in {App}", 0.65);
+                    await OnHostAsync<object?>(() =>
+                    {
+                        Importing = true;
+                        try { Apply!(delta); }
+                        finally { Importing = false; quietUntil = DateTime.UtcNow.AddSeconds(2); }
+                        return null;
+                    }).ConfigureAwait(false);
+                }
+                if (fresh) have = new Dictionary<string, string>();
+                foreach (var id in delta.Removed) have.Remove(id);
+                foreach (var o in objects) if (o.ArchaiId.Length > 0) have[o.ArchaiId] = (string?)o.Archai["hash"] ?? "";
+                foreach (var id in present) if (id.Length > 0 && !have.ContainsKey(id)) have[id] = "";
+                foreach (var u in delta.Updates) tokens.Add(u.Token);
+                lastPulled = lastSeen = pulled;
+                if (!delta.Empty) Report($"Updated from {status.Project} · {DateTime.Now:HH:mm:ss}");
+                // Tell ArchAI where its changes landed (and which objects are now copies) right away.
+                if (delta.Updates.Count > 0 || objects.Any(o => o.Archai["editable"] is JArray)) { pushPending = true; poll?.Change(TimeSpan.Zero, PollEvery); }
+                return;
+            }
+            var contents = new AirFile.Contents { Name = name };
             contents.Objects.AddRange(GlbReader.Read(glb));
             SyncProgress?.Invoke($"Building {contents.Objects.Count} objects in {App}", 0.65);
             await OnHostAsync<object?>(() =>
             {
                 Importing = true;
                 try { Import?.Invoke(contents); }
-                finally { Importing = false; }
+                finally { Importing = false; quietUntil = DateTime.UtcNow.AddSeconds(2); }
                 return null;
             }).ConfigureAwait(false);
             lastPulled = lastSeen = pulled;
@@ -308,5 +500,40 @@ public sealed class LiveLink : IDisposable
     {
         Stop();
         http.Dispose();
+    }
+}
+
+/// <summary>What this computer remembers of each model's Live Bridge link (shared with the Python plugins).</summary>
+internal static class BridgeState
+{
+    private static readonly object Gate = new object();
+
+    private static string FilePath => Path.Combine(Environment.GetEnvironmentVariable("LOCALAPPDATA") is { Length: > 0 } local ? local : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ArchAI", "live-bridge.json");
+
+    private static JObject Load()
+    {
+        try { return File.Exists(FilePath) ? JObject.Parse(File.ReadAllText(FilePath)) : new JObject(); }
+        catch (Exception) { return new JObject(); }
+    }
+
+    public static JObject? Entry(string key)
+    {
+        lock (Gate) return Load()[key] as JObject;
+    }
+
+    public static void Save(string key, JObject? entry)
+    {
+        lock (Gate)
+        {
+            var state = Load();
+            if (entry == null) state.Remove(key);
+            else state[key] = entry;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+                File.WriteAllText(FilePath, state.ToString(Formatting.None));
+            }
+            catch (Exception) { }
+        }
     }
 }

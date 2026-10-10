@@ -62,6 +62,13 @@ internal sealed class Live : IDisposable
                 }
                 doc.Editor.Regen();
             },
+            // Live Bridge: element by element, and every entity id (hiding deletes nothing in ArchAI).
+            Apply = delta =>
+            {
+                using (doc.LockDocument()) DrawingBridge.Apply(doc.Database, delta);
+                doc.Editor.Regen();
+            },
+            AllIds = () => DrawingBridge.AllIds(doc.Database),
         };
         link.StatusChanged = status => Enqueue(() => Show(status));
         // Slow syncs (a first sync, a big drawing) show a progress window; quick ones do not.

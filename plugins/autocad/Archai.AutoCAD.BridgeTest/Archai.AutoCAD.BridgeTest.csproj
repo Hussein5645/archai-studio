@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The AutoCAD agent of the Live Bridge end-to-end test (scripts/bridge-e2e.mjs): loaded into
+       accoreconsole next to Archai.AutoCAD.dll, never shipped. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AcadDir Condition="'$(AcadDir)' == ''">C:\Program Files\Autodesk\AutoCAD 2026</AcadDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Archai.AutoCAD\Archai.AutoCAD.csproj" />
+    <Reference Include="accoremgd"><HintPath>$(AcadDir)\accoremgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="acdbmgd"><HintPath>$(AcadDir)\acdbmgd.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

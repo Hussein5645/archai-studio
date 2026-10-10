@@ -25,6 +25,9 @@ public sealed class ImportObject
     public string Type = "";
     public readonly List<ImportPart> Parts = new List<ImportPart>();
     public int TriangleCount => Parts.Sum(p => p.Indices.Length / 3);
+    /// <summary>ArchAI's node extras: id, and in Live Bridge pulls hash, source, color, editable, ref.</summary>
+    public JObject Archai = new JObject();
+    public string ArchaiId => (string?)Archai["id"] ?? "";
 }
 
 /// <summary>
@@ -34,7 +37,10 @@ public sealed class ImportObject
 /// </summary>
 public static class GlbReader
 {
-    public static List<ImportObject> Read(byte[] glb, double scale = 1)
+    public static List<ImportObject> Read(byte[] glb, double scale = 1) => Read(glb, out _, scale);
+
+    /// <summary>A Live Bridge pull: the objects and the root's <c>archaiBridge</c> extras (present, updates, document, revision).</summary>
+    public static List<ImportObject> Read(byte[] glb, out JObject bridge, double scale = 1)
     {
         if (glb.Length < 20 || BitConverter.ToUInt32(glb, 0) != 0x46546C67u) throw new FormatException("Not a binary glTF file.");
         JObject? json = null;
@@ -49,6 +55,7 @@ public static class GlbReader
             offset += 8 + length;
         }
         if (json == null) throw new FormatException("The glTF file has no JSON chunk.");
+        bridge = (json["nodes"] as JArray)?.Select(n => n["extras"]?["archaiBridge"] as JObject).FirstOrDefault(b => b != null) ?? new JObject();
         return new Scene(json, bin, scale).Objects();
     }
 
@@ -88,6 +95,7 @@ public static class GlbReader
                     Name = (string?)node["name"] ?? "",
                     Level = (string?)archai?["level"] ?? "",
                     Type = archai != null ? ((string?)archai["type"] is { Length: > 0 } t ? t : (string?)archai["kind"] ?? "") : "",
+                    Archai = archai ?? new JObject(),
                 };
                 if (owner.Name.Length == 0 && node["mesh"] != null) owner.Name = (string?)json["meshes"]?[(int)node["mesh"]!]?["name"] ?? "";
                 if (owner.Name.Length == 0) owner.Name = owner.Type.Length > 0 ? owner.Type : "Object";

@@ -20,6 +20,9 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // Plugin, Revit and native builds write temporary files the watcher can't open on Windows
+    // (EBUSY ends the dev server); the app never imports from them.
+    watch: { ignored: ['**/plugins/**', '**/revit/**', '**/native/**', '**/release/**', '**/workers/**', '**/dist-electron/**'] },
     // Testing against `wrangler dev` (workers/archai-cloud): ARCHAI_LOCAL_CLOUD=http://127.0.0.1:8787
     // with VITE_CLOUD_URL=/__cloud serves the local Worker from the app's own origin.
     // ARCHAI_LOCAL_VR (the vr-share Worker) works the same way with VITE_VR_SHARE_URL=/__vr.

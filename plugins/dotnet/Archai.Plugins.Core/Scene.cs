@@ -26,6 +26,10 @@ public sealed class SceneObject
     public string Name = "";
     public string Category = "";
     public string? Level;
+    /// <summary>Live Bridge: the ArchAI element this object is an editable copy of (it came from ArchAI).</summary>
+    public string? Archai;
+    /// <summary>Live Bridge: the id an older plugin sent for this object (ArchAI moves its link).</summary>
+    public string? Was;
     public readonly List<(GlbMaterial Material, ArchaiPoint A, ArchaiPoint B, ArchaiPoint C)> Triangles = new List<(GlbMaterial, ArchaiPoint, ArchaiPoint, ArchaiPoint)>();
 
     public void Add(GlbMaterial material, ArchaiPoint a, ArchaiPoint b, ArchaiPoint c) => Triangles.Add((material, a, b, c));
@@ -37,6 +41,10 @@ public static class HostAxes
     /// <summary>glTF metres (x, up, plan y) to host (X, Y, Z) in host units of <paramref name="millimetres"/> mm each.</summary>
     public static (double X, double Y, double Z) ToZUp(float x, float y, float z, double millimetres) =>
         (x * 1000 / millimetres, -z * 1000 / millimetres, y * 1000 / millimetres);
+
+    /// <summary>A Live Bridge move (ArchAI plan mm: x right, plan y down, elevation) as a Z-up host vector.</summary>
+    public static (double X, double Y, double Z) MoveToZUp(double[] move, double millimetres) =>
+        (move[0] / millimetres, -move[1] / millimetres, move[2] / millimetres);
 }
 
 /// <summary>Bounds of a set of objects in ArchAI millimetres.</summary>
