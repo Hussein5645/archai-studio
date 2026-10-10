@@ -4,7 +4,7 @@
 # link), so nothing secret is built in. The Revit plugin has its own packaging
 # (revit/build-packages.ps1, revit/build-setup.ps1).
 param(
-    [string]$Version = '0.5.0',
+    [string]$Version = '0.5.1',
     [string[]]$Skip = @(),
     [string]$Dotnet = 'dotnet'
 )

@@ -34,12 +34,23 @@ Bindings are keyed by ArchAI element id inside the project, so copy/paste never 
 undo restores them with the elements, and online projects carry them to collaborators like any
 other edit.
 
+### The same meshes in every app
+
+Every link carries generic meshes: each app sends each of its objects as triangles (Revit too:
+walls, doors, floors and families all go as meshes on the Live Bridge), ArchAI keeps them as mesh
+elements, and every other linked app receives exactly those triangles. Nothing is rebuilt as a
+different kind of element on the way, so a Revit wall looks the same in ArchAI, Rhino and Blender.
+(Send to ArchAI, the .AIR file, still rebuilds Revit's walls, doors and slabs as editable ArchAI
+elements.) Links made by Revit 0.5.0 become these meshes in place on the next sync.
+
 ### Geometry from an app is edited only in that app (and ArchAI)
 
 An element that came from an app (it has an `origin` ref) can be changed by that app and in
 ArchAI, never by another app: it cannot be offered as an editable copy, its parts cannot be handed
 to another app's authority, and a copy another app sends anyway changes nothing and adds nothing.
-Other apps receive it as reference geometry only.
+Other apps receive it as reference geometry only. **Edited anyway in another app** (moved,
+reshaped, copied or deleted there), it is **reset**: the plugin notices and ArchAI's version is
+put back at the next sync.
 
 To let other apps edit it, **release** it first with **Convert to ArchAI element**: it becomes
 ArchAI's own element (the app it came from is kept as history; that app's object no longer
@@ -126,7 +137,7 @@ one).
 
 | App | Received elements | Editable copies | ArchAI's moves | Stable ids |
 |---|---|---|---|---|
-| Revit | DirectShapes "ArchAI Live", one per element | DirectShapes "ArchAI Copy" | ElementTransformUtils.MoveElement | element ids |
+| Revit | DirectShapes "ArchAI Live", one per element; sends generic meshes, only changed elements after the first sync; Pause / resume on the ribbon | DirectShapes "ArchAI Copy" | ElementTransformUtils.MoveElement | element ids |
 | AutoCAD | blocks on "ArchAI Live" layers, XData `ARCHAI` | blocks on "ArchAI Copies" | TransformBy | handles |
 | Rhino | meshes on "ArchAI Live", user string `archai.id` | one mesh on "ArchAI Copies" | Transform | object GUIDs (was: first 12 digits) |
 | SketchUp | groups in the "ArchAI Live" group, attribute `ArchAI/id` | top-level groups (`ArchAI/copy`) | transform! | persistent ids |
@@ -134,7 +145,7 @@ one).
 | 3ds Max | "ArchAI Live" layers, user property `archai_id` | "ArchAI Copies" layer | move | node handles |
 | Unreal | actors tagged `ArchAILive` and `archai:<id>`, one asset each | "ArchAI Copies" folder | add_actor_world_offset | actor names |
 
-## Status by app (2026-10-10, ArchAI 0.2.2.17, plugins 0.5.0)
+## Status by app (2026-10-11, ArchAI 0.2.2.18, plugins 0.5.1)
 
 How far each app's Live Bridge has been tested, and how well its geometry travels. "Run" means
 the plugin's own code ran in the real app against the ArchAI desktop app; "built" means it
@@ -144,7 +155,7 @@ compiles (or passes a syntax check) but has not been run in that app yet.
 |---|---|---|---|---|---|
 | **Blender** 4.2 | **Run**: two Blender processes (headless) with the desktop app, `scripts/bridge-e2e.mjs` | connect and bind to one project, receive the other app's model in its colour, moves both ways, ArchAI's move applied to Blender's own object, hide (nothing deleted), delete, editable copy linked back, offered rename applied, owner wins; stable ids across duplicates | meshes, curves, surfaces, metaballs and text, with modifiers and instances applied; materials as colour, opacity, roughness, metalness | one mesh object per element in "ArchAI Live", source colour; editable copies in "ArchAI Copies" | **Good**: exact triangles both ways; tested end to end |
 | **AutoCAD** 2026 | **Run**: accoreconsole with the plugin's drawing code (`Archai.AutoCAD.BridgeTest`) next to Blender and the desktop app | join a project, receive Blender's model on an ArchAI Live layer (tagged), its box moving in ArchAI and Blender, ArchAI's move applied to its own solid, editable copy on "ArchAI Copies" linked back, delete | 3D solids, surfaces, regions, meshes, 3D faces and blocks (faceted); 2D lines and hatches are not sent | one block (SubD meshes) per element on "ArchAI Live" layers; copies refilled in place | **Good** for 3D drawings; the ribbon/Idle loop of full AutoCAD was not run, only the console |
-| **Revit** 2024–2027 | **Built** (all four versions). The released 0.4.1 plugin ran live against this ArchAI in a real Revit (85 elements bound and kept across syncs, protocol 1) | 0.5.0 element-by-element apply, Link to project and copies not run in Revit yet | walls (with layers and materials), doors and windows, floors, ceilings, columns, railings, rooms and levels as native ArchAI elements; everything else (roofs, stairs, curtain walls, families) as meshes | DirectShapes (Generic Models), one per element; copies as "ArchAI Copy" DirectShapes; ArchAI's moves of Revit elements when Revit does not own their position | **Good one way** (Revit to ArchAI, BIM elements rebuilt natively but simplified); **reference only** back into Revit (DirectShapes, not editable walls) |
+| **Revit** 2024–2027 | **Built** (all four versions). The released 0.4.1 plugin ran live against this ArchAI in a real Revit (85 elements bound and kept across syncs, protocol 1) | 0.5.1 element-by-element apply, reset, pause, Link to project and copies not run in Revit yet | every model element as a generic mesh (walls, doors, floors, roofs, stairs, families), materials as colours; only changed elements after the first sync | DirectShapes (Generic Models), one per element, reset when edited in Revit; copies as "ArchAI Copy" DirectShapes; ArchAI's moves of Revit elements when Revit does not own their position | **Good**: the same meshes in ArchAI and every app; **reference only** back into Revit (DirectShapes, not editable walls) |
 | **Rhino** 8 | **Built**. The released 0.4.1 plugin connected live to this ArchAI in a real Rhino (an empty, unsaved model, so nothing synced) | 0.5.0 not run in Rhino yet | breps, extrusions, surfaces, meshes, SubD and blocks, meshed with Rhino's render mesh settings; NURBS become triangles (lossy) | meshes on "ArchAI Live", tagged per element, source colour; copies joined into one mesh | **Expected good** (same core as AutoCAD); NURBS precision is lost both ways |
 | **SketchUp** 2021+ | **Built**: Ruby syntax checked (ruby.wasm); not run | none in SketchUp | top-level groups and components (one object each), loose faces as one object | groups in the "ArchAI Live" group; copies as top-level groups | **Not tested**: the protocol code is new and only read and syntax-checked |
 | **3ds Max** 2025+ | **Built**: Python compiles; 3ds Max is not installed here | none in 3ds Max | geometry nodes as snapshot meshes (modifiers applied) | meshes on "ArchAI Live" layers, user property per element; copies reshaped in place | **Not tested** |
@@ -152,10 +163,11 @@ compiles (or passes a syntax check) but has not been run in that app yet.
 
 What travels the same way for every app:
 
-- **Geometry** goes as triangle meshes in millimetres; positions are exact (up to 0.1 mm rounding).
-  Only Revit's walls, openings, slabs, columns, railings, rooms and levels become editable ArchAI
-  elements; everything else is a mesh element that can be moved, coloured and converted but not
-  reshaped in ArchAI.
+- **Geometry** goes as triangle meshes in millimetres, the same triangles in ArchAI and in every
+  linked app; positions are exact (up to 0.1 mm rounding). In ArchAI they are mesh elements that
+  can be moved, coloured and converted but not reshaped.
+- **Another app's geometry edited in a plugin is reset** to ArchAI's version (until it is released
+  with Convert to ArchAI element and offered as an editable copy).
 - **Materials** carry colour, opacity, roughness and metalness; textures and UV maps do not
   travel yet.
 - **Back into the apps** everything arrives as display geometry (reference). Only ArchAI's own
@@ -180,8 +192,9 @@ move, rename, hide, delete, and an editable copy from Inspector → Live Bridge.
   copies, id changes, source groups, conversion, export flattening, online projects.
 - `scripts/bridge-e2e.mjs`: the desktop app with two real Blender processes and AutoCAD
   (accoreconsole, `plugins/autocad/Archai.AutoCAD.BridgeTest`): connect, exchange, moves both
-  ways, hide, delete, another app refused an app's geometry, release then editable copies in
-  Blender and AutoCAD, a released element no longer changed by its app (28 checks). Run it with
+  ways, hide, delete, received geometry moved or deleted in Blender is reset, another app refused
+  an app's geometry, release then editable copies in Blender and AutoCAD, a released element no
+  longer changed by its app (31 checks). Run it with
   the Blender profile isolated (the script does): a factory-startup Blender on your own profile
   removes your extensions' Python packages.
 - See "Status by app" above for what was run in each app. Rhino, Revit, 3ds Max, Unreal and SketchUp compile (SketchUp: Ruby syntax checked) but were not

@@ -11,8 +11,8 @@
 
 <p align="center">
   <a href="https://archai-studio-six.vercel.app">Open in the browser</a> ·
-  <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-Setup-0.2.2.17.exe">Windows</a> ·
-  <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-0.2.2.17.apk">Android / Meta Quest</a> ·
+  <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-Setup-0.2.2.18.exe">Windows</a> ·
+  <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-0.2.2.18.apk">Android / Meta Quest</a> ·
   <a href="../../releases">All releases</a> ·
   <a href="docs">Documentation</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
@@ -39,24 +39,25 @@ keeps the app small, testable and easy to automate.
 | **ArchAI Render** | Real-time and path-traced rendering with sun, skies, PBR materials and entourage ([docs](docs/render-studio.md)). |
 | **VR tours** | Place stops and publish a short link that opens in a Meta Quest or any browser ([docs](docs/vr-tours.md)). |
 | **Plugins** | Revit, AutoCAD, Rhino, SketchUp, Blender, 3ds Max and Unreal: send models, open `.AIR` files, open in VR ([docs](docs/plugins.md)). |
-| **Live Bridge** | Several apps linked to one project at once: element-by-element sync, each app in its colour, who owns what per part of an element, conflicts to resolve, safe deletions ([docs](docs/live-bridge.md), [status by app](docs/live-bridge.md#status-by-app-2026-10-10-archai-02217-plugins-050)). |
+| **Live Bridge** | Several apps linked to one project at once: element-by-element sync, each app in its colour, who owns what per part of an element, conflicts to resolve, safe deletions ([docs](docs/live-bridge.md), [status by app](docs/live-bridge.md#status-by-app-2026-10-11-archai-02218-plugins-051)). |
 | **Together** | Online projects edited by several people at once, with live cursors, invite links and roles ([docs](docs/accounts-and-cloud.md)). |
 
 ### Live Bridge status by app
 
-| App | Live Bridge (plugins 0.5.0) | Geometry |
+| App | Live Bridge (plugins 0.5.1) | Geometry |
 |---|---|---|
-| Blender | Tested end to end (two Blenders and ArchAI) | Good: exact meshes both ways |
+| Blender | Tested end to end (two Blenders and ArchAI), reset tested | Good: exact meshes both ways |
 | AutoCAD | Tested end to end (AutoCAD console with Blender and ArchAI) | Good for 3D (solids, surfaces, meshes, blocks); 2D not sent |
-| Revit | Built for 2024–2027; plugin 0.4.1 ran live against this ArchAI | Good into ArchAI (walls, doors, floors... as native elements); display only back in Revit |
+| Revit | Built for 2024–2027; plugin 0.4.1 ran live against this ArchAI; Pause / resume | Good: generic meshes, the same in every app; display only back in Revit |
 | Rhino | Built; plugin 0.4.1 connected live | Expected good; NURBS become meshes |
 | SketchUp | Built (Ruby syntax checked) | Not tested yet |
 | 3ds Max | Built | Not tested yet |
 | Unreal | Built | Not tested yet |
 
-Geometry from an app is edited only in that app and in ArchAI; to let another app edit it, release
+Every link carries the same generic meshes. Geometry from an app is edited only in that app and in
+ArchAI: edited in another app it is reset to ArchAI's version. To let another app edit it, release
 it into an ArchAI element first (Convert to ArchAI element), then offer it as an editable copy.
-Details: [docs/live-bridge.md](docs/live-bridge.md#status-by-app-2026-10-10-archai-02217-plugins-050).
+Details: [docs/live-bridge.md](docs/live-bridge.md#status-by-app-2026-10-11-archai-02218-plugins-051).
 
 It runs in the browser (https://archai-studio-six.vercel.app), as a Windows desktop app (Electron)
 and on Android tablets and Meta Quest (a native host around the same web app). Where everything is

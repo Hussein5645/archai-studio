@@ -1,9 +1,9 @@
 # ArchAI plugins
 
-Status: **implemented** (plugins 0.5.0, 2026-10-10). Revit, AutoCAD and Blender are run-tested
+Status: **implemented** (plugins 0.5.1, 2026-10-11). Revit, AutoCAD and Blender are run-tested
 (Send to ArchAI, Open .AIR); Rhino, SketchUp, 3ds Max and Unreal are built (or packaged) but not yet
 run in their apps. Live Bridge status and geometry quality per app:
-[docs/live-bridge.md](live-bridge.md#status-by-app-2026-10-10-archai-02217-plugins-050).
+[docs/live-bridge.md](live-bridge.md#status-by-app-2026-10-11-archai-02218-plugins-051).
 
 Every plugin ("ArchAI in <app>") offers the same four actions, with the shared ArchAI icon set:
 
@@ -112,7 +112,7 @@ their owners (noted on the page).
 
 ## Revit setup
 
-`ArchAI-Revit-Setup-0.5.0-beta.1.exe` (archai-revit bucket) installs the 0.5.0-beta.1 packages,
+`ArchAI-Revit-Setup-0.5.1-beta.1.exe` (archai-revit bucket) installs the 0.5.1-beta.1 packages,
 built with `revit/build-packages.ps1 -UseApiPackages -Dotnet revit/artifacts/tools/dotnet/dotnet.exe`
 (the local .NET 10 SDK, needed for Revit 2027) and `revit/build-setup.ps1`. Its `--self-test <dir>`
 must run in a short path (.NET Framework 260-character limit).
