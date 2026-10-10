@@ -46,7 +46,10 @@ internal static class RhinoScene
             if (skipLive && IsLive(obj.Attributes)) continue;
             var item = new SceneObject
             {
-                Id = obj.Id.ToString("N").Substring(0, 12),
+                // The full id (older plugins sent its first 12 digits: ArchAI moves the link).
+                Id = obj.Id.ToString("N"),
+                Was = obj.Id.ToString("N").Substring(0, 12),
+                Archai = obj.Attributes.GetUserString("archai.copy") is { Length: > 0 } copy ? copy : null,
                 Name = !string.IsNullOrWhiteSpace(obj.Attributes.Name) ? obj.Attributes.Name : obj is InstanceObject instance ? instance.InstanceDefinition?.Name ?? "Block" : obj.ShortDescription(false),
                 Category = layer?.FullPath ?? "",
             };
@@ -196,6 +199,129 @@ internal static class RhinoScene
         }
         doc.Views.Redraw();
         return count;
+    }
+
+    // ---- Live Bridge ----------------------------------------------------------------------------
+
+    public const string CopiesLayer = "ArchAI Copies";
+
+    /// <summary>Ids of every object that could be sent (hidden ones too), not what ArchAI sent.</summary>
+    public static List<string> AllIds(RhinoDoc doc)
+    {
+        var settings = new ObjectEnumeratorSettings { HiddenObjects = true, LockedObjects = true, IncludeLights = false, ObjectTypeFilter = ObjectType.Brep | ObjectType.Extrusion | ObjectType.Surface | ObjectType.Mesh | ObjectType.SubD | ObjectType.InstanceReference };
+        return doc.Objects.GetObjectList(settings).Where(o => !IsLive(o.Attributes)).Select(o => o.Id.ToString("N")).ToList();
+    }
+
+    /// <summary>
+    /// Applies a Live Bridge pull element by element: ArchAI's elements as meshes on the ArchAI Live
+    /// layer (tagged "archai.id", replaced or removed one by one), editable copies as one mesh each
+    /// on the "ArchAI Copies" layer (sent back as copies; replaced in place, keeping their id), and
+    /// ArchAI's moves and names applied to the model's own objects.
+    /// </summary>
+    public static void Apply(RhinoDoc doc, BridgeDelta delta, string liveLayer)
+    {
+        var mm = Millimetres(doc);
+        if (delta.Fresh) ClearLive(doc);
+        var settings = new ObjectEnumeratorSettings { HiddenObjects = true, LockedObjects = true, IncludeLights = false };
+        var live = new Dictionary<string, List<Guid>>();
+        var copies = new Dictionary<string, Guid>();
+        foreach (var obj in doc.Objects.GetObjectList(settings))
+        {
+            var archai = obj.Attributes.GetUserString("archai.id");
+            if (obj.Attributes.GetUserString("archai.copy") is { Length: > 0 } copyOf) copies[copyOf] = obj.Id;
+            else if (!string.IsNullOrEmpty(archai) && IsLive(obj.Attributes))
+            {
+                if (!live.TryGetValue(archai, out var list)) live[archai] = list = new List<Guid>();
+                list.Add(obj.Id);
+            }
+        }
+        void Remove(string archaiId)
+        {
+            if (!live.TryGetValue(archaiId, out var ids)) return;
+            foreach (var id in ids) doc.Objects.Delete(id, true);
+            live.Remove(archaiId);
+        }
+        foreach (var removed in delta.Removed) Remove(removed);
+        foreach (var update in delta.Updates)
+        {
+            if (!Guid.TryParse(update.Ref, out var id) || doc.Objects.FindId(id) is not RhinoObject obj) continue;
+            if (update.Move != null)
+            {
+                var (x, y, z) = HostAxes.MoveToZUp(update.Move, mm);
+                doc.Objects.Transform(obj, Transform.Translation(x, y, z), true);
+            }
+            if (!string.IsNullOrEmpty(update.Name) && doc.Objects.FindId(id) is RhinoObject moved)
+            {
+                var attributes = moved.Attributes.Duplicate();
+                attributes.Name = update.Name;
+                doc.Objects.ModifyAttributes(moved, attributes, true);
+            }
+        }
+        foreach (var node in delta.Nodes)
+        {
+            var target = (string?)node.Archai["ref"];
+            Guid copyId = Guid.Empty;
+            if (target != null && Guid.TryParse(target, out var own) && doc.Objects.FindId(own) != null) copyId = own;
+            else if (copies.TryGetValue(node.ArchaiId, out var existing)) copyId = existing;
+            if (copyId != Guid.Empty)
+            {
+                // The model's copy of an ArchAI element: its shape follows ArchAI's.
+                if (Joined(node, mm) is Mesh replaced) doc.Objects.Replace(copyId, replaced);
+                continue;
+            }
+            Remove(node.ArchaiId);
+            var editable = node.Archai["editable"] is Newtonsoft.Json.Linq.JArray;
+            if (editable)
+            {
+                if (Joined(node, mm) is not Mesh mesh) continue;
+                var first = node.Parts.FirstOrDefault()?.Material ?? GlbMaterial.Default;
+                var attributes = new ObjectAttributes
+                {
+                    Name = node.Name,
+                    LayerIndex = LayerIndex(doc, CopiesLayer, Guid.Empty),
+                    ColorSource = ObjectColorSource.ColorFromObject,
+                    ObjectColor = System.Drawing.Color.FromArgb((int)Math.Round(first.R * 255), (int)Math.Round(first.G * 255), (int)Math.Round(first.B * 255)),
+                };
+                attributes.SetUserString("archai.id", node.ArchaiId);
+                attributes.SetUserString("archai.copy", node.ArchaiId);
+                doc.Objects.AddMesh(mesh, attributes);
+                continue;
+            }
+            var contents = new AirFile.Contents { Name = delta.Name };
+            contents.Objects.Add(node);
+            var before = new HashSet<Guid>(doc.Objects.GetObjectList(settings).Select(o => o.Id));
+            Import(doc, contents, liveLayer, live: true);
+            var colour = (string?)node.Archai["color"];
+            foreach (var obj in doc.Objects.GetObjectList(settings).Where(o => !before.Contains(o.Id)).ToList())
+            {
+                var attributes = obj.Attributes.Duplicate();
+                attributes.SetUserString("archai.id", node.ArchaiId);
+                // Its source app's colour, so each model reads apart.
+                if (colour is { Length: 7 }) attributes.ObjectColor = System.Drawing.ColorTranslator.FromHtml(colour);
+                doc.Objects.ModifyAttributes(obj, attributes, true);
+            }
+        }
+        doc.Views.Redraw();
+    }
+
+    /// <summary>All of an ArchAI node's triangles as one Rhino mesh (an editable copy is one object).</summary>
+    private static Mesh? Joined(ImportObject item, double mm)
+    {
+        var mesh = new Mesh();
+        foreach (var part in item.Parts)
+        {
+            var offset = mesh.Vertices.Count;
+            for (int i = 0; i + 2 < part.Positions.Length; i += 3)
+            {
+                var (x, y, z) = HostAxes.ToZUp(part.Positions[i], part.Positions[i + 1], part.Positions[i + 2], mm);
+                mesh.Vertices.Add(x, y, z);
+            }
+            for (int i = 0; i + 2 < part.Indices.Length; i += 3) mesh.Faces.AddFace(offset + part.Indices[i], offset + part.Indices[i + 1], offset + part.Indices[i + 2]);
+        }
+        if (mesh.Faces.Count == 0) return null;
+        mesh.Normals.ComputeNormals();
+        mesh.Compact();
+        return mesh;
     }
 
     private static int LayerIndex(RhinoDoc doc, string name, Guid parent)

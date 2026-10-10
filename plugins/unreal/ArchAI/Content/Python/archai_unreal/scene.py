@@ -109,6 +109,8 @@ def collect(skip_live=False, progress=None):
         if skip_live and is_live(actor):
             continue
         item = core.SceneObject(actor.get_name()[:64], actor.get_actor_label(), str(actor.get_folder_path()))
+        # Live Bridge: an editable copy of an ArchAI element.
+        item.archai = _tag(actor, "archai_copy:")
         for component in actor.get_components_by_class(unreal.StaticMeshComponent):
             mesh = component.static_mesh
             if mesh is None or not component.is_visible():
@@ -290,6 +292,128 @@ def import_objects(name, objects, label=None, live=False):
                         actor.set_editor_property("tags", [unreal.Name(LIVE_TAG)])
                     count += 1
     return count
+
+
+# ---- Live Bridge ----------------------------------------------------------------------------
+
+COPIES_ASSETS = "/Game/ArchAI/Copies"
+
+
+def _tag(actor, prefix):
+    try:
+        for tag in actor.tags:
+            text = str(tag)
+            if text.startswith(prefix):
+                return text[len(prefix):]
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def all_ids():
+    """Names of every static mesh actor that could be sent (hidden ones too), not what ArchAI sent."""
+    return [actor.get_name()[:64] for actor in _actors.get_all_level_actors()
+            if not is_live(actor) and actor.get_components_by_class(unreal.StaticMeshComponent)]
+
+
+def _asset_name(archai_id):
+    return "AI_" + _safe(archai_id)
+
+
+def _import_elements(items, destination):
+    """One glTF for these ArchAI elements, one node (so one static mesh asset) per element, named
+    after its id; returns {element id: static mesh}."""
+    if not items:
+        return {}
+    m = _importer_mapping()
+    inverse = [[m[c][r] for c in range(3)] for r in range(3)]
+    flip = _determinant(m) > 0
+    writer = core.GlbWriter()
+    names = {}
+    for item in items:
+        name = _asset_name(item.archai.get("id", ""))
+        names[name] = item.archai.get("id", "")
+        writer.begin_node(name)
+        for part in item.parts:
+            p = part.positions
+            positions = []
+            for i in range(0, len(p) - 2, 3):
+                t = (p[i] * 100.0, p[i + 2] * 100.0, p[i + 1] * 100.0)
+                positions += [(inverse[r][0] * t[0] + inverse[r][1] * t[1] + inverse[r][2] * t[2]) / 100.0 for r in range(3)]
+            idx = list(part.indices)
+            if flip:
+                for i in range(0, len(idx) - 2, 3):
+                    idx[i + 1], idx[i + 2] = idx[i + 2], idx[i + 1]
+            writer.add(part.material, positions, idx)
+    glb = os.path.join(tempfile.gettempdir(), "ArchAI_bridge.glb")
+    with open(glb, "wb") as f:
+        f.write(writer.to_glb())
+    meshes = {}
+    for asset in _import_glb(glb, destination):
+        if isinstance(asset, unreal.StaticMesh) and asset.get_name() in names:
+            meshes[names[asset.get_name()]] = asset
+    return meshes
+
+
+def apply_delta(delta):
+    """A Live Bridge pull, element by element: ArchAI's elements as actors in the ArchAI Live
+    folder (tagged ArchAILive and archai:<id>; replaced or removed one by one), editable copies as
+    ordinary actors in the ArchAI Copies folder (their mesh re-imported in place), and ArchAI's
+    moves and names applied to the level's own actors."""
+    if delta.fresh:
+        clear_live()
+    live, copies, own = {}, {}, {}
+    for actor in _actors.get_all_level_actors():
+        copy_of = _tag(actor, "archai_copy:")
+        if copy_of:
+            copies[copy_of] = actor
+        elif is_live(actor) and _tag(actor, "archai:"):
+            live.setdefault(_tag(actor, "archai:"), []).append(actor)
+        own[actor.get_name()[:64]] = actor
+
+    def remove(archai_id):
+        for actor in live.pop(archai_id, []):
+            _actors.destroy_actor(actor)
+        path = "%s/%s" % (LIVE_ASSETS, _asset_name(archai_id))
+        if unreal.EditorAssetLibrary.does_asset_exist(path):
+            unreal.EditorAssetLibrary.delete_asset(path)
+    for archai_id in delta.removed:
+        remove(archai_id)
+    for update in delta.updates:
+        actor = own.get(update.get("ref"))
+        if actor is None:
+            continue
+        move = update.get("move")
+        if move:
+            # ArchAI mm (x, plan y, elevation) -> Unreal cm (x, plan y, up).
+            actor.add_actor_world_offset(unreal.Vector(move[0] / 10.0, move[1] / 10.0, move[2] / 10.0), False, False)
+        if update.get("name"):
+            actor.set_actor_label(update["name"])
+    fresh_live, fresh_copies, reshaped = [], [], []
+    for item in delta.nodes:
+        archai_id = item.archai.get("id")
+        target = own.get(item.archai.get("ref") or "") or copies.get(archai_id)
+        if target is not None:
+            reshaped.append(item)
+            continue
+        remove(archai_id)
+        (fresh_copies if item.archai.get("editable") else fresh_live).append(item)
+    # Copies keep their actor: re-importing their asset in place gives them ArchAI's shape.
+    _import_elements(reshaped, COPIES_ASSETS)
+    for archai_id, mesh in _import_elements(fresh_live, LIVE_ASSETS).items():
+        actor = _actors.spawn_actor_from_object(mesh, unreal.Vector(0, 0, 0), unreal.Rotator(0, 0, 0))
+        if actor:
+            item = next(i for i in fresh_live if i.archai.get("id") == archai_id)
+            actor.set_actor_label(item.name)
+            actor.set_folder_path("ArchAI Live/%s" % (_safe(item.level) if item.level else "Model"))
+            actor.set_editor_property("tags", [unreal.Name(LIVE_TAG), unreal.Name("archai:" + archai_id)])
+    for archai_id, mesh in _import_elements(fresh_copies, COPIES_ASSETS).items():
+        actor = _actors.spawn_actor_from_object(mesh, unreal.Vector(0, 0, 0), unreal.Rotator(0, 0, 0))
+        if actor:
+            item = next(i for i in fresh_copies if i.archai.get("id") == archai_id)
+            actor.set_actor_label(item.name)
+            actor.set_folder_path("ArchAI Copies")
+            actor.set_editor_property("tags", [unreal.Name("archai_copy:" + archai_id)])
 
 
 def _determinant(m):

@@ -13,6 +13,7 @@ import { AccountDialog } from '@/ui/AccountDialog';
 import { ShareDialog } from '@/ui/ShareDialog';
 import { JoinDialog } from '@/ui/JoinDialog';
 import { ProgressCenter } from '@/ui/ProgressCenter';
+import { ProjectPicker } from '@/bridge/ProjectPicker';
 import { Inspector } from '@/ui/Inspector';
 import { LeftPanel } from '@/ui/LeftPanel';
 import { SaveTemplateModal } from '@/ui/TemplateModal';
@@ -140,6 +141,7 @@ export function App() {
         <AccountDialog />
         <ShareDialog />
         <JoinDialog />
+        <ProjectPicker />
         <ProgressCenter />
         <Toasts />
       </div>
@@ -170,6 +172,7 @@ export function App() {
       <AccountDialog />
       <ShareDialog />
       <JoinDialog />
+      <ProjectPicker />
       <ProgressCenter />
       <Toasts />
       <div className={styles.narrowGuard} role="alert">

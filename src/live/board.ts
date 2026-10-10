@@ -30,7 +30,8 @@ import { account } from '@/cloud/account';
 import { openAccountDialog } from '@/ui/account-dialog';
 import { startProgress } from '@/progress';
 import type { BridgeSyncReport } from '@/bridge/engine';
-import { pullPlan } from '@/bridge/pull';
+import { flattenSourceGroups, pullPlan } from '@/bridge/pull';
+import { chooseProject } from '@/bridge/ProjectPicker';
 
 /** The Live Bridge protocol this ArchAI speaks (plugins 0.4.x speak 1). */
 export const BRIDGE_PROTOCOL = 2;
@@ -190,7 +191,17 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
     }
     const key = str(payload['key'], 300);
     const project = str(payload['project'], 64);
-    if (kind === 'bind') return bind(key, str(payload['app'], 60), str(payload['name']), project, str(payload['newName']));
+    if (kind === 'bind') {
+      const app = str(payload['app'], 60);
+      const name = str(payload['name']);
+      if (payload['choose'] === true) {
+        // The plugin's Link to project button: the user picks here.
+        const choice = await chooseProject(app || 'The app', name);
+        if (!choice) return { protocol: BRIDGE_PROTOCOL, cancelled: true };
+        return 'project' in choice ? bind(key, app, name, choice.project, '') : bind(key, app, name, '', choice.newName);
+      }
+      return bind(key, app, name, project, str(payload['newName']));
+    }
     if (kind !== 'stop') await ensureProject(key, str(payload['name']), str(payload['app'], 60) || connections.get(key)?.app || '', project);
     const state = store.getState();
     const hasProject = state.ui.screen !== 'home';
@@ -268,14 +279,14 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
           const plan = pullPlan(state.doc, key, fresh ? null : (sentTo.get(key) ?? null));
           const document = { id: state.doc.id, name: state.doc.meta.name || 'Untitled' };
           glb = new Uint8Array(
-            await exportSceneSnapshot(state.doc, catalog, {
+            await exportSceneSnapshot(flattenSourceGroups(state.doc), catalog, {
               include: (id) => plan.nodes.has(id),
               extras: (id) => plan.nodes.get(id),
               root: { archaiBridge: { protocol: BRIDGE_PROTOCOL, document, revision, present: plan.present, updates: plan.updates } },
             }),
           );
           sentTo.set(key, plan.sent);
-        } else glb = new Uint8Array(await exportSceneSnapshot(withoutLink(state.doc, key), catalog));
+        } else glb = new Uint8Array(await exportSceneSnapshot(withoutLink(flattenSourceGroups(state.doc), key), catalog));
         task.done();
       } catch (error) {
         task.failed();

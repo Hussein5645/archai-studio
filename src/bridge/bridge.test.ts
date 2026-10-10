@@ -3,7 +3,7 @@ import { createTestApp, run, type TestApp } from '@/test/harness';
 import type { ArchaiDocument, BridgeData, Element } from '@/document';
 import { withoutLink } from '@/live/sync';
 import type { BridgeSyncReport } from './engine';
-import { pullPlan, type PullPlan } from './pull';
+import { flattenSourceGroups, pullPlan, type PullPlan } from './pull';
 
 type Mesh = { id: string; name?: string; category?: string; origin: [number, number, number]; size: [number, number, number]; glb: string; archai?: string; was?: string };
 type Wall = { id: string; points: [number, number][]; base: number; height: number; layers: { name: string; role: 'core'; thickness: number; material?: string }[]; level?: string };
@@ -364,5 +364,19 @@ describe('Live Bridge models on the board', () => {
     expect(doc(app).elements[id]).toMatchObject({ name: 'Panel', x: 0 });
     // Not sent back to Rhino, which still has its original.
     expect(pullPlan(doc(app), 'rhino:facade', null).nodes.has(id)).toBe(false);
+  });
+});
+
+describe('Live Bridge export', () => {
+  it('dissolves source groups for export, keeping world positions', () => {
+    const app = createTestApp();
+    sync(app, 'rhino:facade', model({ meshes: [mesh('a', 1000)] }));
+    const group = bridge(app).sources['rhino:facade']!.groupId!;
+    const id = bound(app, 'rhino:facade', 'a')!.id;
+    // The user moves the whole model on the board.
+    app.store.setState((state) => ({ ...state, doc: { ...state.doc, elements: { ...state.doc.elements, [group]: { ...state.doc.elements[group]!, x: 500, y: 200 } } } }));
+    const flat = flattenSourceGroups(doc(app));
+    expect(flat.elements[group]).toBeUndefined();
+    expect(flat.elements[id]).toMatchObject({ parentId: null, x: 1500, y: 200 });
   });
 });

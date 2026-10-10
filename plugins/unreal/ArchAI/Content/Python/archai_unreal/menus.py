@@ -51,13 +51,31 @@ def toggle_live():
     # Slow syncs (a first sync, a big level) show Unreal's progress dialog; quick ones do not.
     meter = scene.Progress("Live Bridge")
     gate = core.DelayedProgress(meter.begin, meter.update, meter.end, _live["queue"].append)
+    def do_apply(delta):
+        scene.apply_delta(delta)
+        _live["signature"] = scene.signature()
+
     link = core.LiveLink(scene.document_key().replace("unreal|", "unreal:"), "Unreal", scene.level_name(), scene.live_exchange, do_import, _live["queue"].append, status,
-                         progress=gate.report, finished=gate.finished)
+                         progress=gate.report, finished=gate.finished, apply=do_apply, all_ids=scene.all_ids)
     _live["link"] = link
     _live["signature"] = scene.signature()
     _live["tick"] = unreal.register_slate_post_tick_callback(_live_tick)
     link.start()
     unreal.log("ArchAI Live Bridge is on: the level goes to the project open in the ArchAI desktop app; its model comes back in the ArchAI Live folder.")
+
+
+def link_project():
+    """Link to project...: ArchAI shows its projects; the level syncs with the one picked there."""
+    link = _live["link"] or core.LiveLink(scene.document_key().replace("unreal|", "unreal:"), "Unreal", scene.level_name(), lambda: None, lambda *a: None, _live["queue"].append)
+
+    def work():
+        try:
+            document = link.choose_project()
+            unreal.log("ArchAI: " + ("linked to %s" % document.get("name") if document else "Link to project cancelled"))
+        except Exception as error:  # noqa: BLE001
+            unreal.log_warning("ArchAI Link to project: %s (is the ArchAI desktop app running?)" % error)
+    threading.Thread(target=work, name="ArchAI link project", daemon=True).start()
+    unreal.log("ArchAI: choose the project in ArchAI.")
 
 
 def _message(title, text):
@@ -195,6 +213,7 @@ def register():
         ("ArchaiSend", "Send to ArchAI...", "Save the level's visible static meshes as an .AIR file for ArchAI.", "import archai_unreal.menus as m; m.send()", "Exchange"),
         ("ArchaiOpenAir", "Open .AIR...", "Bring an ArchAI .AIR file into the level.", "import archai_unreal.menus as m; m.open_air()", "Exchange"),
         ("ArchaiLive", "Live Bridge (on / off)", "Sync the level with the project open in the ArchAI desktop app as you work: your actors go to ArchAI, ArchAI's model comes back in the ArchAI Live outliner folder.", "import archai_unreal.menus as m; m.toggle_live()", "Live"),
+        ("ArchaiLinkProject", "Link to project...", "Choose the ArchAI project this level syncs with: ArchAI shows its projects.", "import archai_unreal.menus as m; m.link_project()", "Live"),
         ("ArchaiVR", "Open in VR", "Walk through the level in a VR headset (Meta Quest Browser) or any browser. Camera actors become stops.", "import archai_unreal.menus as m; m.open_vr()", "VR"),
         ("ArchaiWeb", "ArchAI on the Web", "Open the ArchAI web app.", "import archai_unreal.archai_core as c; c.open_in_browser(c.WEB_URL)", "Web"),
     ):

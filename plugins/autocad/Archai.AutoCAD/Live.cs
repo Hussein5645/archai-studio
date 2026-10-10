@@ -34,6 +34,31 @@ public sealed class LiveCommands
     }
 }
 
+public sealed class LinkProjectCommands
+{
+    /// <summary>ARCHAILINKPROJECT: choose the ArchAI project this drawing syncs with (ArchAI shows its projects).</summary>
+    [CommandMethod("ARCHAILINKPROJECT", CommandFlags.Session)]
+    public void LinkProject()
+    {
+        var doc = AcApp.DocumentManager.MdiActiveDocument;
+        if (doc == null) return;
+        var link = Live.Current != null && Live.Current.Document == doc ? Live.Current.Link : Live.NewLink(doc);
+        doc.Editor.WriteMessage("\nArchAI: choose the project in ArchAI.\n");
+        _ = System.Threading.Tasks.Task.Run(async () =>
+        {
+            string text;
+            try { text = await link.ChooseProjectAsync().ConfigureAwait(false) is { } project ? $"this drawing is linked to {project.Name}." : "Link to project cancelled."; }
+            catch (System.Exception error) { text = "Link to project: " + error.Message + " (is the ArchAI desktop app running?)"; }
+            void Show(object? sender, EventArgs e)
+            {
+                AcApp.Idle -= Show;
+                try { doc.Editor.WriteMessage("\nArchAI: " + text + "\n"); } catch { }
+            }
+            AcApp.Idle += Show;
+        });
+    }
+}
+
 internal sealed class Live : IDisposable
 {
     public const string LayerPrefix = "ArchAI Live";
@@ -41,6 +66,10 @@ internal sealed class Live : IDisposable
 
     public readonly Document Document;
     private readonly LiveLink link;
+    public LiveLink Link => link;
+
+    /// <summary>A link for this drawing that is not running (to choose its project).</summary>
+    public static LiveLink NewLink(Document doc) => new LiveLink("autocad:" + doc.Name, "AutoCAD", Path.GetFileNameWithoutExtension(doc.Name));
     private readonly LiveProgress progress = new LiveProgress("AutoCAD");
     private readonly ConcurrentQueue<Action> queue = new ConcurrentQueue<Action>();
     private bool idleHooked;

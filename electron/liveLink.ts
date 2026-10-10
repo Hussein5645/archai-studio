@@ -11,8 +11,9 @@
  *                              skipped } or { refused, message }: the plugin's model (the exchange
  *                              format of src/revit/exchange.ts) applied through the Live Bridge
  *   GET  /live/projects        { protocol, open, projects: [{ id, name, updatedAt, online, open }] }
- *   POST /live/bind           { key, app, name, project | newName }  → { document, revision }
- *                              links the model to that project (opened) or a new one
+ *   POST /live/bind           { key, app, name, project | newName | choose: true }  → { document,
+ *                              revision } or { cancelled }: links the model to that project
+ *                              (opened), a new one, or the one the user picks in ArchAI
  *   GET  /live/pull?key=K     ArchAI's model as binary glTF (X-ArchAI-Revision header), without
  *                              the elements that came from that plugin
  *   POST /live/stop           { key }   the plugin turned its link off
@@ -111,6 +112,15 @@ export function startLiveLink(board: () => BrowserWindow | null, version: string
       if (request.method === 'POST' && url.pathname in posts) {
         const body = JSON.parse((await readBody(request)).toString('utf8')) as Record<string, unknown>;
         if (typeof body['key'] !== 'string' || !body['key']) return send(response, 400, { error: 'key is required' });
+        if (url.pathname === '/live/bind' && body['choose'] === true) {
+          // The project picker shows in ArchAI: bring it forward.
+          const window = board();
+          if (window && !window.isDestroyed()) {
+            if (window.isMinimized()) window.restore();
+            window.show();
+            window.focus();
+          }
+        }
         const result = await ask(board(), posts[url.pathname as keyof typeof posts], body);
         return send(response, 200, result);
       }

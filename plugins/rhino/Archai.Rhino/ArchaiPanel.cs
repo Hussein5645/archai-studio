@@ -48,6 +48,7 @@ public sealed class ArchaiPanel : Panel
                 Action("import", "Open .AIR", "Bring an ArchAI file in as meshes, a layer per level.", "_ArchaiOpenAir"),
                 Action("sync", "Live Bridge", "Sync with the project open in the ArchAI desktop app as you work: Rhino's model goes to ArchAI, ArchAI's model comes back on the ArchAI Live layer. Click again to stop.", "_ArchaiLive"),
                 status,
+                Action("sync", "Link to project...", "Choose the ArchAI project this model syncs with: ArchAI shows its projects.", "_ArchaiLinkProject"),
                 Action("vr", "Open in VR", "Walk through the model on a headset or in a browser. Named perspective views become stops.", "_ArchaiVR"),
                 Action("web", "ArchAI on the web", "Open the ArchAI web app.", null),
             },

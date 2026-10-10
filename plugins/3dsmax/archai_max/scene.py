@@ -20,6 +20,16 @@ fn archaiMeshData node = (
 fn archaiMakeMesh verts faces = (
     mesh vertices:verts faces:faces
 )
+fn archaiSetMesh node verts faces = (
+    -- World positions into the node's own space, so it keeps its transform.
+    local inv = inverse node.transform
+    local m = mesh vertices:(for v in verts collect v * inv) faces:faces
+    local tri = copy m.mesh
+    delete m
+    if classOf node != Editable_Mesh do convertToMesh node
+    node.mesh = tri
+    update node
+)
 """)
 
 _UNITS = {"millimeters": 1.0, "centimeters": 10.0, "meters": 1000.0, "kilometers": 1000000.0,
@@ -157,6 +167,11 @@ def collect(skip_live=False, progress=None):
         if not faces:
             continue
         item = core.SceneObject(str(node.handle), str(node.name), str(node.layer.name) if node.layer is not None else "")
+        # Live Bridge: an editable copy of an ArchAI element.
+        try:
+            item.archai = rt.getUserProp(node, "archai_copy") or None
+        except Exception:  # noqa: BLE001
+            item.archai = None
         positions = []
         for v in verts:
             positions += core.from_z_up(v.x, v.y, v.z, mm)
@@ -293,6 +308,110 @@ def import_objects(name, objects, live=False, progress=None):
                     count += 1
     rt.redrawViews()
     return count
+
+
+COPIES_LAYER = "ArchAI Copies"
+
+
+def _prop(node, name):
+    try:
+        value = rt.getUserProp(node, name)
+        return str(value) if value not in (None, False) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def all_ids():
+    """Handles of every geometry node that could be sent (hidden ones too), not what ArchAI sent."""
+    return [str(node.handle) for node in rt.geometry if not is_live(node)]
+
+
+def _joined(item, mm):
+    verts, faces = [], []
+    for part in item.parts:
+        base = len(verts)
+        p = part.positions
+        verts += [rt.Point3(*core.to_z_up(p[i], p[i + 1], p[i + 2], mm)) for i in range(0, len(p) - 2, 3)]
+        idx = part.indices
+        faces += [rt.Point3(base + idx[i] + 1, base + idx[i + 1] + 1, base + idx[i + 2] + 1) for i in range(0, len(idx) - 2, 3)]
+    return verts, faces
+
+
+def apply_delta(delta):
+    """A Live Bridge pull, element by element: ArchAI's elements on the ArchAI Live layers (user
+    property archai_id; replaced or removed one by one), editable copies as one mesh each on the
+    ArchAI Copies layer (reshaped in place, keeping their handle), and ArchAI's moves and names
+    applied to the scene's own nodes."""
+    mm = millimetres()
+    with pymxs.undo(False):
+        if delta.fresh:
+            clear_live()
+        live, copies = {}, {}
+        for node in list(rt.objects):
+            copy_of = _prop(node, "archai_copy")
+            if copy_of:
+                copies[copy_of] = node
+            elif is_live(node) and _prop(node, "archai_id"):
+                live.setdefault(_prop(node, "archai_id"), []).append(node)
+
+        def remove(archai_id):
+            nodes = [n for n in live.pop(archai_id, []) if rt.isValidNode(n)]
+            if nodes:
+                rt.delete(nodes)
+        for archai_id in delta.removed:
+            remove(archai_id)
+        for update in delta.updates:
+            try:
+                node = rt.maxOps.getNodeByHandle(int(update.get("ref") or 0))
+            except Exception:  # noqa: BLE001
+                node = None
+            if node is None:
+                continue
+            if update.get("move"):
+                rt.move(node, rt.Point3(*core.move_to_z_up(update["move"], mm)))
+            if update.get("name"):
+                node.name = update["name"]
+        layer_copies = None
+        for item in delta.nodes:
+            archai_id = item.archai.get("id")
+            target = None
+            ref = item.archai.get("ref")
+            if ref:
+                try:
+                    target = rt.maxOps.getNodeByHandle(int(ref))
+                except Exception:  # noqa: BLE001
+                    target = None
+            target = target or copies.get(archai_id)
+            if target is not None:
+                verts, faces = _joined(item, mm)
+                if faces:
+                    rt.archaiSetMesh(target, verts, faces)
+                continue
+            remove(archai_id)
+            if item.archai.get("editable"):
+                verts, faces = _joined(item, mm)
+                if not faces:
+                    continue
+                node = rt.archaiMakeMesh(verts, faces)
+                node.name = item.name
+                if item.parts:
+                    m = item.parts[0].material
+                    node.wirecolor = rt.Color(m.r * 255, m.g * 255, m.b * 255)
+                rt.setUserProp(node, "archai_id", archai_id)
+                rt.setUserProp(node, "archai_copy", archai_id)
+                layer_copies = layer_copies or rt.LayerManager.getLayerFromName(COPIES_LAYER) or rt.LayerManager.newLayerFromName(COPIES_LAYER)
+                layer_copies.addNode(node)
+                continue
+            before = set(int(n.handle) for n in rt.objects)
+            import_objects(delta.name, [item], live=True)
+            colour = item.archai.get("color")
+            for node in rt.objects:
+                if int(node.handle) in before:
+                    continue
+                rt.setUserProp(node, "archai_id", archai_id)
+                if colour and len(colour) == 7:
+                    node.wirecolor = rt.Color(int(colour[1:3], 16), int(colour[3:5], 16), int(colour[5:7], 16))
+    rt.redrawViews()
 
 
 def live_exchange():

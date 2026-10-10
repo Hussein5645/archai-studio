@@ -624,6 +624,30 @@ def stop_live():
         bpy.app.handlers.depsgraph_update_post.remove(_depsgraph_changed)
 
 
+def _live_key():
+    return "blender:" + (bpy.data.filepath or "unsaved")
+
+
+class ARCHAI_OT_link_project(bpy.types.Operator):
+    """Choose the ArchAI project this scene syncs with: ArchAI shows its projects, pick one or start a new one"""
+    bl_idname = "archai.link_project"
+    bl_label = "Link to project..."
+
+    def execute(self, context):
+        link = _live["link"] or core.LiveLink(_live_key(), "Blender", document_name(context), lambda: None, lambda *a: None, _on_main)
+
+        def work():
+            try:
+                document = link.choose_project()
+                text = "Linked to %s" % document.get("name") if document else "Link to project: cancelled"
+            except Exception as error:  # noqa: BLE001 - shown in the panel
+                text = "Link to project: %s (is the ArchAI desktop app running?)" % error
+            _live_status(text)
+        threading.Thread(target=work, name="ArchAI link project", daemon=True).start()
+        self.report({"INFO"}, "Choose the project in ArchAI.")
+        return {"FINISHED"}
+
+
 class ARCHAI_OT_live(bpy.types.Operator):
     """Sync this scene with the project open in the ArchAI desktop app as you work: your model goes to ArchAI, ArchAI's model comes back in the "ArchAI Live" collection. Click again to stop"""
     bl_idname = "archai.live"
@@ -634,7 +658,7 @@ class ARCHAI_OT_live(bpy.types.Operator):
             stop_live()
             self.report({"INFO"}, "ArchAI Live Bridge is off.")
             return {"FINISHED"}
-        key = "blender:" + (bpy.data.filepath or "unsaved")
+        key = _live_key()
         meter = Progress("Live Bridge")
         gate = core.DelayedProgress(meter.begin, meter.update, meter.end, _on_main)
         _live["link"] = core.LiveLink(key, "Blender", document_name(context), _live_export, _live_import, _on_main, _live_status,
@@ -667,6 +691,7 @@ class ARCHAI_PT_panel(bpy.types.Panel):
         column.operator("archai.open_air", text="Open .AIR", icon_value=icon("import"))
         running = _live["link"] is not None
         column.operator("archai.live", text="Stop Live Bridge" if running else "Live Bridge", icon_value=icon("sync"), depress=running)
+        column.operator("archai.link_project", text="Link to project...", icon="LINKED")
         if running and _live["status"]:
             for line in _wrap(_live["status"], 34):
                 layout.label(text=line)
@@ -706,7 +731,7 @@ def menu_export(self, context):
     self.layout.operator("archai.send", text="ArchAI (.AIR)", icon_value=icon("export"))
 
 
-classes = (ARCHAI_OT_send, ARCHAI_OT_open_air, ARCHAI_OT_live, ARCHAI_OT_vr, ARCHAI_OT_copy_link, ARCHAI_OT_open_url, ARCHAI_PT_panel)
+classes = (ARCHAI_OT_send, ARCHAI_OT_open_air, ARCHAI_OT_live, ARCHAI_OT_link_project, ARCHAI_OT_vr, ARCHAI_OT_copy_link, ARCHAI_OT_open_url, ARCHAI_PT_panel)
 
 
 def register():

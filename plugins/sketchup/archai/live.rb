@@ -7,6 +7,7 @@
 # requests (Net::HTTP); exports and imports run there too.
 require 'json'
 require 'net/http'
+require 'securerandom'
 require 'uri'
 
 module ArchAI
@@ -25,10 +26,51 @@ module ArchAI
       running? ? stop : start(Sketchup.active_model)
     end
 
+    def self.key_of(model)
+      "sketchup:#{model.path.empty? ? "unsaved:#{ArchAI.document_name(model)}" : model.path}"[0, 300]
+    end
+
+    # Link to project...: ArchAI shows its projects; this model syncs with the one picked there.
+    # SketchUp waits while the choice is made in ArchAI.
+    def self.choose_project
+      model = Sketchup.active_model
+      key = running? ? @link[:key] : key_of(model)
+      body = JSON.generate('key' => key, 'app' => 'SketchUp', 'name' => ArchAI.document_name(model), 'choose' => true)
+      result = request(Net::HTTP::Post, '/live/bind', body, 900)
+      raise error_of(result) unless result.is_a?(Net::HTTPSuccess)
+      reply = JSON.parse(result.body)
+      if reply['cancelled']
+        Sketchup.status_text = 'ArchAI Link to project: cancelled'
+        return
+      end
+      document = reply['document'] || {}
+      project = { 'id' => document['id'].to_s, 'name' => document['name'].to_s }
+      entry = Core.bridge_entry(key)
+      same = entry['project'].is_a?(Hash) && entry['project']['id'] == project['id']
+      known = same ? (entry['known'] || []).map(&:to_s) : []
+      Core.remember_bridge(key, { 'project' => project, 'known' => known })
+      if running?
+        @link[:project] = project
+        @link[:known] = known
+        @link[:have] = {}
+        @link[:last_pulled] = -1
+      end
+      UI.messagebox("This model is linked to the ArchAI project #{project['name']}. The Live Bridge syncs with it from now on.")
+    rescue StandardError => e
+      UI.messagebox("Link to project: #{e.message}\n\nIs the ArchAI desktop app running?")
+    end
+
     def self.start(model)
       stop if running?
-      key = "sketchup:#{model.path.empty? ? "unsaved:#{ArchAI.document_name(model)}" : model.path}"
-      @link = { model: model, key: key[0, 300], name: ArchAI.document_name(model), push_at: Time.now.to_f, last_pulled: -1, last_seen: -1, quiet_until: 0.0, status: '' }
+      key = key_of(model)
+      @link = { model: model, key: key, name: ArchAI.document_name(model), push_at: Time.now.to_f, last_pulled: -1, last_seen: -1, quiet_until: 0.0, status: '' }
+      # Live Bridge (protocol 2): the project this model is bound to, the ids ArchAI has from it,
+      # what ArchAI sent (element id -> hash) and the update tokens applied.
+      entry = Core.bridge_entry(@link[:key])
+      @link[:project] = entry['project'].is_a?(Hash) ? entry['project'] : nil
+      @link[:known] = (entry['known'] || []).map(&:to_s)
+      @link[:have] = {}
+      @link[:tokens] = {}
       @observer = Observer.new
       model.add_observer(@observer)
       @timer = UI.start_timer(0.5, true) { tick }
@@ -48,11 +90,30 @@ module ArchAI
       status('Off')
     end
 
-    # The model changed (not by our own import): send it after a short pause.
+    # The model changed: send it after a short pause (edits during an import are sent once it settled).
     def self.changed
       return unless running?
-      return if Time.now.to_f < @link[:quiet_until]
-      @link[:push_at] = Time.now.to_f + DEBOUNCE
+      now = Time.now.to_f
+      @link[:push_at] = now < @link[:quiet_until] ? @link[:quiet_until] + DEBOUNCE : now + DEBOUNCE
+    end
+
+    def self.save_bridge
+      Core.remember_bridge(@link[:key], @link[:project] ? { 'project' => @link[:project], 'known' => @link[:known] } : nil)
+    end
+
+    # Links this model to an ArchAI project (an existing one, or a new one when project_id is nil).
+    def self.bind(project_id, new_name = nil)
+      body = { 'key' => @link[:key], 'app' => 'SketchUp', 'name' => @link[:name] }
+      if project_id then body['project'] = project_id else body['newName'] = new_name || @link[:name] end
+      result = request(Net::HTTP::Post, '/live/bind', JSON.generate(body), 60)
+      raise error_of(result) unless result.is_a?(Net::HTTPSuccess)
+      document = JSON.parse(result.body)['document'] || {}
+      @link[:known] = [] if @link[:project] && @link[:project]['id'] != document['id']
+      @link[:project] = { 'id' => document['id'].to_s, 'name' => document['name'].to_s }
+      @link[:have] = {}
+      @link[:last_pulled] = -1
+      save_bridge
+      document
     end
 
     def self.status(text)
@@ -121,7 +182,7 @@ module ArchAI
         return
       end
       @link[:next_poll] = now + POLL
-      query = URI.encode_www_form('key' => @link[:key], 'name' => @link[:name], 'app' => 'SketchUp')
+      query = URI.encode_www_form('key' => @link[:key], 'name' => @link[:name], 'app' => 'SketchUp', 'protocol' => 2, 'project' => (@link[:project] || {})['id'].to_s)
       begin
         response = request(Net::HTTP::Get, "/live/status?#{query}", nil, 5)
       rescue StandardError
@@ -135,6 +196,14 @@ module ArchAI
         status('Opening a project in ArchAI...')
         return
       end
+      bridge = info['protocol'].to_i >= 2
+      if bridge
+        if info['mismatch']
+          status("ArchAI shows #{project}; this model is linked to #{(@link[:project] || {})['name'] || 'another project'}. Open it in ArchAI, or link this model to the open project.")
+          return
+        end
+        bind(info['document']['id']) if @link[:project].nil? || @link[:project]['id'] != info['document']['id']
+      end
       up_to_date = @link[:last_seen] == @link[:last_pulled] && @link[:last_pulled] >= 0
       if @link[:push_at] && now >= @link[:push_at]
         @link[:push_at] = nil
@@ -143,10 +212,27 @@ module ArchAI
         exchange = Core.write_exchange(@link[:name], 'SketchUp', Sketchup.version, model.path, ArchAI.collect(model, true, reading))
         status('Sending the model to ArchAI...')
         exchange['app'] = 'SketchUp'
-        body = JSON.generate('key' => @link[:key], 'app' => 'SketchUp', 'name' => @link[:name], 'model' => exchange)
-        result = request(Net::HTTP::Post, '/live/push', body)
+        payload = { 'key' => @link[:key], 'app' => 'SketchUp', 'name' => @link[:name], 'model' => exchange }
+        sent_ids = (exchange['meshes'] || []).map { |m| m['id'].to_s }
+        deleted = []
+        if bridge
+          # Hiding deletes nothing: only ids gone from the model are deletions.
+          everything = ArchAI.all_ids(model)
+          deleted = @link[:known] - everything - sent_ids
+          payload.merge!('protocol' => 2, 'project' => @link[:project]['id'], 'changeId' => SecureRandom.hex(16), 'complete' => false, 'deleted' => deleted)
+        end
+        result = request(Net::HTTP::Post, '/live/push', JSON.generate(payload))
         raise error_of(result) unless result.is_a?(Net::HTTPSuccess)
-        revision = JSON.parse(result.body)['revision'].to_i
+        reply = JSON.parse(result.body)
+        if reply['refused']
+          status(reply['message'] || 'ArchAI did not take the model')
+          return
+        end
+        if bridge
+          @link[:known] = ((@link[:known] - deleted) + sent_ids).uniq
+          save_bridge
+        end
+        revision = reply['revision'].to_i
         @link[:last_pulled] = revision if up_to_date
         @link[:last_seen] = revision
         status("Sent to #{project} #{Time.now.strftime('%H:%M:%S')}")
@@ -155,11 +241,39 @@ module ArchAI
       revision = info['revision'].to_i
       @link[:last_seen] = revision
       return if revision == @link[:last_pulled]
-      result = request(Net::HTTP::Get, "/live/pull?key=#{URI.encode_www_form_component(@link[:key])}")
+      fresh = bridge && @link[:have].empty?
+      path = "/live/pull?key=#{URI.encode_www_form_component(@link[:key])}"
+      path += "&protocol=2&project=#{URI.encode_www_form_component(@link[:project]['id'])}#{fresh ? '&fresh=1' : ''}" if bridge
+      result = request(Net::HTTP::Get, path)
       return if result.code == '204'
       raise error_of(result) unless result.is_a?(Net::HTTPSuccess)
       pulled = (result['X-ArchAI-Revision'] || revision).to_i
       name = URI.decode_www_form_component(result['X-ArchAI-Name'] || project)
+      if bridge
+        objects, extras = Core.read_bridge_glb(result.body)
+        present = (extras['present'] || []).map(&:to_s)
+        removed = @link[:have].keys - present
+        updates = (extras['updates'] || []).reject { |u| @link[:tokens][u['token']] }
+        model = @link[:model]
+        unless objects.empty? && removed.empty? && updates.empty? && !fresh
+          @link[:quiet_until] = Time.now.to_f + 60
+          begin
+            ArchAI.apply_delta(model, { name: name, nodes: objects, removed: removed, updates: updates, fresh: fresh })
+          ensure
+            @link[:quiet_until] = Time.now.to_f + 1.0 if @link
+          end
+          status("Updated from #{project} #{Time.now.strftime('%H:%M:%S')}")
+        end
+        @link[:have] = {} if fresh
+        removed.each { |id| @link[:have].delete(id) }
+        objects.each { |o| @link[:have][o.archai['id'].to_s] = o.archai['hash'].to_s if o.archai['id'] }
+        present.each { |id| @link[:have][id] ||= '' }
+        updates.each { |u| @link[:tokens][u['token']] = true }
+        @link[:last_pulled] = @link[:last_seen] = pulled
+        # Tell ArchAI where its changes landed (and which groups are now copies) right away.
+        @link[:push_at] = Time.now.to_f if !updates.empty? || objects.any? { |o| o.archai['editable'] }
+        return
+      end
       objects = Core.read_glb(result.body)
       model = @link[:model]
       @link[:quiet_until] = Time.now.to_f + 60

@@ -31,6 +31,24 @@ class _Main(QtCore.QObject):
 _main = None
 
 
+def link_project(status=None):
+    """Link to project...: ArchAI shows its projects; the scene syncs with the one picked there."""
+    import threading
+    link = _live["link"] or core.LiveLink(scene.document_key().replace("3dsmax|", "3dsmax:"), "3ds Max", scene.document_name(), lambda: None, lambda *a: None, lambda fn: fn())
+
+    def work():
+        try:
+            document = link.choose_project()
+            text = "Linked to %s" % document.get("name") if document else "Link to project: cancelled"
+        except Exception as error:  # noqa: BLE001
+            text = "Link to project: %s (is the ArchAI desktop app running?)" % error
+        if status and _main is not None:
+            _main.status.emit(text)
+    threading.Thread(target=work, name="ArchAI link project", daemon=True).start()
+    if status:
+        status("Choose the project in ArchAI...")
+
+
 def live_running():
     return _live["link"] is not None
 
@@ -63,8 +81,12 @@ def toggle_live(status=None):
     # Slow syncs (a first sync, a big scene) show 3ds Max's progress bar; quick ones do not.
     meter = scene.Progress("Live Bridge")
     gate = core.DelayedProgress(meter.begin, meter.update, meter.end, _main.call.emit)
+    def do_apply(delta):
+        scene.apply_delta(delta)
+        _live["signature"] = scene.signature()
+
     link = core.LiveLink(scene.document_key().replace("3dsmax|", "3dsmax:"), "3ds Max", scene.document_name(), scene.live_exchange, do_import, _main.call.emit, _main.status.emit,
-                         progress=gate.report, finished=gate.finished)
+                         progress=gate.report, finished=gate.finished, apply=do_apply, all_ids=scene.all_ids)
     _live["link"] = link
     _live["signature"] = scene.signature()
 
@@ -244,6 +266,7 @@ class Panel(QtWidgets.QDockWidget):
             ("export", "Send to ArchAI", "Save the visible scene as an .AIR file for ArchAI.", send),
             ("import", "Open .AIR", "Bring an ArchAI file in, a layer per level.", open_air),
             ("sync", "Live Bridge", "Sync with the project open in the ArchAI desktop app as you work: your scene goes to ArchAI, ArchAI's model comes back on the ArchAI Live layers. Click again to stop.", lambda: toggle_live(self.status.setText)),
+            ("sync", "Link to project...", "Choose the ArchAI project this scene syncs with: ArchAI shows its projects.", lambda: link_project(self.status.setText)),
             ("vr", "Open in VR", "Walk through the scene on a headset or in a browser. Cameras become stops.", lambda: open_vr(self.status.setText)),
             ("web", "ArchAI on the web", "Open the ArchAI web app.", lambda: core.open_in_browser(core.WEB_URL)),
         ):

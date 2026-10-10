@@ -588,6 +588,8 @@ internal sealed class ArchaiExporter
                     ["size"] = new JArray(Math.Round(maxX - minX, 1), Math.Round(maxY - minY, 1), Math.Round(maxZ - minZ, 1)),
                     ["glb"] = Convert.ToBase64String(writer.ToGlb()),
                 });
+                // Live Bridge: an editable copy of an ArchAI element.
+                if (element is DirectShape copy && copy.ApplicationId == Live.CopyApplicationId && !string.IsNullOrEmpty(copy.ApplicationDataId)) ((JObject)list.Last!)["archai"] = Truncate(copy.ApplicationDataId, 64);
                 Count("mesh");
             }
             catch (Exception ex) { Warnings.Add($"Element {element.Id.Value}: {ex.Message}"); }

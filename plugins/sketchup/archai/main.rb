@@ -69,6 +69,8 @@ module ArchAI
         name = entity.name.to_s
         name = entity.definition.name.to_s if name.empty?
         item = Core::SceneObject.new(entity.persistent_id.to_s, name.empty? ? 'Group' : name, entity.layer ? entity.layer.name : '')
+        # Live Bridge: an editable copy of an ArchAI element.
+        item.archai = entity.get_attribute('ArchAI', 'copy')
         definition_entities = entity.is_a?(Sketchup::Group) ? entity.entities : entity.definition.entities
         collect_entities(definition_entities, entity.transformation, entity.material, item, cache)
         objects << item if item.triangle_count > 0
@@ -187,6 +189,109 @@ module ArchAI
   rescue StandardError
     model.abort_operation
     raise
+  end
+
+  # ---- Live Bridge -------------------------------------------------------------------------------
+
+  # Every top-level group and component that could be sent (hidden ones too), not what ArchAI sent.
+  def self.all_ids(model)
+    ids = model.entities.to_a.select { |e| (e.is_a?(Sketchup::Group) || e.is_a?(Sketchup::ComponentInstance)) && !live?(e) }.map { |e| e.persistent_id.to_s }
+    ids << 'loose'
+  end
+
+  def self.add_item_faces(model, entities, item, materials, transform = nil)
+    item.parts.each do |part|
+      mesh = Geom::PolygonMesh.new(part.positions.length / 3, part.indices.length / 3)
+      part.positions.each_slice(3) do |x, y, z|
+        hx, hy, hz = Core.to_z_up(x, y, z, MM_PER_INCH)
+        point = Geom::Point3d.new(hx, hy, hz)
+        point = point.transform(transform) if transform
+        mesh.add_point(point)
+      end
+      part.indices.each_slice(3) { |a, b, c| mesh.add_polygon(a + 1, b + 1, c + 1) }
+      material = (materials[part.material.name] ||= begin
+        m = model.materials[part.material.name] || model.materials.add(part.material.name)
+        m.color = Sketchup::Color.new((part.material.r * 255).round, (part.material.g * 255).round, (part.material.b * 255).round)
+        m.alpha = part.material.opacity if part.material.opacity < 0.999
+        m
+      end)
+      entities.add_faces_from_mesh(mesh, Geom::PolygonMesh::AUTO_SOFTEN | Geom::PolygonMesh::SMOOTH_SOFT_EDGES, material)
+    end
+  end
+
+  # A Live Bridge pull, element by element: ArchAI's elements as groups in the "ArchAI Live" group
+  # (attribute id; replaced or removed one by one), editable copies as top-level groups (attribute
+  # copy; refilled in place, so they keep their id), and ArchAI's moves and names applied to the
+  # model's own groups and components.
+  def self.apply_delta(model, delta)
+    model.start_operation('ArchAI Live Bridge', true, false, true)
+    clear_live_now(model) if delta[:fresh]
+    root = model.entities.to_a.find { |e| live?(e) && e.is_a?(Sketchup::Group) }
+    live = {}
+    copies = {}
+    if root
+      root.entities.to_a.each do |g|
+        id = g.respond_to?(:get_attribute) ? g.get_attribute('ArchAI', 'id') : nil
+        (live[id] ||= []) << g if id
+      end
+    end
+    model.entities.to_a.each do |e|
+      copy = e.respond_to?(:get_attribute) ? e.get_attribute('ArchAI', 'copy') : nil
+      copies[copy] = e if copy
+    end
+    remove = lambda do |archai_id|
+      groups = (live.delete(archai_id) || []).select(&:valid?)
+      root.entities.erase_entities(groups) if root && !groups.empty?
+    end
+    delta[:removed].each { |archai_id| remove.call(archai_id) }
+    delta[:updates].each do |update|
+      entity = model.find_entity_by_persistent_id(update['ref'].to_i) rescue nil
+      next unless entity && entity.valid?
+      if update['move']
+        x, y, z = Core.move_to_z_up(update['move'], MM_PER_INCH)
+        entity.transform!(Geom::Transformation.translation(Geom::Vector3d.new(x, y, z)))
+      end
+      entity.name = update['name'] if update['name'] && entity.respond_to?(:name=)
+    end
+    materials = {}
+    delta[:nodes].each do |item|
+      archai_id = item.archai['id'].to_s
+      target = item.archai['ref'] ? (model.find_entity_by_persistent_id(item.archai['ref'].to_i) rescue nil) : nil
+      target ||= copies[archai_id]
+      if target && target.valid? && target.is_a?(Sketchup::Group)
+        # The model's copy of an ArchAI element: its shape follows ArchAI's, where the user put it.
+        target.entities.clear!
+        add_item_faces(model, target.entities, item, materials, target.transformation.inverse)
+        next
+      end
+      remove.call(archai_id)
+      if item.archai['editable']
+        group = model.entities.add_group
+        group.name = item.name
+        group.set_attribute('ArchAI', 'copy', archai_id)
+        add_item_faces(model, group.entities, item, materials)
+        next
+      end
+      unless root && root.valid?
+        root = model.entities.add_group
+        root.name = 'ArchAI Live'
+        root.set_attribute('ArchAI', 'live', true)
+      end
+      group = root.entities.add_group
+      group.name = item.name
+      group.set_attribute('ArchAI', 'id', archai_id)
+      add_item_faces(model, group.entities, item, materials)
+    end
+    model.commit_operation
+  rescue StandardError
+    model.abort_operation
+    raise
+  end
+
+  # Removes the ArchAI Live group inside an operation already started.
+  def self.clear_live_now(model)
+    live = model.entities.to_a.select { |entity| live?(entity) }
+    model.entities.erase_entities(live) unless live.empty?
   end
 
   @upload = nil
@@ -321,15 +426,16 @@ module ArchAI
       command('Send to ArchAI', 'Save the visible model as an .AIR file to open in ArchAI.', 'export') { send_to_archai },
       command('Open .AIR', 'Bring an ArchAI .AIR file into this model, a tag per level.', 'import') { open_air },
       live_command,
+      command('Link to project...', 'Choose the ArchAI project this model syncs with: ArchAI shows its projects.', 'sync') { Live.choose_project },
       command('Open in VR', 'Walk through the model in a VR headset (Meta Quest Browser) or any browser. Scenes become stops.', 'vr') { open_vr },
       command('ArchAI on the Web', 'Open the ArchAI web app.', 'web') { UI.openURL(Core::WEB_URL) }
     ]
     menu = UI.menu('Extensions').add_submenu('ArchAI')
     toolbar = UI::Toolbar.new('ArchAI')
     commands.each_with_index do |c, i|
-      menu.add_separator if i == 4
+      menu.add_separator if i == 5
       menu.add_item(c)
-      toolbar.add_separator if i == 4
+      toolbar.add_separator if i == 5
       toolbar.add_item(c)
     end
     toolbar.restore

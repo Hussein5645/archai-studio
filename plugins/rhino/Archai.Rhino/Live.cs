@@ -30,6 +30,25 @@ public sealed class ArchaiLiveCommand : Command
     }
 }
 
+/// <summary>ArchaiLinkProject: choose the ArchAI project this model syncs with (ArchAI shows its projects).</summary>
+public sealed class ArchaiLinkProjectCommand : Command
+{
+    public override string EnglishName => "ArchaiLinkProject";
+    protected override Result RunCommand(RhinoDoc doc, RunMode mode)
+    {
+        var link = Live.Current?.Doc == doc ? Live.Current.Link : Live.NewLink(doc);
+        RhinoApp.WriteLine("ArchAI: choose the project in ArchAI.");
+        _ = System.Threading.Tasks.Task.Run(async () =>
+        {
+            string text;
+            try { text = await link.ChooseProjectAsync().ConfigureAwait(false) is { } project ? $"ArchAI: this model is linked to {project.Name}." : "ArchAI: Link to project cancelled."; }
+            catch (Exception error) { text = "ArchAI Link to project: " + error.Message + " (is the ArchAI desktop app running?)"; }
+            RhinoApp.InvokeOnUiThread(new Action(() => RhinoApp.WriteLine(text)));
+        });
+        return Result.Success;
+    }
+}
+
 internal sealed class Live : IDisposable
 {
     public const string LayerName = "ArchAI Live";
@@ -40,6 +59,12 @@ internal sealed class Live : IDisposable
 
     public readonly RhinoDoc Doc;
     private readonly LiveLink link;
+    public LiveLink Link => link;
+
+    /// <summary>A link for this model that is not running (to choose its project).</summary>
+    public static LiveLink NewLink(RhinoDoc doc) => new LiveLink(Key(doc), "Rhino", Path.GetFileNameWithoutExtension(doc.Name ?? "Rhino model"));
+
+    private static string Key(RhinoDoc doc) => "rhino:" + (string.IsNullOrEmpty(doc.Path) ? "unsaved:" + doc.RuntimeSerialNumber : doc.Path);
     private readonly RhinoLiveProgress progress = new RhinoLiveProgress();
     private string lastPrinted = "";
 
@@ -47,7 +72,7 @@ internal sealed class Live : IDisposable
     {
         Doc = doc;
         var name = Path.GetFileNameWithoutExtension(doc.Name ?? "Rhino model");
-        var key = "rhino:" + (string.IsNullOrEmpty(doc.Path) ? "unsaved:" + doc.RuntimeSerialNumber : doc.Path);
+        var key = Key(doc);
         link = new LiveLink(key, "Rhino", name)
         {
             OnHost = action => RhinoApp.InvokeOnUiThread(action),
@@ -64,6 +89,15 @@ internal sealed class Live : IDisposable
                 }
                 finally { doc.UndoRecordingEnabled = recording; }
             },
+            // Live Bridge: element by element, and every object id (hiding deletes nothing in ArchAI).
+            Apply = delta =>
+            {
+                var recording = doc.UndoRecordingEnabled;
+                doc.UndoRecordingEnabled = false;
+                try { RhinoScene.Apply(doc, delta, LayerName); }
+                finally { doc.UndoRecordingEnabled = recording; }
+            },
+            AllIds = () => RhinoScene.AllIds(doc),
         };
         link.StatusChanged = status =>
         {

@@ -64,7 +64,7 @@ const archaiState = () =>
   page.evaluate(() => {
     const s = window.__archai.store.getState();
     const bridge = s.doc.bridge ?? { sources: {}, elements: {}, conflicts: [], held: [], log: [] };
-    const elements = Object.values(s.doc.elements).map((e) => ({ id: e.id, name: e.name, x: e.x, y: e.y, refs: Object.fromEntries(Object.entries(bridge.elements[e.id]?.refs ?? {}).map(([k, r]) => [k, { id: r.id, role: r.role }])) }));
+    const elements = Object.values(s.doc.elements).filter((e) => e.kind !== 'group').map((e) => ({ id: e.id, name: e.name, x: e.x, y: e.y, refs: Object.fromEntries(Object.entries(bridge.elements[e.id]?.refs ?? {}).map(([k, r]) => [k, { id: r.id, role: r.role }])) }));
     return { screen: s.ui.screen, project: s.doc.meta.name, elements, sources: Object.keys(bridge.sources), conflicts: bridge.conflicts, log: bridge.log.map((l) => l.text) };
   });
 async function waitFor(label, predicate, timeout = 30000) {

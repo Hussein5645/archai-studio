@@ -47,3 +47,13 @@
 .row { display: flex; flex-direction: column; gap: 2px; color: var(--text-muted); font-size: 11px; }
 .row select { height: 26px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-panel); color: var(--text); font-size: 12px; }
 .check { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; }
+.picker { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px 18px; overflow: auto; font-size: 13px; }
+.picker p { margin: 0; color: var(--text-muted); line-height: 1.4; }
+.picker ul { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: 8px; max-height: 260px; overflow: auto; }
+.picker li + li { border-top: 1px solid var(--border); }
+.picker li button { display: flex; width: 100%; align-items: baseline; justify-content: space-between; gap: 8px; padding: 8px 10px; text-align: left; }
+.picker li button:hover { background: var(--bg-hover); }
+.picker li small { color: var(--text-muted); font-size: 11px; }
+.newProject { display: flex; gap: 6px; }
+.newProject input { flex: 1; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-panel); color: var(--text); }
+.newProject button { height: 30px; padding: 0 10px; border-radius: 6px; background: var(--accent, #1c7ed6); color: #fff; }

@@ -1117,6 +1117,19 @@ class LiveLink(object):
         self._remember_project(document)
         return document
 
+    def choose_project(self):
+        """Link to project...: ArchAI shows its project picker (it comes to the front) and this
+        model links to the project the user picks there. Blocks until they choose (run it off the
+        host's main thread). Returns the project {id, name}, or None when cancelled."""
+        body = {"key": self.key, "app": self.app, "name": self.name, "choose": True}
+        _, _, data = self._request("POST", "/live/bind", json.dumps(body).encode("utf-8"), timeout=900)
+        reply = json.loads(data.decode("utf-8"))
+        if reply.get("cancelled"):
+            return None
+        document = reply.get("document") or {}
+        self._remember_project(document)
+        return document
+
     def _remember_project(self, document):
         if self.project and document.get("id") != self.project.get("id"):
             # Another project: it has none of this model yet.

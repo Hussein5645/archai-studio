@@ -44,7 +44,8 @@ public sealed class App : IExtensionApplication
             Button("Send to\nArchAI", "ARCHAIEXPORT", "export", "Save the drawing's 3D objects as an .AIR file to open in ArchAI."),
             Button("Open\n.AIR", "ARCHAIIMPORT", "import", "Bring an ArchAI .AIR file into this drawing: one block per element, a layer per level.")));
         tab.Panels.Add(Panel("Live Bridge",
-            Button("Live\nBridge", "ARCHAILIVE", "sync", "Sync this drawing with the project open in the ArchAI desktop app as you work: your 3D objects go to ArchAI, ArchAI's model comes back on the ArchAI Live layers. Click again to stop.")));
+            Button("Live\nBridge", "ARCHAILIVE", "sync", "Sync this drawing with the project open in the ArchAI desktop app as you work: your 3D objects go to ArchAI, ArchAI's model comes back on the ArchAI Live layers. Click again to stop."),
+            Button("Link to\nproject", "ARCHAILINKPROJECT", "sync", "Choose the ArchAI project this drawing syncs with: ArchAI shows its projects.")));
         tab.Panels.Add(Panel("VR",
             Button("Open\nin VR", "ARCHAIVR", "vr", "Walk through the drawing's 3D objects in a VR headset (Meta Quest Browser) or any browser. Named perspective views and cameras become stops.")));
         tab.Panels.Add(Panel("Web", Button("ArchAI\nWeb", "ARCHAIWEB", "web", "Open the ArchAI web app in your browser.")));

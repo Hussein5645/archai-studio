@@ -88,12 +88,15 @@ module ArchAI
 
     # One host object to send to ArchAI or to VR.
     class SceneObject
-      attr_accessor :id, :name, :category
+      # archai: the ArchAI element this object is an editable copy of (Live Bridge); was: an older id.
+      attr_accessor :id, :name, :category, :archai, :was
       attr_reader :parts
 
       def initialize(id, name, category = '')
         @id, @name, @category = id, name, category
         @parts = {}
+        @archai = nil
+        @was = nil
       end
 
       def add_mesh(material, positions, indices)
@@ -217,12 +220,14 @@ module ArchAI
     ImportPart = Struct.new(:material, :positions, :indices)
 
     class ImportObject
-      attr_accessor :name, :level, :type
+      # archai: ArchAI's node extras (id, and in Live Bridge pulls hash, source, color, editable, ref).
+      attr_accessor :name, :level, :type, :archai
       attr_reader :parts
 
       def initialize(name, level = '', type = '')
         @name, @level, @type = name, level, type
         @parts = []
+        @archai = {}
       end
     end
 
@@ -246,6 +251,47 @@ module ArchAI
       end
       raise ArgumentError, 'The glTF file has no JSON chunk.' unless gltf
       GltfScene.new(gltf, binary).objects
+    end
+
+    # A Live Bridge pull: [objects, bridge] where bridge is the root's archaiBridge extras.
+    def self.read_bridge_glb(data)
+      objects = read_glb(data)
+      bytes = data.b
+      length = bytes[12, 4].unpack1('V')
+      gltf = JSON.parse(bytes[20, length].force_encoding(Encoding::UTF_8))
+      node = (gltf['nodes'] || []).find { |n| (n['extras'] || {})['archaiBridge'].is_a?(Hash) }
+      [objects, node ? node['extras']['archaiBridge'] : {}]
+    end
+
+    # A Live Bridge move (ArchAI plan mm: x right, plan y down, elevation) as a Z-up host vector.
+    def self.move_to_z_up(move, millimetres)
+      [move[0] / millimetres, -move[1] / millimetres, move[2] / millimetres]
+    end
+
+    # What this computer remembers of each model's Live Bridge link (shared with the other plugins).
+    def self.bridge_file
+      File.join(ENV['LOCALAPPDATA'] || File.join(Dir.home, '.local', 'share'), 'ArchAI', 'live-bridge.json')
+    end
+
+    def self.bridge_entry(key)
+      state = JSON.parse(File.read(bridge_file, encoding: 'UTF-8'))
+      state.is_a?(Hash) && state[key].is_a?(Hash) ? state[key] : {}
+    rescue StandardError
+      {}
+    end
+
+    def self.remember_bridge(key, entry)
+      state = begin
+        JSON.parse(File.read(bridge_file, encoding: 'UTF-8'))
+      rescue StandardError
+        {}
+      end
+      state = {} unless state.is_a?(Hash)
+      if entry then state[key] = entry else state.delete(key) end
+      Dir.mkdir(File.dirname(bridge_file)) unless File.directory?(File.dirname(bridge_file))
+      File.write(bridge_file, JSON.generate(state))
+    rescue StandardError
+      nil
     end
 
     class GltfScene
@@ -273,6 +319,7 @@ module ArchAI
           name = @gltf['meshes'][node['mesh']]['name'].to_s if name.empty? && node.key?('mesh')
           kind = (archai['type'] || archai['kind'] || '').to_s
           owner = ImportObject.new(name.empty? ? (kind.empty? ? 'Object' : kind) : name, archai['level'].to_s, kind)
+          owner.archai = archai
           @result << owner
         end
         add_mesh(node['mesh'], world, owner) if node.key?('mesh') && owner
@@ -379,6 +426,8 @@ module ArchAI
           'origin' => box.min.map { |v| v.round(1) }, 'size' => (0..2).map { |a| (box.max[a] - box.min[a]).round(1) },
           'glb' => Base64.strict_encode64(writer.to_glb("ArchAI #{app} plugin"))
         }
+        meshes.last['archai'] = truncate(o.archai, 64) if o.respond_to?(:archai) && o.archai && !o.archai.to_s.empty?
+        meshes.last['was'] = truncate(o.was, 64) if o.respond_to?(:was) && o.was && o.was.to_s != o.id.to_s
       end
       { 'archaiRevit' => 1, 'app' => app, 'name' => truncate(name.to_s.empty? ? "#{app} model" : name, 200),
         'source' => truncate(source, 1000), 'revitVersion' => truncate("#{app} #{app_version}", 40),

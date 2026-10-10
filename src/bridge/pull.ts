@@ -165,3 +165,23 @@ export function translationBetween(placed: { m: number[]; z: number }, now: Mat,
   return [delta[4], delta[5], dz];
 }
 
+
+/**
+ * The document with each app's source group dissolved for export: its elements at the group's
+ * level with their world placement, so they become one node each (the 3D build turns a group
+ * into one object).
+ */
+export function flattenSourceGroups(doc: ArchaiDocument): ArchaiDocument {
+  const groups = new Set(Object.values(doc.bridge?.sources ?? {}).flatMap((source) => (source.groupId && doc.elements[source.groupId]?.kind === 'group' ? [source.groupId] : [])));
+  if (groups.size === 0) return doc;
+  const elements: Record<string, Element> = { ...doc.elements };
+  for (const element of Object.values(doc.elements)) {
+    if (!element.parentId || !groups.has(element.parentId)) continue;
+    const group = doc.elements[element.parentId]!;
+    const matrix = worldMatrix(doc.elements, group);
+    const at = { x: matrix[0] * element.x + matrix[2] * element.y + matrix[4], y: matrix[1] * element.x + matrix[3] * element.y + matrix[5] };
+    elements[element.id] = { ...element, parentId: group.parentId && !groups.has(group.parentId) ? group.parentId : null, x: at.x, y: at.y, rotation: element.rotation + (Math.atan2(matrix[1], matrix[0]) * 180) / Math.PI };
+  }
+  for (const id of groups) delete elements[id];
+  return { ...doc, elements };
+}

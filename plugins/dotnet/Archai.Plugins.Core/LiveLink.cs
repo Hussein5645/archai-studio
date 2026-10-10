@@ -195,6 +195,29 @@ public sealed class LiveLink : IDisposable
         return (id, name);
     }
 
+    /// <summary>
+    /// Link to project…: ArchAI shows its project picker (it comes to the front) and this model links
+    /// to the project the user picks there. Null when they cancel.
+    /// </summary>
+    public async Task<(string Id, string Name)?> ChooseProjectAsync()
+    {
+        using var content = new StringContent(new JObject { ["key"] = Key, ["app"] = App, ["name"] = Name, ["choose"] = true }.ToString(Formatting.None), Encoding.UTF8, "application/json");
+        using var waiting = new HttpClient { Timeout = TimeSpan.FromMinutes(15) };
+        waiting.DefaultRequestHeaders.Add("X-ArchAI-Live", "1");
+        using var response = await waiting.PostAsync(baseUrl + "/live/bind", content).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await ErrorOf(response).ConfigureAwait(false));
+        var reply = JObject.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        if ((bool?)reply["cancelled"] == true) return null;
+        var id = (string?)reply["document"]?["id"] ?? "";
+        var name = (string?)reply["document"]?["name"] ?? "";
+        if (Project?.Id != id) known = new HashSet<string>();
+        Project = (id, name);
+        have = new Dictionary<string, string>();
+        lastPulled = -1;
+        SaveState();
+        return (id, name);
+    }
+
     private void SaveState() => BridgeState.Save(Key, Project == null ? null : new JObject
     {
         ["project"] = new JObject { ["id"] = Project.Value.Id, ["name"] = Project.Value.Name },
