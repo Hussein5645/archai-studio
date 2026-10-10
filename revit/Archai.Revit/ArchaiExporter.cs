@@ -560,7 +560,7 @@ internal sealed class ArchaiExporter
             index++;
             try
             {
-                // Doors and windows in exported walls are rebuilt; ArchAI's own model (live link) never goes back.
+                // Doors and windows in exported walls are rebuilt; ArchAI's own model (Live Bridge) never goes back.
                 if (exported.Contains(Key(element.Id)) || Live.IsLive(element)) continue;
                 var triangles = Triangles(element);
                 if (triangles.Count == 0) continue;

@@ -8,7 +8,7 @@
  *   });
  *
  * A fraction of null means "working, size unknown" (an animated bar). Commands use this module,
- * not React, so it works from command code, the live link and services alike.
+ * not React, so it works from command code, the Live Bridge and services alike.
  */
 
 export interface ProgressTask {

@@ -12,7 +12,7 @@ _live = {"link": None, "tick": None, "queue": [], "signature": None, "since": 0.
 
 
 def _live_tick(delta):
-    """Runs the live link's main-thread work and notices edits to the level."""
+    """Runs the Live Bridge's main-thread work and notices edits to the level."""
     queue, _live["queue"] = _live["queue"], []
     for fn in queue:
         fn()
@@ -30,14 +30,14 @@ def _live_tick(delta):
 
 
 def toggle_live():
-    """Live link with the ArchAI desktop app: the level goes to the open project after each edit, ArchAI's model comes back in the ArchAI Live outliner folder."""
+    """Live Bridge with the ArchAI desktop app: the level goes to the open project after each edit, ArchAI's model comes back in the ArchAI Live outliner folder."""
     if _live["link"] is not None:
         _live["link"].stop()
         _live["link"] = None
         if _live["tick"] is not None:
             unreal.unregister_slate_post_tick_callback(_live["tick"])
             _live["tick"] = None
-        unreal.log("ArchAI live link is off.")
+        unreal.log("ArchAI Live Bridge is off.")
         return
 
     def do_import(name, objects):
@@ -46,10 +46,10 @@ def toggle_live():
         _live["signature"] = scene.signature()
 
     def status(text):
-        unreal.log("ArchAI live link: " + text)
+        unreal.log("ArchAI Live Bridge: " + text)
 
     # Slow syncs (a first sync, a big level) show Unreal's progress dialog; quick ones do not.
-    meter = scene.Progress("live link")
+    meter = scene.Progress("Live Bridge")
     gate = core.DelayedProgress(meter.begin, meter.update, meter.end, _live["queue"].append)
     link = core.LiveLink(scene.document_key().replace("unreal|", "unreal:"), "Unreal", scene.level_name(), scene.live_exchange, do_import, _live["queue"].append, status,
                          progress=gate.report, finished=gate.finished)
@@ -57,7 +57,7 @@ def toggle_live():
     _live["signature"] = scene.signature()
     _live["tick"] = unreal.register_slate_post_tick_callback(_live_tick)
     link.start()
-    unreal.log("ArchAI live link is on: the level goes to the project open in the ArchAI desktop app; its model comes back in the ArchAI Live folder.")
+    unreal.log("ArchAI Live Bridge is on: the level goes to the project open in the ArchAI desktop app; its model comes back in the ArchAI Live folder.")
 
 
 def _message(title, text):
@@ -194,7 +194,7 @@ def register():
     for name, label, tip, command, section in (
         ("ArchaiSend", "Send to ArchAI...", "Save the level's visible static meshes as an .AIR file for ArchAI.", "import archai_unreal.menus as m; m.send()", "Exchange"),
         ("ArchaiOpenAir", "Open .AIR...", "Bring an ArchAI .AIR file into the level.", "import archai_unreal.menus as m; m.open_air()", "Exchange"),
-        ("ArchaiLive", "Live link (on / off)", "Sync the level with the project open in the ArchAI desktop app as you work: your actors go to ArchAI, ArchAI's model comes back in the ArchAI Live outliner folder.", "import archai_unreal.menus as m; m.toggle_live()", "Live"),
+        ("ArchaiLive", "Live Bridge (on / off)", "Sync the level with the project open in the ArchAI desktop app as you work: your actors go to ArchAI, ArchAI's model comes back in the ArchAI Live outliner folder.", "import archai_unreal.menus as m; m.toggle_live()", "Live"),
         ("ArchaiVR", "Open in VR", "Walk through the level in a VR headset (Meta Quest Browser) or any browser. Camera actors become stops.", "import archai_unreal.menus as m; m.open_vr()", "VR"),
         ("ArchaiWeb", "ArchAI on the Web", "Open the ArchAI web app.", "import archai_unreal.archai_core as c; c.open_in_browser(c.WEB_URL)", "Web"),
     ):

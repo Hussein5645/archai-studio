@@ -11,7 +11,7 @@ using AcApp = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 namespace Archai.AutoCAD;
 
 /// <summary>
-/// ARCHAILIVE: the live link with the ArchAI desktop app (Archai.Plugins.LiveLink). The drawing's
+/// ARCHAILIVE: the Live Bridge with the ArchAI desktop app (Archai.Plugins.LiveLink). The drawing's
 /// 3D objects go to the open ArchAI project after each edit; ArchAI's model comes back as blocks
 /// on "ArchAI Live" layers, replaced on every update (and never sent back).
 /// </summary>
@@ -25,12 +25,12 @@ public sealed class LiveCommands
         if (Live.Current != null && Live.Current.Document == doc)
         {
             Live.Current.Dispose();
-            doc.Editor.WriteMessage("\nArchAI live link is off.\n");
+            doc.Editor.WriteMessage("\nArchAI Live Bridge is off.\n");
             return;
         }
         Live.Current?.Dispose();
         Live.Current = new Live(doc);
-        doc.Editor.WriteMessage("\nArchAI live link is on: edits go to the project open in the ArchAI desktop app, and its model comes back on the \"ArchAI Live\" layers. Run ARCHAILIVE again to stop.\n");
+        doc.Editor.WriteMessage("\nArchAI Live Bridge is on: edits go to the project open in the ArchAI desktop app, and its model comes back on the \"ArchAI Live\" layers. Run ARCHAILIVE again to stop.\n");
     }
 }
 
@@ -104,7 +104,7 @@ internal sealed class Live : IDisposable
         while (queue.TryDequeue(out var action))
         {
             try { action(); }
-            catch (System.Exception ex) { Show("Live link: " + ex.Message); }
+            catch (System.Exception ex) { Show("Live Bridge: " + ex.Message); }
         }
     }
 

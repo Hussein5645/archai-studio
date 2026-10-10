@@ -23,6 +23,8 @@ const model = (parts: { meshes?: Mesh[]; walls?: Wall[]; openings?: unknown[]; a
 const sync = (app: TestApp, key: string, body: ReturnType<typeof model>, extra: Record<string, unknown> = {}) =>
   run<BridgeSyncReport>(app, 'bridge-sync', { key, app: body.app, name: 'House', model: body, ...extra });
 const doc = (app: TestApp): ArchaiDocument => app.store.getState().doc;
+/** Elements other than groups (each model sits in a source group). */
+const real = (app: TestApp) => Object.values(doc(app).elements).filter((e) => e.kind !== 'group');
 const bridge = (app: TestApp): BridgeData => doc(app).bridge!;
 /** The element bound to `id` of source `key`. */
 const bound = (app: TestApp, key: string, id: string): Element | undefined => {
@@ -146,7 +148,7 @@ describe('Live Bridge sync', () => {
     const held = bridge(app).held[0]!;
     expect(run<{ deleted: number }>(app, 'bridge-held', { id: held.id, apply: true }).deleted).toBe(35);
     expect(Object.keys(bridge(app).elements).length).toBe(5);
-    expect(Object.values(doc(app).elements).length).toBe(5);
+    expect(real(app).length).toBe(5);
   });
 
   it('answers a repeated change without applying it twice', () => {
@@ -190,10 +192,10 @@ describe('Live Bridge sync', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('replaces the old live link elements once, then binds', () => {
+  it('replaces the old Live Bridge elements once, then binds', () => {
     const app = createTestApp();
     const own = run<string>(app, 'create-rect', { x: 0, y: 0, width: 1000, height: 1000 });
-    // A project synced by the live link before the bridge: tagged elements, no bindings.
+    // A project synced by the Live Bridge before the bridge: tagged elements, no bindings.
     run(app, 'import-revit-model', { model: model({ meshes: [mesh('a'), mesh('b')] }) });
     app.store.setState((state) => {
       const elements = Object.fromEntries(Object.entries(state.doc.elements).map(([id, e]) => [id, id === own ? e : { ...e, meta: { ...e.meta, liveLink: { key: 'rhino:house', app: 'Rhino' } } }]));
@@ -201,7 +203,7 @@ describe('Live Bridge sync', () => {
     });
     const report = sync(app, 'rhino:house', model({ meshes: [mesh('a'), mesh('b')] }));
     expect(report).toMatchObject({ migrated: 2, created: 2 });
-    expect(Object.keys(doc(app).elements).length).toBe(3);
+    expect(real(app).length).toBe(3);
     expect(doc(app).elements[own]).toBeDefined();
   });
 
@@ -250,12 +252,12 @@ describe('Live Bridge sync', () => {
     expect(opening.wallId).toBe(wallId);
   });
 
-  it('keeps the live link command working for older plugins', () => {
+  it('keeps the Live Bridge command working for older plugins', () => {
     const app = createTestApp();
     run(app, 'sync-live-link', { key: 'rhino:house', app: 'Rhino', model: model({ meshes: [mesh('a'), mesh('b')] }) });
     const report = run<{ created: Record<string, number>; removed: number }>(app, 'sync-live-link', { key: 'rhino:house', app: 'Rhino', model: model({ meshes: [mesh('a')] }) });
     expect(report.removed).toBe(1);
-    expect(Object.keys(doc(app).elements).length).toBe(1);
+    expect(real(app).length).toBe(1);
   });
 });
 
@@ -316,7 +318,7 @@ describe('Live Bridge pulls and updates', () => {
     const copy = { ...mesh('obj-7', 0, 'Stair'), archai: stair };
     const linked = sync(app, 'blender:viz', model({ app: 'Blender', meshes: [copy] }));
     expect(linked).toMatchObject({ linked: 1, created: 0 });
-    expect(Object.keys(doc(app).elements).length).toBe(1);
+    expect(real(app).length).toBe(1);
     expect(bridge(app).elements[stair]!.refs['blender:viz']).toMatchObject({ id: 'obj-7', role: 'copy' });
     // No longer a node for Blender (it has its own copy).
     expect(pullPlan(doc(app), 'blender:viz', null).nodes.has(stair)).toBe(false);
@@ -336,5 +338,31 @@ describe('Live Bridge ids', () => {
     expect(report).toMatchObject({ created: 0, deleted: 0 });
     expect(bound(app, 'blender:scene', 'uid-1')!.id).toBe(id);
     expect(bound(app, 'blender:scene', 'Cube')).toBeUndefined();
+  });
+});
+
+describe('Live Bridge models on the board', () => {
+  it('puts each model in a group of its own', () => {
+    const app = createTestApp();
+    sync(app, 'rhino:facade', model({ meshes: [mesh('a'), mesh('b', 900)] }));
+    const group = bridge(app).sources['rhino:facade']!.groupId!;
+    expect(doc(app).elements[group]).toMatchObject({ kind: 'group', name: 'Rhino: House' });
+    expect(bound(app, 'rhino:facade', 'a')!.parentId).toBe(group);
+    // Later elements join the same group.
+    sync(app, 'rhino:facade', model({ meshes: [mesh('a'), mesh('b', 900), mesh('c', 1800)] }));
+    expect(bound(app, 'rhino:facade', 'c')!.parentId).toBe(group);
+  });
+
+  it('converts elements into ArchAI elements, keeping where they came from', () => {
+    const app = createTestApp();
+    sync(app, 'rhino:facade', model({ meshes: [mesh('a', 0, 'Panel')] }));
+    const id = bound(app, 'rhino:facade', 'a')!.id;
+    run(app, 'bridge-convert', { ids: [id] });
+    expect(bridge(app).elements[id]).toMatchObject({ refs: {}, history: [expect.objectContaining({ source: 'rhino:facade', id: 'a', app: 'Rhino' })] });
+    // Rhino's next sync does not touch it: it is ArchAI's now (Rhino's object is new to the link).
+    sync(app, 'rhino:facade', model({ meshes: [mesh('a', 500, 'Panel moved')] }));
+    expect(doc(app).elements[id]).toMatchObject({ name: 'Panel', x: 0 });
+    // Not sent back to Rhino, which still has its original.
+    expect(pullPlan(doc(app), 'rhino:facade', null).nodes.has(id)).toBe(false);
   });
 });

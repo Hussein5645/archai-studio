@@ -1,4 +1,4 @@
-# ArchAI for SketchUp: the live link with the ArchAI desktop app (electron/liveLink.ts in ArchAI;
+# ArchAI for SketchUp: the Live Bridge with the ArchAI desktop app (electron/liveLink.ts in ArchAI;
 # the Ruby twin of Archai.Plugins.LiveLink). While it is on, the model goes to the open ArchAI
 # project a moment after each edit, and ArchAI's model comes back in the "ArchAI Live" group,
 # replaced on every update and never sent back.
@@ -57,7 +57,7 @@ module ArchAI
 
     def self.status(text)
       @link[:status] = text if @link
-      Sketchup.status_text = "ArchAI live link: #{text}"
+      Sketchup.status_text = "ArchAI Live Bridge: #{text}"
     end
 
     def self.request(klass, path, body = nil, timeout = 120)
@@ -173,7 +173,7 @@ module ArchAI
       @link[:last_pulled] = @link[:last_seen] = pulled
       status("Updated from #{project} #{Time.now.strftime('%H:%M:%S')}")
     rescue StandardError => e
-      status("Live link: #{e.message}")
+      status("Live Bridge: #{e.message}")
     ensure
       @busy = false
     end

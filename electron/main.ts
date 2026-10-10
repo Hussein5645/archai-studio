@@ -359,7 +359,7 @@ function registerIpc(): void {
 
   ipcMain.handle(IPC.windowOpenModeling, (_e, raw) => openModelingWindow(WindowOpenModelingInput.parse(raw)));
   ipcMain.handle(IPC.windowOpenRender, () => openRenderWindow());
-  // Live link with the modelling-app plugins: the board's answers.
+  // Live Bridge with the modelling-app plugins: the board's answers.
   ipcMain.handle(IPC.liveReply, (_e, raw) => liveReply(raw));
   // Long tasks (exports, imports, live-link syncs) on the taskbar button of the window doing them.
   ipcMain.handle(IPC.windowSetProgress, (event, raw: unknown) => {
@@ -375,7 +375,7 @@ function registerIpc(): void {
     pendingLink = null;
     return link;
   });
-  // Live link between the board and the Render studio: relay to every other app window.
+  // Live Bridge between the board and the Render studio: relay to every other app window.
   ipcMain.handle(IPC.studioSend, (event, raw) => {
     const message = StudioMessageInput.parse(raw);
     for (const win of BrowserWindow.getAllWindows()) {
@@ -386,8 +386,8 @@ function registerIpc(): void {
 
 /**
  * One ArchAI at a time: the plugins start it with an `archai://live?...` link (registered by the
- * installer and below) when their live link finds it closed; a second launch only brings the
- * running window forward, and the live link opens the plugin's project there.
+ * installer and below) when their Live Bridge finds it closed; a second launch only brings the
+ * running window forward, and the Live Bridge opens the plugin's project there.
  */
 const firstInstance = app.requestSingleInstanceLock();
 if (!firstInstance) app.quit();

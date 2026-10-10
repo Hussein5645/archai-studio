@@ -13,7 +13,7 @@ using Archai.Plugins.Windows;
 namespace Archai.Revit;
 
 /// <summary>
-/// Live link with the ArchAI desktop app (Archai.Plugins.LiveLink): the model goes to the open ArchAI
+/// Live Bridge with the ArchAI desktop app (Archai.Plugins.LiveLink): the model goes to the open ArchAI
 /// project (as Send to ArchAI writes it) after each change, and ArchAI's model comes back as
 /// DirectShapes (Generic Models, ApplicationId "ArchAI Live"), replaced on every update and never
 /// sent back. The button toggles it.
@@ -26,18 +26,18 @@ public sealed class LiveCommand : IExternalCommand
         var doc = data.Application.ActiveUIDocument?.Document;
         if (doc == null || doc.IsFamilyDocument)
         {
-            ArchaiDialog.Show("Live link", "Open a Revit project to link it with ArchAI.");
+            ArchaiDialog.Show("Live Bridge", "Open a Revit project to link it with ArchAI.");
             return Result.Cancelled;
         }
         if (Live.Current != null && Live.Current.Doc.Equals(doc))
         {
             Live.Current.Dispose();
-            ArchaiDialog.Show("Live link", "The live link with ArchAI is off. The ArchAI Live shapes stay in the model until you delete them.");
+            ArchaiDialog.Show("Live Bridge", "The Live Bridge with ArchAI is off. The ArchAI Live shapes stay in the model until you delete them.");
             return Result.Succeeded;
         }
         Live.Current?.Dispose();
         Live.Current = new Live(data.Application, doc);
-        ArchaiDialog.Show("Live link", "The live link with ArchAI is on.\n\nChanges you make go to the project open in the ArchAI desktop app a moment later, and ArchAI's model comes back as ArchAI Live generic models. Click Live link again to stop.");
+        ArchaiDialog.Show("Live Bridge", "The Live Bridge with ArchAI is on.\n\nChanges you make go to the project open in the ArchAI desktop app a moment later, and ArchAI's model comes back as ArchAI Live generic models. Click Live Bridge again to stop.");
         return Result.Succeeded;
     }
 }
@@ -75,7 +75,7 @@ internal sealed class Live : IDisposable, IExternalEventHandler
         link.Start();
     }
 
-    public string GetName() => "ArchAI live link";
+    public string GetName() => "ArchAI Live Bridge";
 
     public void Execute(UIApplication app)
     {
@@ -89,7 +89,7 @@ internal sealed class Live : IDisposable, IExternalEventHandler
     private void Changed(object? sender, DocumentChangedEventArgs e)
     {
         if (link.Importing || !e.GetDocument().Equals(Doc)) return;
-        if (e.GetTransactionNames().Any(n => n == "ArchAI live link")) return;
+        if (e.GetTransactionNames().Any(n => n == "ArchAI Live Bridge")) return;
         link.ModelChanged();
     }
 
@@ -101,7 +101,7 @@ internal sealed class Live : IDisposable, IExternalEventHandler
     /// <summary>ArchAI's model as DirectShapes, replacing the previous ones.</summary>
     private void Replace(AirFile.Contents contents)
     {
-        using var t = new Transaction(Doc, "ArchAI live link");
+        using var t = new Transaction(Doc, "ArchAI Live Bridge");
         t.Start();
         var old = new FilteredElementCollector(Doc).OfClass(typeof(DirectShape)).Cast<DirectShape>().Where(IsLive).Select(s => s.Id).ToList();
         if (old.Count > 0) Doc.Delete(old);

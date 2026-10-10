@@ -1,7 +1,7 @@
 /**
- * Live link / Live Bridge helpers for what a plugin pulls (docs/plugins.md, "Live link";
+ * Live Bridge / Live Bridge helpers for what a plugin pulls (docs/plugins.md, "Live Bridge";
  * docs/live-bridge-proposal.md). The sync itself is the Live Bridge's `bridge-sync` (and the
- * live link's `sync-live-link`, src/bridge/commands.ts).
+ * Live Bridge's `sync-live-link`, src/bridge/commands.ts).
  */
 import type { ArchaiDocument, Element } from '@/document';
 
@@ -10,7 +10,7 @@ export interface LiveLinkTag {
   app: string;
 }
 
-/** The old live link's tag on an element (projects synced before the Live Bridge). */
+/** The old Live Bridge's tag on an element (projects synced before the Live Bridge). */
 export function liveLinkOf(element: Element | undefined | null): LiveLinkTag | null {
   const value = element?.meta?.['liveLink'];
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -31,7 +31,7 @@ export function withoutLink(doc: ArchaiDocument, key: string): ArchaiDocument {
   const excluded = new Set<string>();
   for (const element of Object.values(doc.elements)) {
     const binding = bridge?.elements[element.id];
-    if (liveLinkOf(element)?.key === key || binding?.refs[key] || (binding?.share ?? 'shared') !== 'shared') excluded.add(element.id);
+    if (liveLinkOf(element)?.key === key || binding?.refs[key] || binding?.history?.some((h) => h.source === key) || (binding?.share ?? 'shared') !== 'shared') excluded.add(element.id);
   }
   if (excluded.size === 0) return doc;
   const out = (element: Element): boolean => {

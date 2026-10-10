@@ -19,7 +19,7 @@ _live = {"link": None, "timer": None, "signature": None}
 
 
 class _Main(QtCore.QObject):
-    """Runs functions from the live link's thread on 3ds Max's main thread."""
+    """Runs functions from the Live Bridge's thread on 3ds Max's main thread."""
     call = QtCore.Signal(object)
     status = QtCore.Signal(str)
 
@@ -36,7 +36,7 @@ def live_running():
 
 
 def toggle_live(status=None):
-    """Live link with the ArchAI desktop app: the scene goes to the open project after each edit, ArchAI's model comes back on the ArchAI Live layers."""
+    """Live Bridge with the ArchAI desktop app: the scene goes to the open project after each edit, ArchAI's model comes back on the ArchAI Live layers."""
     global _main
     if _live["link"] is not None:
         _live["link"].stop()
@@ -44,7 +44,7 @@ def toggle_live(status=None):
         if _live["timer"] is not None:
             _live["timer"].stop()
         if status:
-            status("Live link: off")
+            status("Live Bridge: off")
         return False
     if _main is None:
         _main = _Main()
@@ -53,7 +53,7 @@ def toggle_live(status=None):
             _main.status.disconnect()
         except (RuntimeError, TypeError):
             pass
-        _main.status.connect(lambda text: status("Live link: " + text), QtCore.Qt.QueuedConnection)
+        _main.status.connect(lambda text: status("Live Bridge: " + text), QtCore.Qt.QueuedConnection)
 
     def do_import(name, objects):
         scene.clear_live()
@@ -61,7 +61,7 @@ def toggle_live(status=None):
         _live["signature"] = scene.signature()
 
     # Slow syncs (a first sync, a big scene) show 3ds Max's progress bar; quick ones do not.
-    meter = scene.Progress("live link")
+    meter = scene.Progress("Live Bridge")
     gate = core.DelayedProgress(meter.begin, meter.update, meter.end, _main.call.emit)
     link = core.LiveLink(scene.document_key().replace("3dsmax|", "3dsmax:"), "3ds Max", scene.document_name(), scene.live_exchange, do_import, _main.call.emit, _main.status.emit,
                          progress=gate.report, finished=gate.finished)
@@ -243,7 +243,7 @@ class Panel(QtWidgets.QDockWidget):
         for icon, title, text, action in (
             ("export", "Send to ArchAI", "Save the visible scene as an .AIR file for ArchAI.", send),
             ("import", "Open .AIR", "Bring an ArchAI file in, a layer per level.", open_air),
-            ("sync", "Live link", "Sync with the project open in the ArchAI desktop app as you work: your scene goes to ArchAI, ArchAI's model comes back on the ArchAI Live layers. Click again to stop.", lambda: toggle_live(self.status.setText)),
+            ("sync", "Live Bridge", "Sync with the project open in the ArchAI desktop app as you work: your scene goes to ArchAI, ArchAI's model comes back on the ArchAI Live layers. Click again to stop.", lambda: toggle_live(self.status.setText)),
             ("vr", "Open in VR", "Walk through the scene on a headset or in a browser. Cameras become stops.", lambda: open_vr(self.status.setText)),
             ("web", "ArchAI on the web", "Open the ArchAI web app.", lambda: core.open_in_browser(core.WEB_URL)),
         ):

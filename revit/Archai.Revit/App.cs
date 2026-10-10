@@ -37,8 +37,8 @@ public sealed class App : IExternalApplication
         exchange.AddItem(Button("ArchaiImportAir", "Open\n.AIR", typeof(ImportCommand), "import",
             "Bring an ArchAI .AIR document into this project as native Revit elements.",
             "Levels, walls, floors, ceilings, doors, windows, columns, stairs, railings and rooms become native Revit elements; a report lists what was approximated or skipped."));
-        var live = app.CreateRibbonPanel(tab, "Live");
-        live.AddItem(Button("ArchaiLive", "Live\nlink", typeof(LiveCommand), "sync",
+        var live = app.CreateRibbonPanel(tab, "Live Bridge");
+        live.AddItem(Button("ArchaiLive", "Live\nBridge", typeof(LiveCommand), "sync",
             "Sync this model with the project open in the ArchAI desktop app as you work. Click again to stop.",
             "Your changes go to ArchAI a moment after you make them (as Send to ArchAI writes them), and ArchAI's model comes back as ArchAI Live generic models, replaced on every update and never sent back."));
         var vr = app.CreateRibbonPanel(tab, "VR");

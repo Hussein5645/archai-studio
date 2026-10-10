@@ -31,7 +31,7 @@ public static class VrShare
 
     /// <summary>
     /// The service and the ArchAI account to publish with. Publishing needs an account: the plugin
-    /// asks the ArchAI desktop app for the signed-in session over the live link
+    /// asks the ArchAI desktop app for the signed-in session over the Live Bridge
     /// (GET /live/account, see electron/liveLink.ts); when nobody is signed in ArchAI comes to the
     /// front with its sign-in dialog, and when it is not running it is started. Null then, with
     /// <see cref="NoKey"/> saying what to do. ARCHAI_VR_SHARE_URL overrides the service.

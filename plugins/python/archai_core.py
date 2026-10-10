@@ -592,7 +592,7 @@ def share_config(app=""):
     """(url, token): the share service and the ArchAI account to publish with, or None.
 
     Publishing needs an account: the plugin asks the ArchAI desktop app for the signed-in session
-    over the live link (GET /live/account, see electron/liveLink.ts). When nobody is signed in,
+    over the Live Bridge (GET /live/account, see electron/liveLink.ts). When nobody is signed in,
     ArchAI comes to the front with its sign-in dialog; when it is not running it is started.
     NO_KEY then says what to do. ARCHAI_VR_SHARE_URL overrides the service."""
     global NO_KEY
@@ -798,7 +798,7 @@ def vr_message(name, triangles, stops, link):
             "Publishing this model again updates the same link.%s") % (name, stops, "" if stops == 1 else "s", format(triangles, ","), link, heavy)
 
 
-# ---- live link -------------------------------------------------------------------------------
+# ---- Live Bridge -------------------------------------------------------------------------------
 
 LIVE_PORT = 47821
 
@@ -876,7 +876,7 @@ class BridgeDelta(object):
 
 
 class LiveLink(object):
-    """Live link with the ArchAI desktop app (electron/liveLink.ts in ArchAI; the Python twin of
+    """Live Bridge with the ArchAI desktop app (electron/liveLink.ts in ArchAI; the Python twin of
     Archai.Plugins.LiveLink). While running, the host's model goes to the open ArchAI project a
     moment after each change, and ArchAI's model comes back when it changes there.
 
@@ -951,7 +951,7 @@ class LiveLink(object):
         self._have = {}
         self._push_at = 0.0
         self._report("Connecting to ArchAI...")
-        self._thread = threading.Thread(target=self._loop, name="ArchAI live link", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name="ArchAI Live Bridge", daemon=True)
         self._thread.start()
 
     def stop(self):
@@ -1091,9 +1091,9 @@ class LiveLink(object):
                     message = json.loads(error.read().decode("utf-8")).get("error") or str(error)
                 except Exception:
                     message = str(error)
-                self._report("Live link: " + message)
+                self._report("Live Bridge: " + message)
             except Exception as error:  # noqa: BLE001
-                self._report("Live link: %s" % error)
+                self._report("Live Bridge: %s" % error)
             finally:
                 if self._finished:
                     self._finished()
@@ -1158,7 +1158,7 @@ class LiveLink(object):
                 # First connection: linked to the project ArchAI shows.
                 self.bind(document.get("id"))
         elif bridge:
-            # An older ArchAI: the live link as before.
+            # An older ArchAI: the Live Bridge as before.
             bridge = False
         up_to_date = self._last_seen == self._last_pulled and self._last_pulled >= 0
         if push:

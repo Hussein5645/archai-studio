@@ -9,6 +9,7 @@ import { boardRuns } from './boardRuns';
 import { boardDoc } from '@/store';
 import { ElementNode } from './ElementNode';
 import { PeersOverlay } from './PeersOverlay';
+import { BridgeOverlay } from './BridgeOverlay';
 import { Overlay } from './Overlay';
 import { ToolPrompt } from '@/ui/ToolPrompt';
 import { ProfileEditBar } from '@/ui/ProfileEditBar';
@@ -102,6 +103,7 @@ export function Workboard({ onContextMenu }: { onContextMenu: (position: Vec2) =
     >
       <BoardLayers elements={elements} transform={transform} viewStyle={viewStyle} hidePortals={view3dOpen} sheetId={sheetId} />
       <Overlay state={overlay} />
+      <BridgeOverlay />
       <PeersOverlay />
       <ToolPrompt onDone={drawingActions.doneSelecting} />
       <ProfileEditBar />

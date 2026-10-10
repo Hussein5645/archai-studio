@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { nameFromKey } from './board';
 
-describe('live link project names', () => {
+describe('Live Bridge project names', () => {
   it('names a project after the linked model', () => {
     expect(nameFromKey(String.raw`rhino:C:\Projects\House A.3dm`)).toBe('House A');
     expect(nameFromKey('revit:D:/jobs/Tower.rvt')).toBe('Tower');

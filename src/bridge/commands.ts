@@ -43,11 +43,11 @@ export const bridgeSync = defineMutation({
   },
 });
 
-/** The live link's command (plugins 0.4.x and older): a complete model each time. */
+/** The Live Bridge's command (plugins 0.4.x and older): a complete model each time. */
 export const syncLiveLink = defineMutation({
   id: 'sync-live-link',
-  label: 'Live link sync',
-  description: "Live link (protocol 1): applies a plugin's whole model through the Live Bridge (see bridge-sync). Returns the import report.",
+  label: 'Live Bridge sync',
+  description: "Live Bridge (protocol 1): applies a plugin's whole model through the Live Bridge (see bridge-sync). Returns the import report.",
   group: 'document',
   palette: false,
   history: 'record',
@@ -220,6 +220,34 @@ export const bridgeOffer = defineMutation({
   },
 });
 
+export const bridgeConvert = defineMutation({
+  id: 'bridge-convert',
+  label: 'Convert to ArchAI element',
+  description: 'Turns elements that came from connected apps into native ArchAI elements: no longer updated by those apps (nor sent back to them), with where they came from kept as history.',
+  group: 'document',
+  palette: false,
+  history: 'record',
+  input: z.object({ ids: z.array(IdSchema).min(1) }),
+  run: (ctx, input) => {
+    const bridge = bridgeOf(ctx.doc as { bridge?: BridgeData });
+    const at = Date.parse(ctx.now()) || Date.now();
+    let count = 0;
+    for (const id of input.ids) {
+      const binding = bridge.elements[id];
+      if (!binding || Object.keys(binding.refs).length === 0) continue;
+      const history = [...(binding.history ?? [])];
+      for (const [source, ref] of Object.entries(binding.refs)) history.push({ source, app: bridge.sources[source]?.app ?? '', id: ref.id, at });
+      binding.history = history.slice(-20);
+      binding.refs = {};
+      delete binding.owners;
+      bridge.conflicts = bridge.conflicts.filter((c) => c.element !== id);
+      count += 1;
+    }
+    if (count) bridgeLog(ctx, 'archai', `${count} elements converted into ArchAI elements`);
+    return { converted: count };
+  },
+});
+
 export const bridgeForget = defineMutation({
   id: 'bridge-forget-source',
   label: 'Disconnect Live Bridge link',
@@ -232,7 +260,13 @@ export const bridgeForget = defineMutation({
     const bridge = bridgeOf(ctx.doc as { bridge?: BridgeData });
     const source = bridge.sources[input.key];
     if (!source) throw new CommandError('rejected', 'That app is not linked to this project');
-    for (const elementId of Object.keys(bridge.elements)) unbind(bridge, elementId, input.key);
+    const at = Date.parse(ctx.now()) || Date.now();
+    for (const [elementId, binding] of Object.entries(bridge.elements)) {
+      const ref = binding.refs[input.key];
+      // Kept as history: the app still has its originals, so they are not sent back to it.
+      if (ref) binding.history = [...(binding.history ?? []), { source: input.key, app: source.app, id: ref.id, at }].slice(-20);
+      unbind(bridge, elementId, input.key);
+    }
     bridge.conflicts = bridge.conflicts.filter((c) => c.source !== input.key);
     bridge.held = bridge.held.filter((h) => h.source !== input.key);
     delete bridge.sources[input.key];
@@ -241,4 +275,4 @@ export const bridgeForget = defineMutation({
   },
 });
 
-export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeHeld, bridgeSetSource, bridgeSetOwner, bridgeSetShare, bridgeOffer, bridgeForget];
+export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeHeld, bridgeSetSource, bridgeSetOwner, bridgeSetShare, bridgeOffer, bridgeConvert, bridgeForget];

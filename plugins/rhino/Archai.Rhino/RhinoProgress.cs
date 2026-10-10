@@ -61,7 +61,7 @@ internal sealed class RhinoProgress : IDisposable
     }
 }
 
-/// <summary>The live link's sync progress in the status bar, for syncs longer than a second.</summary>
+/// <summary>The Live Bridge's sync progress in the status bar, for syncs longer than a second.</summary>
 internal sealed class RhinoLiveProgress : IDisposable
 {
     private static readonly TimeSpan ShowAfter = TimeSpan.FromSeconds(1);
@@ -92,7 +92,7 @@ internal sealed class RhinoLiveProgress : IDisposable
         lock (gate)
         {
             if (!active || meter != null) return;
-            meter = new RhinoProgress("ArchAI live link");
+            meter = new RhinoProgress("ArchAI Live Bridge");
             meter.Report(text, fraction);
         }
     }

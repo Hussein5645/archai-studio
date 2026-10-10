@@ -27,13 +27,13 @@ export const IPC = {
   windowOpenRender: 'archai:window:openRender',
   /** renderer → main: taskbar progress of long tasks (a fraction, 'indeterminate' or null). */
   windowSetProgress: 'archai:window:setProgress',
-  /** renderer → main: a message for the other windows (board ↔ Render studio live link). */
+  /** renderer → main: a message for the other windows (board ↔ Render studio Live Bridge). */
   studioSend: 'archai:studio:send',
   /** main → renderer: a live-link message from another window. */
   studioEvent: 'archai:studio',
   /** main → renderer: the user picked a menu item bound to a command id. */
   commandEvent: 'archai:command',
-  /** main → board renderer: a request from a modelling app's ArchAI plugin (live link, see electron/liveLink.ts). */
+  /** main → board renderer: a request from a modelling app's ArchAI plugin (Live Bridge, see electron/liveLink.ts). */
   liveEvent: 'archai:live',
   /** board renderer → main: the answer to a live-link request. */
   liveReply: 'archai:live:reply',

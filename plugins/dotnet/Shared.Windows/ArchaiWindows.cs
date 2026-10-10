@@ -193,7 +193,7 @@ public sealed class ArchaiProgress : IDisposable
 }
 
 /// <summary>
-/// The live link's sync progress (<see cref="LiveLink.SyncProgress"/>) in an
+/// The Live Bridge's sync progress (<see cref="LiveLink.SyncProgress"/>) in an
 /// <see cref="ArchaiProgress"/> window, only for syncs that take longer than <see cref="ShowAfter"/>:
 /// the usual quick syncs after an edit never pop a window; a first sync or a big model does.
 /// </summary>
@@ -208,7 +208,7 @@ public sealed class LiveProgress : IDisposable
     private string text = "";
     private double? fraction;
 
-    public LiveProgress(string app) => title = "ArchAI live link · " + app;
+    public LiveProgress(string app) => title = "ArchAI Live Bridge · " + app;
 
     public void Report(string status, double? value)
     {

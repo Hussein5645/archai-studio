@@ -7,7 +7,7 @@
   <CompanyDetails Name="ArchAI" Url="https://archai-studio-six.vercel.app/" />
   <Components Description="ArchAI commands">
     <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R25.0" SeriesMax="R25.9" />
-    <ComponentEntry AppName="ArchAI" Version="0.4.1" ModuleName="./Contents/Archai.AutoCAD.dll" AppDescription="ArchAI tab: Send to ArchAI, Open .AIR, Live link, Open in VR" LoadOnAutoCADStartup="True">
+    <ComponentEntry AppName="ArchAI" Version="0.4.1" ModuleName="./Contents/Archai.AutoCAD.dll" AppDescription="ArchAI tab: Send to ArchAI, Open .AIR, Live Bridge, Open in VR" LoadOnAutoCADStartup="True">
       <Commands GroupName="ARCHAI">
         <Command Local="ARCHAIEXPORT" Global="ARCHAIEXPORT" />
         <Command Local="ARCHAIIMPORT" Global="ARCHAIIMPORT" />

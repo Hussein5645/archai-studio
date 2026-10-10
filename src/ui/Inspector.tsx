@@ -1,4 +1,5 @@
 import { AlignCenter, AlignLeft, AlignRight, Link2, Unlink2 } from 'lucide-react';
+import { BridgeInspector } from '@/bridge/BridgeInspector';
 import { useEffect, useState } from 'react';
 import { useApp, useAppState, useAppStateShallow, useDispatch } from '@/app/context';
 import { elementLod, resizeRuleFor, wallEndsJoined } from '@/assets/arch-meta';
@@ -1016,6 +1017,7 @@ function SelectionInspector({ ids }: { ids: string[] }) {
         </div>
       )}
 
+      <BridgeInspector ids={ids} />
       <Divider />
       <div className={styles.section}>
         <ToggleRow label="Pinned" value={elements.every((e) => e.locked)} mixed={elements.some((e) => e.locked) && !elements.every((e) => e.locked)} onChange={(v) => setProp('locked', v)} />

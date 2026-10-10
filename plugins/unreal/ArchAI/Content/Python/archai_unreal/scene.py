@@ -58,7 +58,7 @@ LIVE_TAG = "ArchAILive"
 
 
 def is_live(actor):
-    """Actors the live link brought in from ArchAI (never sent back)."""
+    """Actors the Live Bridge brought in from ArchAI (never sent back)."""
     try:
         return any(str(tag) == LIVE_TAG for tag in actor.tags)
     except Exception:  # noqa: BLE001
@@ -220,7 +220,7 @@ LIVE_ASSETS = "/Game/ArchAI/Live"
 
 
 def clear_live():
-    """Removes what the live link brought in: its actors and their meshes."""
+    """Removes what the Live Bridge brought in: its actors and their meshes."""
     for actor in _actors.get_all_level_actors():
         if is_live(actor):
             _actors.destroy_actor(actor)
@@ -229,7 +229,7 @@ def clear_live():
 
 
 def signature():
-    """A cheap fingerprint of the level's own static mesh actors, to notice edits (the live link polls it)."""
+    """A cheap fingerprint of the level's own static mesh actors, to notice edits (the Live Bridge polls it)."""
     parts = []
     for actor in _actors.get_all_level_actors():
         if is_live(actor) or not actor.get_components_by_class(unreal.StaticMeshComponent):
@@ -240,7 +240,7 @@ def signature():
 
 
 def live_exchange():
-    """The level for the live link (without what ArchAI sent)."""
+    """The level for the Live Bridge (without what ArchAI sent)."""
     return core.write_exchange(level_name(), "Unreal", unreal.SystemLibrary.get_engine_version(), level_name(), collect(skip_live=True))
 
 

@@ -63,7 +63,7 @@ def material_of(material, cache):
 
 
 def is_live(obj):
-    """Objects the live link brought in from ArchAI (never sent back)."""
+    """Objects the Live Bridge brought in from ArchAI (never sent back)."""
     return bool(obj.get("archai_live")) if obj is not None else False
 
 
@@ -229,7 +229,7 @@ def import_air(context, path, progress=None):
 
 
 def clear_live(context):
-    """Removes what the live link brought in: the ArchAI Live collection and its objects."""
+    """Removes what the Live Bridge brought in: the ArchAI Live collection and its objects."""
     root = bpy.data.collections.get(LIVE_COLLECTION)
     if root is None:
         return
@@ -467,10 +467,10 @@ class ARCHAI_OT_open_url(bpy.types.Operator):
         return {"FINISHED"}
 
 
-# ---- live link ------------------------------------------------------------------------------
+# ---- Live Bridge ------------------------------------------------------------------------------
 
 def _run_main():
-    """Runs what the live link's thread queued for Blender's main thread."""
+    """Runs what the Live Bridge's thread queued for Blender's main thread."""
     queue, _live["queue"] = _live["queue"], []
     for fn in queue:
         fn()
@@ -627,21 +627,21 @@ def stop_live():
 class ARCHAI_OT_live(bpy.types.Operator):
     """Sync this scene with the project open in the ArchAI desktop app as you work: your model goes to ArchAI, ArchAI's model comes back in the "ArchAI Live" collection. Click again to stop"""
     bl_idname = "archai.live"
-    bl_label = "Live link"
+    bl_label = "Live Bridge"
 
     def execute(self, context):
         if _live["link"] is not None:
             stop_live()
-            self.report({"INFO"}, "ArchAI live link is off.")
+            self.report({"INFO"}, "ArchAI Live Bridge is off.")
             return {"FINISHED"}
         key = "blender:" + (bpy.data.filepath or "unsaved")
-        meter = Progress("live link")
+        meter = Progress("Live Bridge")
         gate = core.DelayedProgress(meter.begin, meter.update, meter.end, _on_main)
         _live["link"] = core.LiveLink(key, "Blender", document_name(context), _live_export, _live_import, _on_main, _live_status,
                                       progress=gate.report, finished=gate.finished, apply=_live_apply, all_ids=_live_all_ids)
         bpy.app.handlers.depsgraph_update_post.append(_depsgraph_changed)
         _live["link"].start()
-        self.report({"INFO"}, "ArchAI live link is on.")
+        self.report({"INFO"}, "ArchAI Live Bridge is on.")
         return {"FINISHED"}
 
 
@@ -666,7 +666,7 @@ class ARCHAI_PT_panel(bpy.types.Panel):
         column.operator("archai.send", text="Send to ArchAI", icon_value=icon("export"))
         column.operator("archai.open_air", text="Open .AIR", icon_value=icon("import"))
         running = _live["link"] is not None
-        column.operator("archai.live", text="Stop live link" if running else "Live link", icon_value=icon("sync"), depress=running)
+        column.operator("archai.live", text="Stop Live Bridge" if running else "Live Bridge", icon_value=icon("sync"), depress=running)
         if running and _live["status"]:
             for line in _wrap(_live["status"], 34):
                 layout.label(text=line)

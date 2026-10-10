@@ -498,7 +498,7 @@ module ArchAI
 
     # [url, token]: the share service and the ArchAI account to publish with, or nil. Publishing
     # needs an account: the extension asks the ArchAI desktop app for the signed-in session over
-    # the live link (GET /live/account, see electron/liveLink.ts). When nobody is signed in,
+    # the Live Bridge (GET /live/account, see electron/liveLink.ts). When nobody is signed in,
     # ArchAI comes to the front with its sign-in dialog; when it is not running it is started.
     # Core.no_key then says what to do. ARCHAI_VR_SHARE_URL overrides the service.
     def self.share_config(app = 'SketchUp')

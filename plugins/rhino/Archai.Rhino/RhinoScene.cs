@@ -13,10 +13,10 @@ internal static class RhinoScene
 {
     public static double Millimetres(RhinoDoc doc) => RhinoMath.UnitScale(doc.ModelUnitSystem, UnitSystem.Millimeters);
 
-    /// <summary>Objects the live link brought in from ArchAI (never sent back).</summary>
+    /// <summary>Objects the Live Bridge brought in from ArchAI (never sent back).</summary>
     public static bool IsLive(ObjectAttributes attributes) => attributes.GetUserString("archai.live") == "1";
 
-    /// <summary>Removes what the live link brought in.</summary>
+    /// <summary>Removes what the Live Bridge brought in.</summary>
     public static void ClearLive(RhinoDoc doc)
     {
         var settings = new ObjectEnumeratorSettings { HiddenObjects = true, LockedObjects = true, IncludeLights = false };

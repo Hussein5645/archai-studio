@@ -1,7 +1,7 @@
 /**
- * Live link with the ArchAI plugins (docs/plugins.md, "Live link"): a small HTTP server on the
+ * Live Bridge with the ArchAI plugins (docs/plugins.md, "Live Bridge"): a small HTTP server on the
  * loopback interface that Revit, AutoCAD, Rhino, SketchUp, Blender, 3ds Max and Unreal talk to
- * while their Live link is on. Requests go to the board window, which owns the document:
+ * while their Live Bridge is on. Requests go to the board window, which owns the document:
  *
  *   GET  /live/status?key=K&name=N&app=A[&project=P&protocol=2]
  *                              { app, version, protocol, document, bound, mismatch?, revision, own }
@@ -66,7 +66,7 @@ function readBody(request: IncomingMessage): Promise<Buffer> {
     request.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (size > MAX_BODY) {
-        reject(Object.assign(new Error('The model is too large for the live link'), { status: 413 }));
+        reject(Object.assign(new Error('The model is too large for the Live Bridge'), { status: 413 }));
         request.destroy();
         return;
       }
@@ -85,14 +85,14 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 
 /**
  * Starts the server; `board` returns the window that holds the project. A second ArchAI (port
- * taken) runs without a live link.
+ * taken) runs without a Live Bridge.
  */
 export function startLiveLink(board: () => BrowserWindow | null, version: string): void {
   const server = createServer((request, response) => {
     void (async () => {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1');
       // Browsers always send Origin on cross-site requests: a web page must not reach the model.
-      if (request.headers.origin || request.headers['x-archai-live'] !== '1') return send(response, 403, { error: 'Live link requests come from the ArchAI plugins' });
+      if (request.headers.origin || request.headers['x-archai-live'] !== '1') return send(response, 403, { error: 'Live Bridge requests come from the ArchAI plugins' });
       const key = (url.searchParams.get('key') ?? '').slice(0, 300);
       if (request.method === 'GET' && url.pathname === '/live/status') {
         const status = (await ask(board(), 'status', {
@@ -145,6 +145,6 @@ export function startLiveLink(board: () => BrowserWindow | null, version: string
       else response.destroy();
     });
   });
-  server.on('error', (error) => console.warn(`ArchAI live link is off: ${error.message}`));
+  server.on('error', (error) => console.warn(`ArchAI Live Bridge is off: ${error.message}`));
   server.listen(LIVE_PORT, '127.0.0.1');
 }

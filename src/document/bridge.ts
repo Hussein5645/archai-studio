@@ -41,6 +41,8 @@ export const BridgeSourceSchema = z.object({
   /** Protocol-2 plugins: whether the last push was a complete snapshot of the source model. */
   complete: z.boolean().default(true),
   unsupported: z.array(z.object({ id: z.string().max(200), kind: z.string().max(60), reason: z.string().max(300) })).default([]),
+  /** The group holding this model's elements on the board (one selectable model, hierarchy kept). */
+  groupId: z.string().max(64).optional(),
 });
 export type BridgeSource = z.infer<typeof BridgeSourceSchema>;
 
@@ -73,6 +75,8 @@ export const BridgeBindingSchema = z.object({
   state: FacetHashes.default({}),
   /** Deleted in ArchAI (time): source syncs do not bring it back. */
   removed: z.number().optional(),
+  /** Converted into a native ArchAI element: no longer synced, its sources kept as history. */
+  history: z.array(z.object({ source: Key, app: z.string().max(60), id: z.string().max(200), at: z.number() })).optional(),
   refs: z.record(Key, BridgeRefSchema).default({}),
 });
 export type BridgeBinding = z.infer<typeof BridgeBindingSchema>;

@@ -49,7 +49,7 @@ module ArchAI
     end
   end
 
-  # What the live link brought in from ArchAI (never sent back).
+  # What the Live Bridge brought in from ArchAI (never sent back).
   def self.live?(entity)
     entity.respond_to?(:get_attribute) && entity.get_attribute('ArchAI', 'live') == true
   end
@@ -138,18 +138,18 @@ module ArchAI
     show_result('Open .AIR', e.message)
   end
 
-  # Removes the ArchAI Live group the live link brought in.
+  # Removes the ArchAI Live group the Live Bridge brought in.
   def self.clear_live(model)
     live = model.entities.to_a.select { |entity| live?(entity) }
     return if live.empty?
-    model.start_operation('ArchAI live link', true, false, true)
+    model.start_operation('ArchAI Live Bridge', true, false, true)
     model.entities.erase_entities(live)
     model.commit_operation
   end
 
   # Adds imported objects: a group per element inside one group, a tag per level. Returns the count.
   def self.import_objects(model, name, objects, live = false, progress = nil)
-    model.start_operation(live ? 'ArchAI live link' : 'Open .AIR', true, false, live)
+    model.start_operation(live ? 'ArchAI Live Bridge' : 'Open .AIR', true, false, live)
     materials = {}
     count = 0
     total = objects.length
@@ -300,9 +300,9 @@ module ArchAI
     dialog.show
   end
 
-  # Live link on / off (checked while it runs).
+  # Live Bridge on / off (checked while it runs).
   def self.live_command
-    c = command('Live link', 'Sync this model with the project open in the ArchAI desktop app as you work: your model goes to ArchAI, ArchAI\'s model comes back in the ArchAI Live group. Click again to stop.', 'sync') { Live.toggle }
+    c = command('Live Bridge', 'Sync this model with the project open in the ArchAI desktop app as you work: your model goes to ArchAI, ArchAI\'s model comes back in the ArchAI Live group. Click again to stop.', 'sync') { Live.toggle }
     c.set_validation_proc { Live.running? ? MF_CHECKED : MF_UNCHECKED }
     c
   end

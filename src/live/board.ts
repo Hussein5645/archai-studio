@@ -1,5 +1,5 @@
 /**
- * The board's side of the live link with the modelling-app plugins (electron/liveLink.ts): it
+ * The board's side of the Live Bridge with the modelling-app plugins (electron/liveLink.ts): it
  * answers the plugins' requests against the open project and keeps the list of connected apps
  * for the top bar.
  *
@@ -45,8 +45,12 @@ export interface LiveConnection {
   objects: number;
   /** Revision of the document right after this link's last sync. */
   ownRevision: number | null;
-  /** Live Bridge protocol the plugin speaks (1: live link). */
+  /** Live Bridge protocol the plugin speaks (1: Live Bridge). */
   protocol: number;
+  /** A sync from this app is being applied now. */
+  syncing: boolean;
+  /** The last sync's error, or null. */
+  error: string | null;
 }
 
 /** A link that has not been heard from for this long counts as gone. */
@@ -62,7 +66,7 @@ function changed(): void {
 }
 
 function touch(key: string, patch: Partial<LiveConnection>): LiveConnection {
-  const current = connections.get(key) ?? { key, app: '', name: '', lastSeen: 0, lastSync: null, objects: 0, ownRevision: null, protocol: 1 };
+  const current = connections.get(key) ?? { key, app: '', name: '', lastSeen: 0, lastSync: null, objects: 0, ownRevision: null, protocol: 1, syncing: false, error: null };
   const next = { ...current, ...patch, lastSeen: Date.now() };
   connections = new Map(connections).set(key, next);
   changed();
@@ -75,6 +79,19 @@ export const liveConnections = {
     return () => listeners.delete(listener);
   },
   get: (): LiveConnection[] => snapshot,
+};
+
+/** Links disconnected in ArchAI: their pushes are refused until the app turns its link off. */
+const disconnected = new Set<string>();
+let controls: { resync(key: string): void; disconnect(key: string): void } | null = null;
+
+/** The Live Bridge panel's controls (desktop app with the live server running). */
+export const liveBridgeControls = {
+  available: () => controls !== null,
+  /** Sends that app everything again on its next pull. */
+  resync: (key: string) => controls?.resync(key),
+  /** Unlinks that app: its elements stay as ArchAI elements; it can link again after turning its link off and on. */
+  disconnect: (key: string) => controls?.disconnect(key),
 };
 
 export function useLiveConnections(): LiveConnection[] {
@@ -104,13 +121,13 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
     opening ??= (async () => {
       const remembered = project || (await platform.storage.get(`live:project:${key}`).catch(() => null));
       if (remembered && persistence && (await persistence.openStored(remembered))) {
-        toasts.push({ kind: 'info', message: `Live link: opened ${store.getState().doc.meta.name} for ${app || 'the plugin'}` });
+        toasts.push({ kind: 'info', message: `Live Bridge: opened ${store.getState().doc.meta.name} for ${app || 'the plugin'}` });
         return;
       }
       const created = executor.dispatchSync('new-document', { name: name || nameFromKey(key) });
       if (!created.ok) throw new Error(created.error.message);
       await platform.storage.set(`live:project:${key}`, created.value as string);
-      toasts.push({ kind: 'info', message: `Live link: new project "${name || nameFromKey(key)}" for ${app || 'the plugin'}` });
+      toasts.push({ kind: 'info', message: `Live Bridge: new project "${name || nameFromKey(key)}" for ${app || 'the plugin'}` });
     })().finally(() => {
       opening = null;
     });
@@ -134,6 +151,21 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       changed();
     }
   });
+  controls = {
+    resync: (key) => {
+      sentTo.delete(key);
+      // A new revision without a document change: every app looks, this one gets everything.
+      revision += 1;
+    },
+    disconnect: (key) => {
+      disconnected.add(key);
+      sentTo.delete(key);
+      void executor.dispatch('bridge-forget-source', { key });
+      connections = new Map(connections);
+      connections.delete(key);
+      changed();
+    },
+  };
   // Links that went quiet drop out of the top bar.
   setInterval(() => {
     if (snapshot.some((c) => !isLive(c))) changed();
@@ -177,6 +209,7 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       };
     }
     if (kind === 'stop') {
+      disconnected.delete(key);
       connections = new Map(connections);
       connections.delete(key);
       changed();
@@ -190,6 +223,9 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       if (mismatch) {
         return { protocol: BRIDGE_PROTOCOL, refused: 'project-mismatch', document: current, message: `ArchAI has another project open (${current?.name}). Open the linked project in ArchAI, or link this model to the open one.` };
       }
+      if (disconnected.has(key)) {
+        return { protocol: BRIDGE_PROTOCOL, refused: 'disconnected', document: current, message: 'Disconnected in ArchAI. Turn the Live Bridge off and on again to link this model anew.' };
+      }
       const link = state.doc.bridge?.sources[key];
       if (link && link.mode !== 'two-way') {
         return { protocol: BRIDGE_PROTOCOL, refused: link.mode, document: current, message: link.mode === 'paused' ? 'This link is paused in ArchAI' : 'This link only receives from ArchAI' };
@@ -198,13 +234,15 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       // Shown when the sync takes a moment (a first sync or a big model); quick ones never appear.
       const model = payload['model'] as { elements?: unknown[] } | undefined;
       const count = Array.isArray(model?.elements) ? model.elements.length : null;
-      const task = startProgress(`Live link: ${app}`, count ? `Updating ${count} elements from ${app}` : `Updating the model from ${app}`, null);
+      const task = startProgress(`Live Bridge: ${app}`, count ? `Updating ${count} elements from ${app}` : `Updating the model from ${app}`, null);
       await task.paint();
       const changeId = typeof payload['changeId'] === 'string' ? payload['changeId'].slice(0, 100) : null;
       const deleted = Array.isArray(payload['deleted']) ? payload['deleted'].filter((id): id is string => typeof id === 'string') : [];
+      touch(key, { app, name, syncing: true });
       const result = await executor.dispatch('bridge-sync', { key, app, name, model: payload['model'], complete: payload['complete'] !== false, deleted, changeId });
       if (result.ok) task.done();
       else task.failed();
+      touch(key, { syncing: false, error: result.ok ? null : result.error.message });
       // The project this model syncs with, to reopen next time.
       void platform.storage.set(`live:project:${key}`, state.doc.id).catch(() => undefined);
       if (!result.ok) throw new Error(result.error.message);
@@ -212,14 +250,14 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       const doc = store.getState().doc;
       const objects = Object.values(doc.bridge?.elements ?? {}).filter((binding) => binding.refs[key] && !binding.removed).length;
       touch(key, { app, name, lastSync: Date.now(), objects, ownRevision: revision, protocol });
-      if (first) toasts.push({ kind: 'success', message: `Live link: ${app}${name ? ` (${name})` : ''} is connected, ${objects} objects` });
-      if (report.held) toasts.push({ kind: 'info', message: `Live link: ${report.held} deletions from ${app} wait for your confirmation` });
+      if (first) toasts.push({ kind: 'success', message: `Live Bridge: ${app}${name ? ` (${name})` : ''} is connected, ${objects} objects` });
+      if (report.held) toasts.push({ kind: 'info', message: `Live Bridge: ${report.held} deletions from ${app} wait for your confirmation` });
       const { built, skipped, ...applied } = report;
       return { protocol: BRIDGE_PROTOCOL, ack: changeId, revision, document: { id: doc.id, name: doc.meta.name || 'Untitled' }, applied, created: built ?? {}, skipped: skipped?.length ?? 0 };
     }
     if (kind === 'pull') {
       const app = str(payload['app'], 60) || connections.get(key)?.app || 'the plugin';
-      const task = startProgress(`Live link: ${app}`, `Sending ArchAI's model to ${app}`, null);
+      const task = startProgress(`Live Bridge: ${app}`, `Sending ArchAI's model to ${app}`, null);
       await task.paint();
       const { exportSceneSnapshot } = await import('@/view3d/vrExport');
       let glb: Uint8Array;
@@ -265,7 +303,7 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
     state = store.getState();
     await platform.storage.set(`live:project:${key}`, state.doc.id).catch(() => undefined);
     touch(key, { app, name, protocol: BRIDGE_PROTOCOL, ownRevision: null });
-    toasts.push({ kind: 'info', message: `Live link: ${app || 'the plugin'}${name ? ` (${name})` : ''} is linked to ${state.doc.meta.name || 'this project'}` });
+    toasts.push({ kind: 'info', message: `Live Bridge: ${app || 'the plugin'}${name ? ` (${name})` : ''} is linked to ${state.doc.meta.name || 'this project'}` });
     return { protocol: BRIDGE_PROTOCOL, document: { id: state.doc.id, name: state.doc.meta.name || 'Untitled' }, revision };
   }
 }

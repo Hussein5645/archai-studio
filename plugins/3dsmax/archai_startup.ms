@@ -18,7 +18,7 @@ macroScript ArchaiOpenAir category:"ArchAI" buttonText:"Open .AIR" tooltip:"Brin
 (
     python.Execute "from archai_max import ui; ui.open_air()"
 )
-macroScript ArchaiLive category:"ArchAI" buttonText:"Live link" tooltip:"Sync the scene with the project open in the ArchAI desktop app (click again to stop)"
+macroScript ArchaiLive category:"ArchAI" buttonText:"Live Bridge" tooltip:"Sync the scene with the project open in the ArchAI desktop app (click again to stop)"
 (
     python.Execute "from archai_max import ui; ui.show_panel(); ui.toggle_live(ui._panel.status.setText if ui._panel else None)"
 )

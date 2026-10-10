@@ -3,7 +3,7 @@
  * as before; signed in, the app reaches the cloud (online projects, libraries, VR links).
  *
  * The session lives in host storage (`account`), so the board, the Render window and (through
- * the live link) the plugins share one sign-in. `request()` calls the archai-cloud Worker.
+ * the Live Bridge) the plugins share one sign-in. `request()` calls the archai-cloud Worker.
  */
 import { z } from 'zod';
 import type { Platform } from '@/platform/types';
@@ -70,7 +70,7 @@ export class AccountService {
     return this.current;
   }
 
-  /** Session token for the plugins (live link) and the VR share service; null signed out. */
+  /** Session token for the plugins (Live Bridge) and the VR share service; null signed out. */
   token(): string | null {
     return this.stored?.token ?? null;
   }

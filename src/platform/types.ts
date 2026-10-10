@@ -67,7 +67,7 @@ export interface Platform {
     subscribe(listener: (message: { type: string } & Record<string, unknown>) => void): () => void;
   } | null;
   /**
-   * Live link with the modelling-app plugins (desktop only, see electron/liveLink.ts): the board
+   * Live Bridge with the modelling-app plugins (desktop only, see electron/liveLink.ts): the board
    * answers each request; null elsewhere.
    */
   /**

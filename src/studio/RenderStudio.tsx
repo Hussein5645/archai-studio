@@ -170,7 +170,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
     };
   }, [update, platform]);
 
-  // The live link: say hello until the board answers, then follow its edits.
+  // The Live Bridge: say hello until the board answers, then follow its edits.
   useEffect(() => {
     if (!platform.studio) return;
     const unsubscribe = platform.studio.subscribe((message) => {

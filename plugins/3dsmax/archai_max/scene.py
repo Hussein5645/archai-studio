@@ -86,7 +86,7 @@ LIVE_LAYER = "ArchAI Live"
 
 
 def is_live(node):
-    """Nodes the live link brought in from ArchAI (never sent back)."""
+    """Nodes the Live Bridge brought in from ArchAI (never sent back)."""
     try:
         return bool(rt.getUserProp(node, "archai_live"))
     except Exception:  # noqa: BLE001
@@ -236,7 +236,7 @@ def import_air(path, progress=None):
 
 
 def clear_live():
-    """Removes what the live link brought in."""
+    """Removes what the Live Bridge brought in."""
     with pymxs.undo(False):
         nodes = [node for node in rt.objects if is_live(node)]
         if nodes:
@@ -244,7 +244,7 @@ def clear_live():
 
 
 def signature():
-    """A cheap fingerprint of the scene's own geometry, to notice edits (the live link polls it)."""
+    """A cheap fingerprint of the scene's own geometry, to notice edits (the Live Bridge polls it)."""
     parts = []
     for node in rt.geometry:
         if is_live(node):
@@ -296,7 +296,7 @@ def import_objects(name, objects, live=False, progress=None):
 
 
 def live_exchange():
-    """The scene for the live link (without what ArchAI sent)."""
+    """The scene for the Live Bridge (without what ArchAI sent)."""
     return core.write_exchange(document_name(), "3ds Max", str(rt.maxVersion()[0]), os.path.join(str(rt.maxFilePath), str(rt.maxFileName)), collect(skip_live=True))
 
 

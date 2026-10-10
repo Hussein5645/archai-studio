@@ -8,7 +8,7 @@ using Archai.Plugins;
 namespace Archai.Rhino;
 
 /// <summary>
-/// ArchaiLive: the live link with the ArchAI desktop app (Archai.Plugins.LiveLink). Rhino's model
+/// ArchaiLive: the Live Bridge with the ArchAI desktop app (Archai.Plugins.LiveLink). Rhino's model
 /// goes to the open ArchAI project after each edit; ArchAI's model comes back as meshes on the
 /// "ArchAI Live" layer, replaced on every update (and never sent back).
 /// </summary>
@@ -20,12 +20,12 @@ public sealed class ArchaiLiveCommand : Command
         if (Live.Current != null && Live.Current.Doc == doc)
         {
             Live.Current.Dispose();
-            RhinoApp.WriteLine("ArchAI live link is off.");
+            RhinoApp.WriteLine("ArchAI Live Bridge is off.");
             return Result.Success;
         }
         Live.Current?.Dispose();
         Live.Current = new Live(doc);
-        RhinoApp.WriteLine("ArchAI live link is on: edits go to the project open in the ArchAI desktop app, and its model comes back on the \"ArchAI Live\" layer. Run ArchaiLive again to stop.");
+        RhinoApp.WriteLine("ArchAI Live Bridge is on: edits go to the project open in the ArchAI desktop app, and its model comes back on the \"ArchAI Live\" layer. Run ArchaiLive again to stop.");
         return Result.Success;
     }
 }

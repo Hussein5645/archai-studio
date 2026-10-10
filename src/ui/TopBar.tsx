@@ -2,7 +2,7 @@ import { Boxes, Check, ChevronDown, ExternalLink, FilePlus2, FolderOpen, Home, L
 import { SettingsDialog } from './SettingsDialog';
 import { AccountButton, CloudSyncState } from './AccountButton';
 import { PeersBar } from './PeersBar';
-import { LiveLinkChip } from '@/live/LiveLinkChip';
+import { LiveBridgeChip } from '@/bridge/LiveBridgePanel';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp, useAppState, useAvailable, useDispatch } from '@/app/context';
 import { formatShortcut, IS_MAC } from '@/commands';
@@ -405,7 +405,7 @@ export function TopBar() {
         <kbd className="u-kbd">{shortcut('Mod+K')}</kbd>
       </button>
       <div className={styles.divider} />
-      <LiveLinkChip />
+      <LiveBridgeChip />
       <LinkedModelsMenu />
       <div className={styles.divider} />
       <div className={styles.group}>

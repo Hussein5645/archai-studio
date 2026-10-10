@@ -42,7 +42,7 @@ public sealed class BridgeDelta
 }
 
 /// <summary>
-/// Live link with the ArchAI desktop app (electron/liveLink.ts in ArchAI): while it is on, the
+/// Live Bridge with the ArchAI desktop app (electron/liveLink.ts in ArchAI): while it is on, the
 /// host's model goes to the open ArchAI project a moment after each edit, and ArchAI's model comes
 /// back into the host (into one layer / group the plugin owns) when it changes there.
 ///
@@ -155,7 +155,7 @@ public sealed class LiveLink : IDisposable
         poll = null;
         debounce = null;
         _ = Post("/live/stop", new JObject { ["key"] = Key });
-        Report("Live link is off");
+        Report("Live Bridge is off");
     }
 
     /// <summary>The host's model changed: send it after a short pause.</summary>
@@ -378,7 +378,7 @@ public sealed class LiveLink : IDisposable
         }
         catch (Exception error)
         {
-            Report("Live link: " + error.Message);
+            Report("Live Bridge: " + error.Message);
         }
         finally
         {

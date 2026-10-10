@@ -184,7 +184,7 @@ internal static class DrawingScene
             if (!(tr.GetObject(id, OpenMode.ForRead) is Entity entity) || !entity.Visible) continue;
             var layer = (LayerTableRecord)tr.GetObject(entity.LayerId, OpenMode.ForRead);
             if (layer.IsOff || layer.IsFrozen) continue;
-            // What the live link brought in from ArchAI never goes back.
+            // What the Live Bridge brought in from ArchAI never goes back.
             if (skipLive && layer.Name.StartsWith(Live.LayerPrefix, StringComparison.OrdinalIgnoreCase)) continue;
             var item = new SceneObject
             {
@@ -312,7 +312,7 @@ internal static class DrawingScene
     }
 
     /// <summary>Adds imported objects as blocks (one per element) inserted at the origin, on a layer per level.</summary>
-    /// <summary>Removes what the live link brought in: entities on the ArchAI Live layers and their block definitions.</summary>
+    /// <summary>Removes what the Live Bridge brought in: entities on the ArchAI Live layers and their block definitions.</summary>
     public static void ClearLive(Database db)
     {
         using var tr = db.TransactionManager.StartTransaction();

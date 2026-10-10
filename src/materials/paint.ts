@@ -1,6 +1,6 @@
 /**
  * Applying a material to what was clicked in a 3D view or ArchAI Render, in a paint scope. Kept
- * free of three.js (the board's live link with the studio uses it too).
+ * free of three.js (the board's Live Bridge with the studio uses it too).
  */
 import type { AppServices } from '@/app/context';
 import type { SurfaceTarget } from '@/view3d/SceneView';

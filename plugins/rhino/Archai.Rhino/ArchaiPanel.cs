@@ -12,11 +12,11 @@ public sealed class ArchaiPanel : Panel
 {
     private static readonly Color Muted = Color.FromArgb(0x6B, 0x70, 0x7A);
 
-    private readonly Label status = new Label { Text = "Live link: off", TextColor = Muted, Font = SystemFonts.Default(8.5f), Wrap = WrapMode.Word };
+    private readonly Label status = new Label { Text = "Live Bridge: off", TextColor = Muted, Font = SystemFonts.Default(8.5f), Wrap = WrapMode.Word };
 
     public ArchaiPanel()
     {
-        Live.StatusChanged += text => Application.Instance.AsyncInvoke(() => status.Text = "Live link: " + text);
+        Live.StatusChanged += text => Application.Instance.AsyncInvoke(() => status.Text = "Live Bridge: " + text);
         var header = new StackLayout
         {
             Orientation = Orientation.Horizontal,
@@ -46,7 +46,7 @@ public sealed class ArchaiPanel : Panel
                 new Label { Text = " " },
                 Action("export", "Send to ArchAI", "Save the visible model as an .AIR file for ArchAI.", "_ArchaiSend"),
                 Action("import", "Open .AIR", "Bring an ArchAI file in as meshes, a layer per level.", "_ArchaiOpenAir"),
-                Action("sync", "Live link", "Sync with the project open in the ArchAI desktop app as you work: Rhino's model goes to ArchAI, ArchAI's model comes back on the ArchAI Live layer. Click again to stop.", "_ArchaiLive"),
+                Action("sync", "Live Bridge", "Sync with the project open in the ArchAI desktop app as you work: Rhino's model goes to ArchAI, ArchAI's model comes back on the ArchAI Live layer. Click again to stop.", "_ArchaiLive"),
                 status,
                 Action("vr", "Open in VR", "Walk through the model on a headset or in a browser. Named perspective views become stops.", "_ArchaiVR"),
                 Action("web", "ArchAI on the web", "Open the ArchAI web app.", null),

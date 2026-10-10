@@ -1,5 +1,5 @@
 /**
- * The live link between the board (main window) and ArchAI Render (the studio window), over
+ * The Live Bridge between the board (main window) and ArchAI Render (the studio window), over
  * `platform.studio` (an IPC relay on desktop, a BroadcastChannel between browser tabs):
  *
  *   studio → board  { type: 'hello' }   the studio started (repeated until a scene arrives)

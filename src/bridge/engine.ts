@@ -14,7 +14,7 @@
 import { current, isDraft } from 'immer';
 import type { MutationContext } from '@/commands/contract';
 import { CommandError } from '@/commands/contract';
-import { removeSubtree, snapshot } from '@/commands/helpers';
+import { removeSubtree, snapshot, topIndex } from '@/commands/helpers';
 import { BRIDGE_FACETS, type BridgeBinding, type BridgeData, type BridgeFacet, type BridgeFidelity, type BridgeSource, type Element, type ElementTable, type JsonValue } from '@/document';
 import type { RevitExchange } from '@/revit/exchange';
 import { importRevitModel, type ExchangeCollection, type RevitImportReport } from '@/revit/importRevit';
@@ -52,11 +52,11 @@ export interface BridgeSyncReport {
   conflicts: number;
   rejected: number;
   unsupported: number;
-  /** Elements of the old live link replaced on the first bridge sync. */
+  /** Elements of the old Live Bridge replaced on the first bridge sync. */
   migrated: number;
   /** Objects recognised as the app's editable copies of ArchAI elements (linked, not added). */
   linked: number;
-  /** Elements built by kind (as the live link reported them). */
+  /** Elements built by kind (as the Live Bridge reported them). */
   built: Record<string, number>;
   skipped: RevitImportReport['skipped'];
   /** True when this change had been applied already. */
@@ -167,7 +167,7 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
   const notes: string[] = [];
   const selection = ctx.ui.selection;
 
-  // The old live link's elements (no bindings) are replaced once by bound ones.
+  // The old Live Bridge's elements (no bindings) are replaced once by bound ones.
   const bound = new Map<string, string>();
   for (const [elementId, binding] of Object.entries(bridge.elements)) {
     const ref = binding.refs[key];
@@ -177,7 +177,7 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
     for (const element of Object.values(ctx.doc.elements)) {
       if (ctx.doc.elements[element.id] && legacyTag(element) === key) report.migrated += removeSubtree(ctx.doc, element.id).length;
     }
-    if (report.migrated) notes.push(`replaced ${report.migrated} elements of the old live link`);
+    if (report.migrated) notes.push(`replaced ${report.migrated} elements of the old Live Bridge`);
   }
 
   // Bound elements' facets before the sync: changes the sync itself makes to them (not ArchAI
@@ -281,6 +281,13 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
     const { fidelity, lossy } = FIDELITY[entry.collection];
     bridge.elements[entry.element] = { state: hashesNow, refs: { [key]: { id: entry.id, kind: entry.collection, role: 'origin', fidelity, lossy, base: hashesNow, item: hashes.get(entry.item), archai: hashesNow, placed: placedOf(elements, element), at: now } } };
     report.created += 1;
+    // The model is one group on the board (levels stay where levels live).
+    if (entry.collection !== 'levels' && element.parentId === null) {
+      const group = sourceGroup(ctx, key);
+      const draft = ctx.doc.elements[entry.element]!;
+      draft.parentId = group;
+      draft.index = topIndex(ctx.doc.elements as ElementTable, group);
+    }
   }
 
   // Changed items: facet by facet into the bound element.
@@ -430,12 +437,23 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
   return report;
 }
 
+/** The group holding a source's elements, made (at the origin, so coordinates stay) when missing. */
+export function sourceGroup(ctx: MutationContext, key: string): string {
+  const bridge = ensureBridge(ctx);
+  const source = bridge.sources[key]!;
+  if (source.groupId && ctx.doc.elements[source.groupId]?.kind === 'group') return source.groupId;
+  const id = ctx.ids.next('el');
+  ctx.doc.elements[id] = { id, kind: 'group', parentId: null, index: topIndex(ctx.doc.elements as ElementTable, null), x: 0, y: 0, rotation: 0, visible: true, locked: false, name: `${source.app || 'App'}: ${source.name || 'model'}`.slice(0, 200) };
+  source.groupId = id;
+  return id;
+}
+
 /** Drops one app's ref from an element's binding (and the binding when nothing is left). */
 export function unbind(bridge: BridgeData, elementId: string, key: string): void {
   const binding = bridge.elements[elementId];
   if (!binding) return;
   delete binding.refs[key];
-  if (Object.keys(binding.refs).length === 0 && !binding.share && !binding.owners) delete bridge.elements[elementId];
+  if (Object.keys(binding.refs).length === 0 && !binding.share && !binding.owners && !binding.offers && !binding.history) delete bridge.elements[elementId];
 }
 
 function summary(report: BridgeSyncReport, notes: string[]): string {

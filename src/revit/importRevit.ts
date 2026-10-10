@@ -62,7 +62,7 @@ function rename(ctx: MutationContext, id: string, name: string): void {
 }
 
 export interface RevitImportOptions {
-  /** A material already in the document to use for an exchange material (live link re-syncs). */
+  /** A material already in the document to use for an exchange material (Live Bridge re-syncs). */
   reuseMaterial?: (material: RevitExchange['materials'][number]) => string | undefined;
   /** Recorded on materials this import creates (`Material.source`). */
   materialSource?: (material: RevitExchange['materials'][number]) => string;

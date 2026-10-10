@@ -110,7 +110,8 @@ export function pullPlan(doc: ArchaiDocument, key: string, sent: ReadonlyMap<str
       }
       continue;
     }
-    if ((binding?.share ?? 'shared') !== 'shared') excluded.add(element.id);
+    // Converted from this app: the app still has its original.
+    if ((binding?.share ?? 'shared') !== 'shared' || binding?.history?.some((h) => h.source === key)) excluded.add(element.id);
   }
   const isExcluded = (element: Element): boolean => {
     for (let current: Element | undefined = element; current; current = current.parentId ? elements[current.parentId] : undefined) {
@@ -120,6 +121,8 @@ export function pullPlan(doc: ArchaiDocument, key: string, sent: ReadonlyMap<str
   };
 
   for (const element of Object.values(elements)) {
+    // Groups (a model's source group among them) carry no geometry of their own.
+    if (element.kind === 'group') continue;
     if (plan.nodes.has(element.id)) {
       plan.present.push(element.id);
       plan.sent.set(element.id, plan.nodes.get(element.id)!['hash'] as string);
