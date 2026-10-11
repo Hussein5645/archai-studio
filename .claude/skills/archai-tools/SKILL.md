@@ -17,8 +17,9 @@ this one.
 ## Prerequisites
 
 You need a way to run JavaScript in the ArchAI page (a browser automation tool with a JS-eval
-action, or an MCP browser tool). There is no separate server or API endpoint for this yet — you
-must be driving the actual open tab.
+action, or an MCP browser tool): the command bus is only reachable from inside the open tab. (To
+send 3D geometry into the desktop app or read its model as glTF from a script, without a browser,
+use the `archai-live-bridge` skill instead.)
 
 Confirm the bridge is present before doing anything else:
 

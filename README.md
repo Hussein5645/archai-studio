@@ -157,6 +157,17 @@ The document is the single source of truth and changes only through commands
 ([src/platform/types.ts](src/platform/types.ts)) and nothing else in `src/` talks to Electron or
 Android.
 
+## For AI agents
+
+[.claude/skills](.claude/skills) holds skills that teach AI agents (Claude Code picks them up in
+this repo; other agents can read the `SKILL.md` files) to use ArchAI:
+
+| Skill | For |
+|---|---|
+| [archai-tools](.claude/skills/archai-tools/SKILL.md) | Operating the app through its command bus (`window.__archai`): discover commands, dispatch, read state, undo |
+| [archai-architect](.claude/skills/archai-architect/SKILL.md) | Designing in ArchAI: brief to levels, walls, rooms, stairs, views and sheets; sizing heuristics; review loop |
+| [archai-live-bridge](.claude/skills/archai-live-bridge/SKILL.md) | Sending 3D geometry into the desktop app and reading its model back over the Live Bridge, with a ready Python client |
+
 ## Contributing
 
 Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first; for security
