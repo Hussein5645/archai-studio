@@ -32,6 +32,8 @@ export interface SceneMessage {
   /** Millimetres, scene axes (x, up, board y), as the 3D views store it. */
   camera?: CameraState;
   viewName?: string;
+  /** One-shot request from the D5 import workflow; publishing still follows preview. */
+  prepare?: 'bake';
 }
 
 /** A paint click in the studio: a project material, or a library material to add first. */
@@ -47,7 +49,7 @@ export interface PaintMessage {
 const DEBOUNCE_MS = 400;
 
 let studioOpen = false;
-let pending: { camera?: CameraState; viewName?: string } | null = null;
+let pending: { camera?: CameraState; viewName?: string; prepare?: 'bake' } | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let started: { platform: Platform; store: AppStore; services: Pick<AppServices, 'executor' | 'toasts'> | null } | null = null;
 
@@ -133,9 +135,9 @@ export function canRender(platform: Platform): boolean {
 }
 
 /** Opens ArchAI Render on the document, looking through `camera` when given (a 3D view's camera). */
-export function openRenderStudio(platform: Platform, camera?: CameraState, viewName?: string): void {
+export function openRenderStudio(platform: Platform, camera?: CameraState, viewName?: string, bake = false): void {
   if (!platform.window.openRender) return;
-  pending = camera ? { camera, ...(viewName ? { viewName } : {}) } : null;
+  pending = { ...(camera ? { camera } : {}), ...(viewName ? { viewName } : {}), ...(bake ? { prepare: 'bake' } : {}) };
   platform.window.openRender();
   // Already open: it will not say hello again, so send the view now.
   if (studioOpen) sendScene();

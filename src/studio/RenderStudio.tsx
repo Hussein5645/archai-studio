@@ -56,6 +56,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
   const viewport = useRef<HTMLDivElement>(null);
   const engine = useRef<StudioEngine | null>(null);
   const [scene, setScene] = useState<SceneMessage | null>(null);
+  const [autoBake, setAutoBake] = useState<string | null>(null);
   const [settings, setSettings] = useState<RenderSettings>(defaultSettings);
   const [library, setLibrary] = useState<RenderLibrary | null>(null);
   const [models, setModels] = useState(new Map<string, LibraryModel>());
@@ -100,14 +101,14 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
     if (prepared?.bake) disposeBake(prepared.bake);
     if (prepared?.url) URL.revokeObjectURL(prepared.url);
   }, []);
-  const unlock = () => {
+  const unlock = useCallback(() => {
     locked.current = false;
     if (mounted.current) {
       setJob(null);
       if (pendingScene.current) setScene(pendingScene.current);
     }
     pendingScene.current = null;
-  };
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -133,6 +134,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
     const unsubscribe = platform.studio.subscribe((message) => {
       if (message.type === 'scene') {
         connected = true;
+        setAutoBake((current) => message['prepare'] === 'bake' ? String(message['docId']) : current === message['docId'] ? current : null);
         if (locked.current) pendingScene.current = message as unknown as SceneMessage;
         else setScene(message as unknown as SceneMessage);
       }
@@ -332,7 +334,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
     result.output === output &&
     result.docId === scene?.docId,
   );
-  const prepare = async () => {
+  const prepare = useCallback(async () => {
     const instance = engine.current;
     if (!scene || !instance || !ready || job) return;
     locked.current = true;
@@ -433,7 +435,20 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
       if (controller.current === abort) controller.current = null;
       unlock();
     }
-  };
+  }, [scene, ready, job, signature, output, quality, platform, settings, release, unlock]);
+  useEffect(() => {
+    if (!autoBake || !scene || scene.docId !== autoBake) return;
+    if (settingsLoaded !== scene.docId || job) return;
+    // Schedule the external bake after React commits the loaded scene and preparation controls.
+    const timer = setTimeout(() => {
+      if (output !== 'baked') { setOutput('baked'); return; }
+      if (!ready) return;
+      setAutoBake(null);
+      void prepare();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [autoBake, scene, settingsLoaded, output, ready, job, prepare]);
+
   const publish = async () => {
     if (!scene || !result || !fresh || job || !ready) return;
     if (output === 'baked' && !stops.length) {

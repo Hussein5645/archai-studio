@@ -5,6 +5,7 @@ import { ContextMenu } from '@/ui/ContextMenu';
 import { AssetNamePrompt } from '@/ui/AssetNamePrompt';
 import { DocumentPrompt } from '@/ui/DocumentPrompt';
 import { ExportDialog } from '@/ui/ExportDialog';
+import { D5ImportDialog } from '@/ui/D5ImportDialog';
 import { SheetBar, SheetPanel, SheetToolbar } from '@/sheets/SheetUI';
 import { GraphicsDialog } from '@/ui/GraphicsDialog';
 import { ParametricEditor } from '@/ui/ParametricEditor';
@@ -167,6 +168,7 @@ export function App() {
       <SaveTemplateModal />
       <GraphicsDialog />
       <ExportDialog />
+      <D5ImportDialog />
       <MaterialEditor />
       <ParametricEditor />
       <AccountDialog />

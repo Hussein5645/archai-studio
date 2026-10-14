@@ -15,6 +15,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
       '-',
       'import-image',
       'import-3d-model',
+      'import-d5-folder',
       'open-modeling',
       'import-cai-package',
     ],

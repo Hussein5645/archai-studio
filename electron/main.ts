@@ -26,6 +26,7 @@ import {
   type SaveDocumentResult,
 } from '../shared/ipc.js';
 import { liveReply, startLiveLink } from './liveLink.js';
+import { readD5Folder } from './d5Folder.js';
 
 const DEV_URL = process.env['ARCHAI_DEV_URL'];
 /**
@@ -330,6 +331,17 @@ function registerIpc(): void {
     });
     if (result.canceled) return [];
     return Promise.all(result.filePaths.map(async (file) => ({ name: path.basename(file), bytes: new Uint8Array(await fs.readFile(file)) })));
+  });
+
+  ipcMain.handle(IPC.filesOpenD5Folder, async (_e, raw) => {
+    z.void().parse(raw);
+    if (!mainWindow) return null;
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose D5 project folder', properties: ['openDirectory'],
+    });
+    const folder = result.filePaths[0];
+    if (result.canceled || !folder) return null;
+    return readD5Folder(folder);
   });
 
   ipcMain.handle(IPC.storageGet, (_e, raw) => storageGet(StorageKeyInput.parse(raw).key));

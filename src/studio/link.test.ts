@@ -57,6 +57,13 @@ describe('board link', () => {
     expect(platform.window.openRender).toHaveBeenCalled();
     expect(sent.at(-1)).toMatchObject({ type: 'scene', camera, viewName: 'Entrance' });
 
+    // D5 import requests one bake. Later scene updates must not restart it.
+    openRenderStudio(platform, undefined, undefined, true);
+    expect(sent.at(-1)).toMatchObject({ prepare: 'bake' });
+    store.setState({ doc: { ...store.getState().doc, meta: { ...store.getState().doc.meta, name: 'C' } } });
+    vi.advanceTimersByTime(1000);
+    expect(sent.at(-1)?.['prepare']).toBeUndefined();
+
     receive({ type: 'bye' });
     store.setState({ doc: createEmptyDocument({ ids: sequentialIds(), now: () => '2026-01-01T00:00:00.000Z', name: 'D' }) });
     vi.advanceTimersByTime(1000);

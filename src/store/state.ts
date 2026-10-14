@@ -96,6 +96,7 @@ export interface UiState {
   parametricEditor: { open: boolean; elementId: string | null };
   /** Export dialog, opened on a paper sheet. */
   exportDialog: { open: boolean; paperId: string | null };
+  d5ImportOpen: boolean;
   /** Sheet mode: a paper edited full screen, and the board viewport to return to. */
   sheet: { paperId: string; returnViewport: Viewport; /** A view frame entered for styling, and the elements picked in it. */ viewEdit?: { frameId: string; picked: string[] } | null } | null;
   /** Noise origin that the noise-emitter tool adds sources to. */
@@ -224,6 +225,7 @@ export function createInitialUi(): UiState {
     graphicsDialog: { open: false, type: null, elementId: null },
     parametricEditor: { open: false, elementId: null },
     exportDialog: { open: false, paperId: null },
+    d5ImportOpen: false,
     sheet: null,
     analysisTargetId: null,
     lastTool: null,

@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://archai-studio-six.vercel.app">Open in the browser</a> ·
-  <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-Setup-0.2.2.24.exe">Windows</a> ·
+  <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-Setup-0.2.2.25.exe">Windows</a> ·
   <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-0.2.2.24.apk">Android / Meta Quest</a> ·
   <a href="../../releases">All releases</a> ·
   <a href="docs">Documentation</a> ·

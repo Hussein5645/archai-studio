@@ -14,6 +14,7 @@ export const IPC = {
   filesOpenImage: 'archai:files:openImage',
   filesSaveBinary: 'archai:files:saveBinary',
   filesOpenFiles: 'archai:files:openFiles',
+  filesOpenD5Folder: 'archai:files:openD5Folder',
   storageGet: 'archai:storage:get',
   storageSet: 'archai:storage:set',
   storageDelete: 'archai:storage:delete',
@@ -137,6 +138,12 @@ export interface OpenImageResult {
 export interface OpenFileResult {
   name: string;
   bytes: Uint8Array;
+}
+
+/** D5 relative file names are preserved so resources and textures resolve without collisions. */
+export interface D5FolderResult {
+  name: string;
+  files: OpenFileResult[];
 }
 
 /** The API the preload script exposes on `window.archai`. */

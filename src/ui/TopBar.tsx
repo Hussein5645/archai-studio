@@ -292,6 +292,7 @@ function CommandIconButton({ command, label, children }: { command: string; labe
 }
 
 export function TopBar() {
+  const { platform } = useApp();
   const { locale, setLocale, t } = useI18n();
   const { touchMode, setTouchMode, isTouch } = useTouchMode();
   const dispatch = useDispatch();
@@ -341,6 +342,12 @@ export function TopBar() {
         </button>
         {appMenuOpen && (
           <div className={styles.appMenu} role="menu">
+            {platform.kind === 'electron' && <>
+              <button type="button" role="menuitem" onClick={() => { setAppMenuOpen(false); void dispatch('import-d5-folder'); }} data-testid="menu-import-d5">
+                <span className={styles.menuItemIcon}><FolderOpen size={14} />{t('Import D5 project folder…')}</span>
+              </button>
+              <div className={styles.menuDivider} />
+            </>}
             <div className={styles.menuTitle}><Languages size={14} />{t('Language')}</div>
             <button type="button" role="menuitemradio" aria-checked={locale === 'en'} onClick={() => { setLocale('en'); setAppMenuOpen(false); }}>
               <span>English</span>{locale === 'en' && <Check size={14} />}

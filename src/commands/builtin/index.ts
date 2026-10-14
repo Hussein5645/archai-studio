@@ -31,6 +31,7 @@ import { vrCommands } from './vr';
 import { renderCommands } from './render';
 import { materialCommands } from './materials';
 import { modelCommands } from './models';
+import { d5Commands } from './d5';
 import { importRevitExchange } from '@/revit/importRevit';
 import { bridgeCommands } from '@/bridge/commands';
 import { caiParameterCommands } from './caiParameters';
@@ -79,6 +80,7 @@ export const builtinCommands: AnyCommand[] = [
   ...renderCommands,
   ...materialCommands,
   ...modelCommands,
+  ...d5Commands,
   importRevitExchange,
   ...bridgeCommands,
   ...caiParameterCommands,
