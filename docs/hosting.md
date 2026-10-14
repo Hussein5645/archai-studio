@@ -5,6 +5,7 @@ Where each part of ArchAI runs, and how to deploy it.
 | Part | Where | Address |
 |---|---|---|
 | Web app | Vercel, project `archai-studio`, this repository | https://archai-studio-six.vercel.app |
+| Cloudflare web mirror | Worker with static assets, `archai-studio` | https://archai-studio.mklkoklpp.workers.dev |
 | Old web address | Vercel, project `archai2-0` (the old private repository) | https://archai2-0.vercel.app, redirects every path to the address above |
 | Cloud: accounts, online projects, live boards, libraries | Cloudflare Workers + D1 + R2 + Durable Objects (`workers/archai-cloud`) | https://archai-cloud.mklkoklpp.workers.dev |
 | VR share service | Cloudflare Worker + R2 (`workers/vr-share`) | https://archai-vr-share.mklkoklpp.workers.dev |
@@ -62,6 +63,10 @@ Which viewer VR links open is the `VIEWER_URL` var of the VR share Worker
 [vr-tours.md](vr-tours.md), so another viewer can be used for development.
 
 ## Cloud (Cloudflare)
+
+The web mirror uses a static-assets Worker named `archai-studio` with `dist/` as its assets
+directory and `not_found_handling: single-page-application`. Deploy the same versioned web
+build as the desktop/native packages. The existing Vercel address remains supported.
 
 See [accounts-and-cloud.md](accounts-and-cloud.md): deploying the Workers, the database schema,
 creating accounts, and running all of it locally with `wrangler dev`.

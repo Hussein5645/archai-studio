@@ -108,7 +108,9 @@ const str = (value: unknown, max = 200) => (typeof value === 'string' ? value.sl
 export function nameFromKey(key: string): string {
   const path = key.replace(/^[a-z0-9]+[:|]/i, '').replace(/^unsaved:/, '');
   const file = path.split(/[\\/]/).filter(Boolean).at(-1) ?? '';
-  return file.replace(/\.[^.]+$/, '').trim().slice(0, 120) || 'Live model';
+  return (
+    file.replace(/\.[^.]+$/, '').trim().slice(0, 120) || 'Live model'
+  );
 }
 
 /** Board window, once at boot (desktop app only). */
@@ -138,6 +140,7 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
   let revision = Date.now();
   /** Protocol 2: what each app received in this session (element → hash), so pulls carry changes only. */
   const sentTo = new Map<string, Map<string, string>>();
+  const syncRequests = new Map<string, number>();
   let docId = store.getState().doc.id;
   let lastDoc = store.getState().doc;
   store.subscribe((state) => {
@@ -148,6 +151,7 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       // Another project: every link starts over.
       docId = state.doc.id;
       sentTo.clear();
+      syncRequests.clear();
       connections = new Map([...connections].map(([key, c]) => [key, { ...c, ownRevision: null }]));
       changed();
     }
@@ -155,6 +159,7 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
   controls = {
     resync: (key) => {
       sentTo.delete(key);
+      syncRequests.set(key, (syncRequests.get(key) ?? 0) + 1);
       // A new revision without a document change: every app looks, this one gets everything.
       revision += 1;
     },
@@ -217,6 +222,11 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
         ...(mismatch ? { mismatch: { bound: project, open: state.doc.id } } : {}),
         revision,
         own: connections.get(key)?.ownRevision ?? null,
+        mode: disconnected.has(key)
+          ? 'disconnected'
+          : (state.doc.bridge?.sources[key]?.mode ?? 'two-way'),
+        receives: state.doc.bridge?.sources[key]?.receives ?? 'shared',
+        syncRequest: syncRequests.get(key) ?? 0,
       };
     }
     if (kind === 'stop') {
@@ -227,6 +237,13 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       return { ok: true };
     }
     if (!hasProject) throw new Error('Open a project in ArchAI first');
+    if (kind === 'pull' && (mismatch || disconnected.has(key))) {
+      throw new Error(
+        mismatch
+          ? 'This model is linked to another project. Open its project or use Link to project.'
+          : 'Disconnected in ArchAI. Turn the bridge off and on to reconnect.',
+      );
+    }
     if (kind === 'push') {
       const app = str(payload['app'], 60) || 'App';
       const name = str(payload['name']);
@@ -243,10 +260,24 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       }
       const first = !connections.get(key)?.lastSync;
       // Shown when the sync takes a moment (a first sync or a big model); quick ones never appear.
-      const model = payload['model'] as { elements?: unknown[] } | undefined;
-      const count = Array.isArray(model?.elements) ? model.elements.length : null;
+      const model = payload['model'] as Record<string, unknown> | undefined;
+      const count = model
+        ? ['levels', 'walls', 'openings', 'slabs', 'columns', 'railings', 'rooms', 'meshes'].reduce(
+            (n, name) => n + (Array.isArray(model[name]) ? (model[name] as unknown[]).length : 0),
+            0,
+          )
+        : 0;
       const task = startProgress(`Live Bridge: ${app}`, count ? `Updating ${count} elements from ${app}` : `Updating the model from ${app}`, null);
       await task.paint();
+      if (store.getState().doc.id !== state.doc.id) {
+        task.failed();
+        return {
+          protocol: BRIDGE_PROTOCOL,
+          refused: 'project-mismatch',
+          message:
+            'The project changed while this sync was starting. Sync again with the linked project open.',
+        };
+      }
       const changeId = typeof payload['changeId'] === 'string' ? payload['changeId'].slice(0, 100) : null;
       const deleted = Array.isArray(payload['deleted']) ? payload['deleted'].filter((id): id is string => typeof id === 'string') : [];
       touch(key, { app, name, syncing: true });
@@ -275,31 +306,46 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       await task.paint();
       const { exportSceneSnapshot } = await import('@/view3d/vrExport');
       let glb: Uint8Array;
+      const pullDoc = store.getState().doc;
+      const pullRevision = revision;
       try {
+        if (pullDoc.id !== state.doc.id)
+          throw new Error(
+            'The project changed while the pull was starting. Open the linked project and sync again.',
+          );
         if ((Number(payload['protocol']) || 1) >= 2) {
           // Live Bridge: only what changed since this app's last pull, plus updates for its own objects.
           const fresh = payload['fresh'] === true || payload['fresh'] === '1';
           // Elements the app reset (someone edited ArchAI's version there): sent again.
           const resend = typeof payload['resend'] === 'string' ? payload['resend'].split(',').filter(Boolean).slice(0, 500) : [];
           for (const id of resend) sentTo.get(key)?.delete(id);
-          const plan = pullPlan(state.doc, key, fresh ? null : (sentTo.get(key) ?? null));
-          const document = { id: state.doc.id, name: state.doc.meta.name || 'Untitled' };
+          const plan = pullPlan(pullDoc, key, fresh ? null : (sentTo.get(key) ?? null));
+          const document = { id: pullDoc.id, name: pullDoc.meta.name || 'Untitled' };
           glb = new Uint8Array(
-            await exportSceneSnapshot(flattenSourceGroups(state.doc), catalog, {
+            await exportSceneSnapshot(flattenSourceGroups(pullDoc), catalog, {
               include: (id) => plan.nodes.has(id),
               extras: (id) => plan.nodes.get(id),
-              root: { archaiBridge: { protocol: BRIDGE_PROTOCOL, document, revision, present: plan.present, updates: plan.updates } },
+              root: { archaiBridge: { protocol: BRIDGE_PROTOCOL, document, revision: pullRevision, present: plan.present, updates: plan.updates } },
             }),
           );
+          if (store.getState().doc.id !== pullDoc.id)
+            throw new Error(
+              'The project changed during export. Open the linked project and sync again.',
+          );
           sentTo.set(key, plan.sent);
-        } else glb = new Uint8Array(await exportSceneSnapshot(withoutLink(flattenSourceGroups(state.doc), key), catalog));
+        } else glb = new Uint8Array(await exportSceneSnapshot(withoutLink(flattenSourceGroups(pullDoc), key), catalog),
+          );
+        if (store.getState().doc.id !== pullDoc.id)
+          throw new Error(
+            'The project changed during export. Open the linked project and sync again.',
+          );
         task.done();
       } catch (error) {
         task.failed();
         throw error;
       }
       touch(key, {});
-      return { glb, revision, name: state.doc.meta.name || 'ArchAI' };
+      return { glb, revision: pullRevision, name: pullDoc.meta.name || 'ArchAI' };
     }
     throw new Error(`Unknown live-link request ${String(kind)}`);
   });

@@ -9,6 +9,7 @@ require 'json'
 require 'net/http'
 require 'securerandom'
 require 'uri'
+require 'digest'
 
 module ArchAI
   module Live
@@ -70,6 +71,9 @@ module ArchAI
       @link[:project] = entry['project'].is_a?(Hash) ? entry['project'] : nil
       @link[:known] = (entry['known'] || []).map(&:to_s)
       @link[:have] = {}
+      @link[:sent_meshes] = {}
+      @link[:sync_request] = 0
+      @link[:pending_push] = nil
       @link[:tokens] = {}
       # ArchAI elements reset here (another app's geometry edited in SketchUp): asked again.
       @link[:resend] = []
@@ -123,6 +127,8 @@ module ArchAI
       document = JSON.parse(result.body)['document'] || {}
       @link[:known] = [] if @link[:project] && @link[:project]['id'] != document['id']
       @link[:project] = { 'id' => document['id'].to_s, 'name' => document['name'].to_s }
+      @link[:pending_push] = nil
+      @link[:sent_meshes] = {}
       @link[:have] = {}
       @link[:last_pulled] = -1
       save_bridge
@@ -134,7 +140,7 @@ module ArchAI
       Sketchup.status_text = "ArchAI Live Bridge: #{text}"
     end
 
-    def self.request(klass, path, body = nil, timeout = 120)
+    def self.request(klass, path, body = nil, timeout = 180)
       uri = URI("http://127.0.0.1:#{PORT}#{path}")
       http = Net::HTTP.new(uri.host, uri.port)
       http.open_timeout = 2
@@ -218,11 +224,21 @@ module ArchAI
         bind(info['document']['id']) if @link[:project].nil? || @link[:project]['id'] != info['document']['id']
       end
       up_to_date = @link[:last_seen] == @link[:last_pulled] && @link[:last_pulled] >= 0
-      if @link[:push_at] && now >= @link[:push_at]
-        @link[:push_at] = nil
+      mode = bridge ? (info['mode'] || 'two-way') : 'two-way'
+      if %w[paused disconnected].include?(mode)
+        status(mode == 'paused' ? 'Paused in ArchAI' : 'Disconnected in ArchAI')
+        return
+      end
+      if mode == 'two-way' && info.fetch('syncRequest', 0) != @link[:sync_request]
+        @link[:sync_request] = info.fetch('syncRequest', 0)
+        @link[:sent_meshes] = {}
+        @link[:push_at] = now
+      end
+      if mode == 'two-way' && (@link[:pending_push] || (@link[:push_at] && now >= @link[:push_at]))
+        @link[:push_at] = nil unless @link[:pending_push]
         model = @link[:model]
         reading = ->(text, fraction = nil) { status(fraction ? "#{text} (#{(fraction * 100).round}%)" : text) }
-        exchange = Core.write_exchange(@link[:name], 'SketchUp', Sketchup.version, model.path, ArchAI.collect(model, true, reading))
+        exchange = @link[:pending_push] ? @link[:pending_push][:payload]['model'] : Core.write_exchange(@link[:name], 'SketchUp', Sketchup.version, model.path, ArchAI.collect(model, true, reading))
         status('Sending the model to ArchAI...')
         exchange['app'] = 'SketchUp'
         payload = { 'key' => @link[:key], 'app' => 'SketchUp', 'name' => @link[:name], 'model' => exchange }
@@ -234,6 +250,22 @@ module ArchAI
           deleted = @link[:known] - everything - sent_ids
           payload.merge!('protocol' => 2, 'project' => @link[:project]['id'], 'changeId' => SecureRandom.hex(16), 'complete' => false, 'deleted' => deleted)
         end
+        hashes = {}
+        if @link[:pending_push]
+          pending = @link[:pending_push]
+          payload, hashes, sent_ids, deleted = pending.values_at(:payload, :hashes, :ids, :deleted)
+        else
+          if bridge
+            context = JSON.generate([exchange['materials'] || [], exchange['levels'] || []])
+            changed = (exchange['meshes'] || []).select do |mesh|
+              hash = Digest::SHA256.hexdigest(context + JSON.generate(mesh))
+              hashes[mesh['id']] = hash
+              @link[:sent_meshes][mesh['id']] != hash
+            end
+            payload['model'] = exchange.merge('meshes' => changed)
+          end
+          @link[:pending_push] = { payload: payload, hashes: hashes, ids: sent_ids, deleted: deleted }
+        end
         result = request(Net::HTTP::Post, '/live/push', JSON.generate(payload))
         raise error_of(result) unless result.is_a?(Net::HTTPSuccess)
         reply = JSON.parse(result.body)
@@ -242,9 +274,13 @@ module ArchAI
           return
         end
         if bridge
+          raise 'ArchAI did not acknowledge this change; it remains pending' unless reply['ack'] == payload['changeId']
+          @link[:sent_meshes].merge!(hashes)
+          deleted.each { |id| @link[:sent_meshes].delete(id) }
           @link[:known] = ((@link[:known] - deleted) + sent_ids).uniq
           save_bridge
         end
+        @link[:pending_push] = nil
         revision = reply['revision'].to_i
         # Up to date before this push, and nothing else changed in ArchAI meanwhile.
         @link[:last_pulled] = revision if up_to_date && (reply['before'].nil? || reply['before'].to_i == @link[:last_seen])

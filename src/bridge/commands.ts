@@ -169,7 +169,9 @@ export const bridgeSetOwner = defineMutation({
       if (!ctx.doc.elements[id]) continue;
       const origin = originOf(bridge.elements[id]);
       if (origin && input.owner && !['origin', 'archai', 'shared', origin].includes(input.owner)) {
-        throw new CommandError('rejected', "Another app cannot decide an element that came from an app. Convert it into an ArchAI element first.");
+        throw new CommandError('rejected',
+          'Another app cannot decide an element that came from an app. Convert it into an ArchAI element first.',
+        );
       }
       const binding = (bridge.elements[id] ??= { state: {}, refs: {} });
       const owners = { ...(binding.owners ?? {}) };
@@ -177,6 +179,38 @@ export const bridgeSetOwner = defineMutation({
       else owners[input.facet] = input.owner;
       if (Object.keys(owners).length) binding.owners = owners;
       else delete binding.owners;
+    }
+    return { ok: true };
+  },
+});
+
+export const bridgeSetControl = defineMutation({
+  id: 'bridge-set-control',
+  label: 'Live Bridge control preset',
+  description:
+    'Controls a selection together: source-owned, placement and names in ArchAI, or shared with conflicts.',
+  group: 'document',
+  palette: false,
+  history: 'record',
+  input: z.object({
+    ids: z.array(IdSchema).min(1),
+    control: z.enum(['source', 'placement', 'shared']),
+  }),
+  run: (ctx, input) => {
+    const bridge = ensureBridge(ctx);
+    for (const id of input.ids) {
+      if (!ctx.doc.elements[id]) continue;
+      const binding = (bridge.elements[id] ??= { state: {}, refs: {} });
+      binding.owners = Object.fromEntries(
+        BRIDGE_FACETS.map((facet) => [
+          facet,
+          input.control === 'shared'
+            ? 'shared'
+            : input.control === 'placement' && (facet === 'transform' || facet === 'metadata')
+              ? 'archai'
+              : 'origin',
+        ]),
+      );
     }
     return { ok: true };
   },
@@ -342,4 +376,6 @@ export const bridgeForget = defineMutation({
   },
 });
 
-export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeHeld, bridgeSetSource, bridgeSetOwner, bridgeSetShare, bridgeOffer, bridgeConvert, bridgeRevert, bridgeForget];
+export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeHeld, bridgeSetSource, bridgeSetOwner,
+  bridgeSetControl,
+  bridgeSetShare, bridgeOffer, bridgeConvert, bridgeRevert, bridgeForget];

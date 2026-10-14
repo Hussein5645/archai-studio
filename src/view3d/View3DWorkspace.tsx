@@ -1,4 +1,4 @@
-import { Brush, Glasses, MapPin, Pipette, Sparkles, X } from 'lucide-react';
+import { Brush, Glasses, MapPin, Pipette, X } from 'lucide-react';
 import { SceneMaterialTools } from '@/ui/SceneMaterialTools';
 import { useEffect, useRef, useState } from 'react';
 import { useApp, useAppState, useDispatch } from '@/app/context';
@@ -166,17 +166,14 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
               <MapPin size={13} />
               {t('VR stop')}
             </button>
-            <button type="button" onClick={() => void publish()} disabled={vr?.kind === 'busy'} title={t('Upload the model with its stops and get a link for a VR headset')}>
-              <Glasses size={13} />
-              {t('VR link')}
-            </button>
+            <details className={styles.vrMenu}>
+              <summary><Glasses size={13} /> {t('VR')}</summary>
+              <div role="group" aria-label={t('VR publishing')}>
+                <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); void publish(); }} disabled={vr?.kind === 'busy'}>{t('Export Raw VR Link')}</button>
+                <button type="button" disabled={!renderAvailable || vr?.kind === 'busy'} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); openRenderStudio(platform, view.current?.getCamera(), portal?.name); }} data-testid="open-render-studio" title={renderAvailable ? t('Prepare, bake and publish the project scene') : t('VR preparation requires the ArchAI desktop app')}>{t('Prepare Rendered VR Link')}</button>
+              </div>
+            </details>
           </>
-        )}
-        {!isSection && renderAvailable && (
-          <button type="button" onClick={() => openRenderStudio(platform, view.current?.getCamera(), portal?.name)} title={t('Open this view in ArchAI Render (path tracing, sun and sky, entourage)')} data-testid="open-render-studio">
-            <Sparkles size={13} />
-            {t('Render')}
-          </button>
         )}
         {!isSection && (
           <>

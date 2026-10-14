@@ -27,6 +27,14 @@
   color: inherit;
   cursor: pointer;
 }
+.studio button:disabled { opacity: .45; cursor: default; }
+.preparationSettings { border: 0; margin: 0; padding: 14px; min-width: 0; overflow-y: auto; height: 100%; box-sizing: border-box; }
+.error { color: #ffb4a8; overflow-wrap: anywhere; }
+.published { display: grid; gap: 8px; }
+.published a { color: #8db8ff; }
+.panoramaPreview { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; background: #16171a; padding: 16px; }
+.panoramaPreview img { width: 100%; max-height: calc(100% - 60px); object-fit: contain; }
+.studio progress { width: 100%; accent-color: var(--accent); }
 
 .top {
   grid-area: top;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Mesh } from 'three';
 import { createTestApp, run } from '@/test/harness';
 import { buildScene, type Built } from './geometry';
 
@@ -6,6 +7,46 @@ const options = { lod: 'high' as const, models: new Map(), textures: new Map() }
 const byId = (built: Built[]) => new Map(built.map((item) => [item.id, item]));
 
 describe('incremental scene builds', () => {
+  it('selects geometry before construction while retaining hosted opening context', () => {
+    const app = createTestApp();
+    const wall = run<string>(app, 'create-arch-element', {
+      tool: 'wall',
+      points: [
+        [0, 0],
+        [3000, 0],
+      ],
+    });
+    run(app, 'create-arch-element', {
+      tool: 'door',
+      x: 1050,
+      y: 0,
+      host: { wallId: wall, segment: 0, along: 1500 },
+      rotation: 0,
+    });
+    run(app, 'create-rect', {
+      x: 10000,
+      y: 0,
+      width: 100,
+      height: 100,
+      meta: { solid: { height: 1000 } },
+    });
+    const doc = app.store.getState().doc;
+    const all = buildScene(doc, options);
+    const selected = buildScene(doc, { ...options, include: (id) => id === wall });
+    expect(selected.map((entry) => entry.id)).toEqual([wall]);
+    const vertices = (items: Built[]) => {
+      const counts: number[] = [];
+      items
+        .find((item) => item.id === wall)!
+        .object.traverse((object) => {
+        const mesh = object as Mesh;
+          if (mesh.isMesh) counts.push(mesh.geometry.getAttribute('position').count);
+        });
+      return counts;
+    };
+    expect(vertices(selected)).toEqual(vertices(all));
+    expect(buildScene(doc, { ...options, include: () => false })).toHaveLength(0);
+  });
   it('reuses untouched objects and rebuilds edited ones and the walls their openings cut', () => {
     const app = createTestApp();
     const wallId = run<string>(app, 'create-arch-element', { tool: 'wall', points: [[0, 0], [3000, 0]] });

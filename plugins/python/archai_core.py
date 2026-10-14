@@ -13,6 +13,7 @@ this one file.
 import base64
 import datetime
 import json
+import hashlib
 import math
 import os
 import re
@@ -23,7 +24,7 @@ import urllib.request
 import webbrowser
 from array import array
 
-VERSION = "0.5.2"
+VERSION = "0.5.3"
 WEB_URL = "https://archai-studio-six.vercel.app/"
 DEFAULT_SHARE_URL = "https://archai-vr-share.mklkoklpp.workers.dev"
 MAX_MODEL_BYTES = 95 * 1024 * 1024
@@ -875,6 +876,21 @@ class BridgeDelta(object):
         return not (self.nodes or self.removed or self.updates or self.fresh)
 
 
+def bridge_mesh_delta(exchange, previous):
+    """Filter only acknowledged meshes; dependencies participate, hiding deletes nothing.
+    Callers commit returned hashes only after the corresponding push is acknowledged."""
+    dependencies = json.dumps([exchange.get("materials") or [], exchange.get("levels") or []], sort_keys=True, separators=(",", ":"))
+    hashes = {}
+    meshes = []
+    for mesh in exchange.get("meshes") or []:
+        ident = mesh.get("id")
+        digest = hashlib.sha256((dependencies + json.dumps(mesh, sort_keys=True, separators=(",", ":"))).encode("utf-8")).hexdigest()
+        hashes[ident] = digest
+        if previous.get(ident) != digest:
+            meshes.append(mesh)
+    return dict(exchange, meshes=meshes), hashes
+
+
 class LiveLink(object):
     """Live Bridge with the ArchAI desktop app (electron/liveLink.ts in ArchAI; the Python twin of
     Archai.Plugins.LiveLink). While running, the host's model goes to the open ArchAI project a
@@ -920,6 +936,9 @@ class LiveLink(object):
         # What ArchAI sent: element id -> hash; update tokens already applied.
         self._have = {}
         self._tokens = set()
+        self._sent_meshes = {}
+        self._sync_request = 0
+        self._pending_push = None
         # ArchAI elements the host reset (edited there though they are another app's): asked again.
         self._resend = set()
         self.paused = False
@@ -953,6 +972,7 @@ class LiveLink(object):
         self._last_pulled = -1
         self._have = {}
         self._push_at = 0.0
+        self._sent_meshes = {}
         self._report("Connecting to ArchAI...")
         self._thread = threading.Thread(target=self._loop, name="ArchAI Live Bridge", daemon=True)
         self._thread.start()
@@ -1159,6 +1179,8 @@ class LiveLink(object):
         return document
 
     def _remember_project(self, document):
+        self._pending_push = None
+        self._sent_meshes = {}
         if self.project and document.get("id") != self.project.get("id"):
             # Another project: it has none of this model yet.
             self._known = set()
@@ -1201,18 +1223,28 @@ class LiveLink(object):
         elif bridge:
             # An older ArchAI: the Live Bridge as before.
             bridge = False
-        if self.paused:
+        mode = status.get("mode", "two-way") if bridge else "two-way"
+        if self.paused or mode in ("paused", "disconnected"):
+            self._report("Paused in ArchAI" if mode == "paused" else "Disconnected in ArchAI" if mode == "disconnected" else "Paused")
             # Still seen by ArchAI, but nothing is sent or received.
             return
         up_to_date = self._last_seen == self._last_pulled and self._last_pulled >= 0
-        if push:
-            with self._lock:
-                self._push_at = None
+        request = status.get("syncRequest", 0)
+        if request != self._sync_request and mode == "two-way":
+            self._sync_request = request
+            self._sent_meshes = {}
+            push = True
+        if (push or self._pending_push) and mode == "two-way":
+            if not self._pending_push:
+                with self._lock:
+                    self._push_at = None
             self._phase("Reading the %s model" % self.app, None)
 
             def read():
                 return self._export(), (self._all_ids() if bridge and self._all_ids else None)
-            exchange, everything = self._main(read)
+            exchange, everything = (None, None) if self._pending_push else self._main(read)
+            if self._pending_push:
+                exchange = self._pending_push[0]["model"]
             if exchange is not None:
                 exchange["app"] = self.app
                 body = {"key": self.key, "app": self.app, "name": self.name, "model": exchange}
@@ -1220,12 +1252,19 @@ class LiveLink(object):
                 for collection in ("levels", "walls", "openings", "slabs", "columns", "railings", "rooms", "meshes"):
                     sent_ids.update(item.get("id") for item in exchange.get(collection) or [] if item.get("id"))
                 deleted = []
+                complete = everything is None
                 if bridge:
-                    complete = everything is None
                     if not complete:
                         everything = set(everything)
                         deleted = sorted(i for i in self._known if i not in everything and i not in sent_ids)
                     body.update({"protocol": 2, "project": self.project["id"], "changeId": uuid.uuid4().hex, "complete": complete, "deleted": deleted})
+                hashes = {}
+                if bridge and not complete and not self._pending_push:
+                    body["model"], hashes = bridge_mesh_delta(exchange, self._sent_meshes)
+                if self._pending_push:
+                    body, hashes, sent_ids, deleted, complete = self._pending_push
+                else:
+                    self._pending_push = (body, hashes, sent_ids, deleted, complete)
                 payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
 
                 def sent(done, total):
@@ -1245,9 +1284,15 @@ class LiveLink(object):
                 if reply.get("refused"):
                     self._report(reply.get("message") or "ArchAI did not take the model")
                     return
+                if bridge and reply.get("ack") != body.get("changeId"):
+                    raise RuntimeError("ArchAI did not acknowledge this change; it remains pending")
                 if bridge:
+                    self._sent_meshes.update(hashes)
+                    for ident in deleted:
+                        self._sent_meshes.pop(ident, None)
                     self._known = sent_ids if complete else (self._known - set(deleted)) | sent_ids
                     self._save_state()
+                self._pending_push = None
                 revision = reply.get("revision", 0)
                 # Up to date before this push, and nothing else changed in ArchAI meanwhile.
                 before = reply.get("before")

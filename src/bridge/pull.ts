@@ -13,7 +13,7 @@
 import { invert, multiply, worldMatrix, type Mat } from '@/geometry';
 import type { ArchaiDocument, BridgeFacet, Element, ElementTable, JsonValue } from '@/document';
 import { instanceElevationOf } from '@/view3d/geometry';
-import { editableElsewhere, ownerOf } from './engine';
+import { editableElsewhere, ownerOf, placedOf } from './engine';
 import { childLookup, facetHashes, hashValue } from './facets';
 import { liveLinkOf } from '@/live/sync';
 
@@ -81,7 +81,7 @@ export function pullPlan(doc: ArchaiDocument, key: string, sent: ReadonlyMap<str
     }
   }
   // What this app may edit is part of the node too: an offer sends the element again, as editable.
-  const nodeHash = (id: string) => hashValue([hashOf(id), [...(related.get(id) ?? [])].sort().map((other) => hashOf(other)), bridge?.elements[id]?.offers?.[key] ?? null]);
+  const nodeHash = (id: string) => hashValue([hashOf(id), placedOf(elements, elements[id]!), [...(related.get(id) ?? [])].sort().map((other) => hashOf(other)), bridge?.elements[id]?.offers?.[key] ?? null]);
 
   /** Excluded with everything below them: the app's own elements and elements not shared. */
   const excluded = new Set<string>();
@@ -96,8 +96,9 @@ export function pullPlan(doc: ArchaiDocument, key: string, sent: ReadonlyMap<str
       excluded.add(element.id);
       const hashes = hashOf(element.id);
       const writable = (facet: BridgeFacet) => hashes[facet] !== ref.archai[facet] && ownerOf(bridge!, binding, facet) !== key;
-      const update: BridgeUpdate = { ref: ref.id, kind: ref.kind, element: element.id, token: hashValue([hashes, ref.archai]) };
-      if (writable('transform') && ref.placed) {
+      const placement = placedOf(elements, element);
+      const update: BridgeUpdate = { ref: ref.id, kind: ref.kind, element: element.id, token: hashValue([hashes, ref.archai, placement]) };
+      if (ownerOf(bridge!, binding, 'transform') !== key && ref.placed) {
         const move = translationBetween(ref.placed, worldMatrix(elements, element), instanceElevationOf(element, elements));
         if (move) update.move = move;
       }

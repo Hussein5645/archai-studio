@@ -95,6 +95,67 @@ def vr_tour():
     assert names == ["box", "Ground"], names
 
 
+@test
+def bridge_mesh_deltas():
+    exchange = core.write_exchange("Test", "Blender", "test", "", [box("a"), box("b")])
+    first, hashes = core.bridge_mesh_delta(exchange, {})
+    assert len(first["meshes"]) == 2
+    same, unchanged = core.bridge_mesh_delta(exchange, hashes)
+    assert same["meshes"] == [] and unchanged == hashes
+    # A hidden object stays known; moving / naming another one sends just that object.
+    exchange["meshes"][0]["name"] = "Changed"
+    delta, _ = core.bridge_mesh_delta(exchange, hashes)
+    assert [m["id"] for m in delta["meshes"]] == ["a"]
+    assert len(exchange["meshes"]) == 2  # export data is never mutated
+    exchange["levels"] = [{"id": "ground", "elevation": 100}]
+    dependencies, _ = core.bridge_mesh_delta(exchange, hashes)
+    assert len(dependencies["meshes"]) == 2
+
+
+@test
+def bridge_pending_retry_and_pause():
+    from unittest.mock import patch
+    exported = []
+    status = {"protocol": 2, "document": {"id": "test-project", "name": "Test"}, "revision": 1, "mode": "paused"}
+    exchange = core.write_exchange("Test", "Blender", "test", "", [box()])
+    def export():
+        exported.append(True)
+        return exchange
+    with patch.object(core, "bridge_entry", return_value={}):
+        link = core.LiveLink("test-retry", "Test", "Test", export, None, lambda fn: fn(), apply=lambda delta: None, all_ids=lambda: ["box"])
+    link.project = status["document"]
+    link._request = lambda *args, **kwargs: (200, {}, core.json.dumps(status).encode())
+    link._save_state = lambda: None
+    link._pull = lambda path: (204, {}, b"")
+    link._push_at = 123
+    link._tick(True)
+    assert exported == [] and link._push_at == 123
+    status["mode"] = "read-only"
+    link._tick(True)
+    assert exported == [] and link._push_at == 123
+    status["mode"] = "two-way"
+    sent = []
+    def failed_send(url, method, payload, headers, **kwargs):
+        sent.append(core.json.loads(payload))
+        raise OSError("reply lost")
+    with patch.object(core, "_send", side_effect=failed_send):
+        try:
+            link._tick(True)
+            raise AssertionError("Expected lost reply")
+        except OSError:
+            pass
+    assert len(exported) == 1 and link._pending_push is not None
+    link._push_at = 456  # a newer host edit must survive retry of the previous batch
+    def acknowledged(url, method, payload, headers, **kwargs):
+        body = core.json.loads(payload)
+        sent.append(body)
+        return 200, {}, core.json.dumps({"ack": body["changeId"], "revision": 2}).encode()
+    with patch.object(core, "_send", side_effect=acknowledged):
+        link._tick(False)
+    assert len(exported) == 1 and len({body["changeId"] for body in sent}) == 1
+    assert link._pending_push is None and link._push_at == 456 and link._known == {"box"}
+
+
 failed = 0
 for t in tests:
     try:

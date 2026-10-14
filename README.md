@@ -11,8 +11,8 @@
 
 <p align="center">
   <a href="https://archai-studio-six.vercel.app">Open in the browser</a> ·
-  <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-Setup-0.2.2.19.exe">Windows</a> ·
-  <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-0.2.2.19.apk">Android / Meta Quest</a> ·
+  <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-Setup-0.2.2.20.exe">Windows</a> ·
+  <a href="https://pub-56da091dd4ec4d00a47cd0aaa54fcef1.r2.dev/ArchAI-0.2.2.20.apk">Android / Meta Quest</a> ·
   <a href="../../releases">All releases</a> ·
   <a href="docs">Documentation</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
@@ -36,7 +36,7 @@ keeps the app small, testable and easy to automate.
 | **Parametric design** | Node graphs that drive geometry and parameters ([docs](docs/parametric-design.md)). |
 | **Site analysis** | Maps, site boundaries, massing, sun and wind studies ([analysis](src/analysis)). |
 | **Sheets and export** | Sheets with views, title blocks and scale bars; PDF, image, DXF/CAD and glTF export ([docs](docs/sheets-and-export.md)). |
-| **ArchAI Render** | Real-time and path-traced rendering with sun, skies, PBR materials and entourage ([docs](docs/render-studio.md)). |
+| **VR Preparation** | Prepare the project scene, bake static lighting, and publish walkable VR or rendered 360 links ([docs](docs/render-studio.md)). |
 | **VR tours** | Place stops and publish a short link that opens in a Meta Quest or any browser ([docs](docs/vr-tours.md)). |
 | **Plugins** | Revit, AutoCAD, Rhino, SketchUp, Blender, 3ds Max and Unreal: send models, open `.AIR` files, open in VR ([docs](docs/plugins.md)). |
 | **Live Bridge** | Several apps linked to one project at once: element-by-element sync, each app in its colour, who owns what per part of an element, conflicts to resolve, safe deletions ([docs](docs/live-bridge.md), [status by app](docs/live-bridge.md#status-by-app-2026-10-11-archai-02219-plugins-052)). |

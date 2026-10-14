@@ -12,17 +12,17 @@ import type { AppStore } from '@/store';
 import type { ArchaiDocument } from '@/document';
 import { BRIDGE_FACETS } from '@/document';
 import { originOf, ownerOf } from './engine';
-import { childLookup, facetHashes } from './facets';
+import { childLookup, facetHashes, type ChildLookup } from './facets';
 
 /** Whether an element is an app's and differs (in parts the app decides) from what the app sent. */
-export function needsRevert(doc: ArchaiDocument, id: string): boolean {
+export function needsRevert(doc: ArchaiDocument, id: string, children?: ChildLookup): boolean {
   const bridge = doc.bridge;
   const binding = bridge?.elements[id];
   const origin = originOf(binding);
   if (!bridge || !binding || !origin || !binding.snapshot) return false;
   const element = doc.elements[id];
   if (!element) return true;
-  const hashes = facetHashes(childLookup(doc.elements), element);
+  const hashes = facetHashes(children ?? childLookup(doc.elements), element);
   return BRIDGE_FACETS.some((facet) => ownerOf(bridge, binding, facet) === origin && hashes[facet] !== binding.state[facet]);
 }
 
@@ -41,7 +41,8 @@ export function startBridgeGuard(executor: CommandExecutor, store: AppStore, not
       touched.clear();
       const doc = store.getState().doc;
       if (!doc.bridge) return;
-      const revert = ids.filter((id) => needsRevert(doc, id));
+      const children = childLookup(doc.elements);
+      const revert = ids.filter((id) => needsRevert(doc, id, children));
       if (revert.length === 0) return;
       const result = executor.dispatchSync('bridge-revert', { ids: revert });
       if (result.ok && notify) {

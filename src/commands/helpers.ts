@@ -58,8 +58,24 @@ export function requireTargets(
 }
 
 /** Next fractional index that places a new sibling in front of everything under `parentId`. */
+const appendBatches = new WeakMap<ElementTable, Map<string | null, string>>();
+
+/** Scoped to append-only import work; never cache a mutable table between commands. */
+export function withAppendIndices<T>(elements: ElementTable, run: () => T): T {
+  if (appendBatches.has(elements)) return run();
+  appendBatches.set(elements, new Map());
+  try {
+    return run();
+  } finally {
+    appendBatches.delete(elements);
+  }
+}
+
 export function topIndex(elements: ElementTable, parentId: string | null): string {
-  return indexAfter(lastIndexAmong(elements, parentId));
+  const batch = appendBatches.get(elements);
+  const next = indexAfter(batch?.get(parentId) ?? lastIndexAmong(elements, parentId));
+  batch?.set(parentId, next);
+  return next;
 }
 
 /** Fractional index that places a new sibling behind everything under `parentId`. */
@@ -139,7 +155,8 @@ export function removeSubtree(doc: DocDraft, id: string): string[] {
   const linkedIds: string[] = [];
   if (element?.meta?.['view3d']) {
     // The marker (section line / camera) goes with the last portal that uses it.
-    const view = element.meta['view3d'] as { sectionLineId?: string; cameraId?: string; planRegionId?: string };
+    const view = element.meta['view3d'] as { sectionLineId?: string; cameraId?: string; planRegionId?: string;
+    };
     for (const markerId of [view.sectionLineId, view.cameraId, view.planRegionId]) {
       if (!markerId || !elements[markerId]) continue;
       const others = portalsOfMarker(doc.elements, markerId).filter((portal) => portal.id !== id);
@@ -310,7 +327,7 @@ export function scaleElementLocal(
             center: [segment.center[0] * sx, segment.center[1] * sy],
             // An analytic circular arc stays exact under uniform scaling. Fixed-size walls do not
             // permit non-uniform resizing; the average is a defensive fallback for imported data.
-            radius: segment.radius * (Math.abs(sx) + Math.abs(sy)) / 2,
+            radius: (segment.radius * (Math.abs(sx) + Math.abs(sy))) / 2,
           };
         });
       }

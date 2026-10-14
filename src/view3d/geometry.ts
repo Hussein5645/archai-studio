@@ -179,7 +179,8 @@ function cutKey(object: THREE.Object3D, key: string): THREE.Object3D {
  * read (see `sceneDependencies`) and the shared inputs. `buildScene` reuses it as long as
  * none of those changed (documents are immutable, so identity means unchanged).
  */
-export type Built = { id: string; object: THREE.Object3D; dependencies?: readonly Element[]; inputs?: BuildInputs };
+export type Built = { id: string; object: THREE.Object3D; dependencies?: readonly Element[]; inputs?: BuildInputs;
+};
 
 /** Document-wide inputs every builder may read (materials, definitions, images, models, LOD). */
 interface BuildInputs {
@@ -195,7 +196,9 @@ interface BuildInputs {
 }
 
 function sameInputs(a: BuildInputs, b: BuildInputs): boolean {
-  return a.workspace === b.workspace && a.definitions === b.definitions && a.blobs === b.blobs && a.materials === b.materials && a.textures === b.textures && a.models === b.models && a.lowModels === b.lowModels && a.lod === b.lod && a.drawing === b.drawing;
+  return (
+    a.workspace === b.workspace && a.definitions === b.definitions && a.blobs === b.blobs && a.materials === b.materials && a.textures === b.textures && a.models === b.models && a.lowModels === b.lowModels && a.lod === b.lod && a.drawing === b.drawing
+  );
 }
 
 function sameElements(a: readonly Element[], b: readonly Element[]): boolean {
@@ -419,7 +422,8 @@ function buildWall(doc: ArchaiDocument, wall: LineElement, matrix: Mat): THREE.O
   const extendStart = joined('start') ? thickness / 2 : 0;
   const extendEnd = joined('end') ? thickness / 2 : 0;
   // Layer bands, outside (left-hand side, -across) to inside.
-  const bands: { across: number; thickness: number; slot: string; slotId: string; material: THREE.Material; core: boolean }[] = [];
+  const bands: { across: number; thickness: number; slot: string; slotId: string; material: THREE.Material; core: boolean;
+  }[] = [];
   let cursor = -thickness / 2;
   parameters.layers.forEach((layer, index) => {
     const slot = `layer:${index}`;
@@ -464,7 +468,8 @@ function buildWall(doc: ArchaiDocument, wall: LineElement, matrix: Mat): THREE.O
       for (const [from, to] of split(piece.from, piece.to, uBreaks.map((u) => u - travelled))) {
         for (const [bottom, pieceTop] of split(piece.bottom, piece.top, vBreaks)) {
           // Surface of each box face, in BoxGeometry group order: +x, -x, +y, -y, +z, -z.
-          const endFace = (at: number, wallEnd: boolean): SurfaceKey | null => (wallEnd ? 'ends' : cutEdges.has(at) ? 'reveals' : null);
+          const endFace = (at: number, wallEnd: boolean): SurfaceKey | null =>
+            wallEnd ? 'ends' : cutEdges.has(at) ? 'reveals' : null;
           const faces: (SurfaceKey | null)[] = [
             endFace(to, isLast && to === last),
             endFace(from, isFirst && from === first),
@@ -952,6 +957,8 @@ function buildGeneric(doc: ArchaiDocument, element: Element, matrix: Mat, textur
 }
 
 export interface BuildOptions {
+  /** Select output roots before construction; dependency queries still see the full document. */
+  include?: (id: string) => boolean;
   /** Textures for image blobs, keyed by blob id (prepared asynchronously by the scene). */
   textures: Map<string, THREE.Texture>;
   /** Loaded catalog models keyed by definition id; missing entries fall back to a footprint box. */
@@ -1110,6 +1117,7 @@ export function buildScene(doc: ArchaiDocument, options: BuildOptions, previous?
     return group;
   };
   for (const element of childrenOf(elements, null)) {
+    if (options.include && !options.include(element.id)) continue;
     const dependencies = sceneDependencies(elements, element);
     const last = previous?.get(element.id);
     if (last?.dependencies && last.inputs && sameInputs(last.inputs, inputs) && sameElements(last.dependencies, dependencies)) {

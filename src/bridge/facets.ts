@@ -5,6 +5,7 @@
  */
 import type { BridgeFacet, Element, ElementTable, JsonValue } from '@/document';
 import { BRIDGE_FACETS } from '@/document';
+const leafHashes = new WeakMap<Element, Record<BridgeFacet, string>>();
 
 /** An element's children in order (see `childLookup`). */
 export type ChildLookup = (id: string) => readonly Element[];
@@ -36,8 +37,10 @@ const META: Record<string, BridgeFacet | null> = {
   liveLink: null,
 };
 
-export const topFacet = (key: string): BridgeFacet | null => (OWN_KEYS.has(key) ? null : (TOP[key] ?? 'geometry'));
-export const metaFacet = (key: string): BridgeFacet | null => (key in META ? META[key]! : 'metadata');
+export const topFacet = (key: string): BridgeFacet | null =>
+  OWN_KEYS.has(key) ? null : (TOP[key] ?? 'geometry');
+export const metaFacet = (key: string): BridgeFacet | null =>
+  key in META ? META[key]! : 'metadata';
 
 type Facets = Record<BridgeFacet, Record<string, JsonValue>>;
 
@@ -91,8 +94,13 @@ export function hashText(text: string): string {
 export const hashValue = (value: unknown): string => hashText(stableJson(value));
 
 export function facetHashes(children: ChildLookup, element: Element): Record<BridgeFacet, string> {
+  const cacheable = Object.isFrozen(element) && children(element.id).length === 0;
+  const cached = cacheable ? leafHashes.get(element) : undefined;
+  if (cached) return cached;
   const facets = facetsOf(children, element);
-  return Object.fromEntries(BRIDGE_FACETS.map((facet) => [facet, hashValue(facets[facet])])) as Record<BridgeFacet, string>;
+  const hashes = Object.fromEntries(BRIDGE_FACETS.map((facet) => [facet, hashValue(facets[facet])])) as Record<BridgeFacet, string>;
+  if (cacheable) leafHashes.set(element, hashes);
+  return hashes;
 }
 
 /**

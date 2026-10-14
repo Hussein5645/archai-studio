@@ -15,12 +15,56 @@ https://archai-vr.vercel.app (see [hosting.md](hosting.md)).
 2. Stops are reference points (`meta.point`) with `meta.vrStop = { heading }`: rename them, move
    them in plan and height, delete or undo them like any point. The Inspector's **VR facing**
    sets the direction (degrees clockwise from +x on the board); 3D shows it as an arrow.
-3. **VR link** exports the scene (high detail, metres, no markers or edge lines, plus a ground
+3. **VR → Export Raw VR Link** exports the scene (high detail, metres, no markers or edge lines, plus a ground
    disc), uploads it and shows the link (`https://archai-vr-share.mklkoklpp.workers.dev/v/<id>`).
    Publishing the same document again updates that link (the id is remembered per document in
    platform storage); `publish-vr-tour { newLink: true }` makes a fresh one.
 
 Commands: `create-vr-stop`, `set-vr-stop-heading`, `publish-vr-tour`.
+
+## Prepared VR and 360 links
+
+**VR → Prepare Rendered VR Link** opens **ArchAI VR Preparation**, replacing the separate
+Render button. Add objects and assign materials on the board/3D view. Preparation follows those
+edits and supplies environment, sun, sky, exposure, saved cameras, stops, quality and publishing.
+
+- **Baked 3D VR**: Bake scene → review the actual unlit output → Publish VR link. Static sun,
+  sky occlusion and diffuse indirect illumination are sampled in a worker and stored in vertex
+  colours. Source UVs/textures are retained, opaque material-compatible surfaces are batched,
+  and large triangles are subdivided within a preset budget. This is a diffuse vertex bake,
+  not a path-traced texture atlas: sharp shadows depend on mesh density, bounced texture colour
+  is approximated by material colour, cutout/transmissive surfaces do not block bake rays, and
+  glass/reflections are simplified. No lights run for the baked model in the viewer. The chosen
+  sky is embedded as a prepared texture, so viewers do not need an account to fetch the HDRI.
+- **360 image**: choose a stop or saved camera → Render 360 image → Download image or Publish
+  360 link. Uses the full path tracer's equirectangular camera. The published image viewer supports
+  mouse/touch look-around and monoscopic WebXR at a fixed viewpoint; it does not support walking.
+
+Fast/Balanced/High Quality change bake samples, diffuse bounce depth, subdivision budget,
+texture cap and panorama resolution/sample count. They do not decimate source geometry or
+provide KTX2 compression. Scenes above one million source triangles are rejected by the baker;
+the service's 95 MB upload limit still applies. Headset frame rate requires device validation.
+
+Settings remain at `render:<document id>` for compatibility. Output/quality preferences use
+`vr-preparation:<document id>`. Raw IDs keep `vr-tour:<document id>`; baked and panorama IDs use
+`vr-tour:<document id>:baked|panorama`. Geometry/material/embedded asset/lighting/quality changes
+invalidate prepared results. Cancellation terminates the bake worker or stops progressive
+panorama sampling and restores the preview. Previous Render entourage is read-only and included;
+missing legacy assets prevent export rather than silently disappearing.
+
+New publishing uploads immutable `model-<revision>.glb` or `panorama-<revision>.png` first, then
+commits `tour.json`. Until that commit, the previous published version is intact. Revisions are
+retained so clients holding an older manifest still load; deleting a tour removes all revisions.
+Legacy `model.glb` uploads and old manifests remain supported. Deploy the updated share Worker
+and SJP-VR viewer before distributing this desktop update.
+
+Additional manifest fields: `mode: raw|baked|panorama`; baked vertex tours use `lighting: baked`,
+`bake: vertex`, `bakeScale`, `toneMapping`, `exposure`; panoramas use `mode: panorama`, `panorama`
+and a camera stop. `bakeScale` recovers HDR illumination from normalized glTF colour attributes.
+
+Checks: `npx vitest run src/studio/vrPreparation.test.ts src/view3d/vrOptimise.test.ts
+src/commands/builtin/vr.test.ts`, `node --test workers/vr-share/src/index.test.mjs`, and
+`npx playwright test e2e/vr-preparation.spec.ts`.
 
 ## Managing VR links
 

@@ -14,7 +14,7 @@
 import { current, isDraft } from 'immer';
 import type { MutationContext } from '@/commands/contract';
 import { CommandError } from '@/commands/contract';
-import { removeSubtree, snapshot, topIndex } from '@/commands/helpers';
+import { removeSubtree, snapshot, topIndex, withAppendIndices } from '@/commands/helpers';
 import { BRIDGE_FACETS, type BridgeBinding, type BridgeData, type BridgeFacet, type BridgeFidelity, type BridgeSource, type Element, type ElementTable, type JsonValue } from '@/document';
 import type { RevitExchange } from '@/revit/exchange';
 import { importRevitModel, type ExchangeCollection, type RevitImportReport } from '@/revit/importRevit';
@@ -160,7 +160,8 @@ function legacyTag(element: Element): string | null {
   return typeof value['key'] === 'string' ? value['key'] : null;
 }
 
-const plain = (elements: ElementTable): ElementTable => (isDraft(elements) ? current(elements) : elements);
+const plain = (elements: ElementTable): ElementTable =>
+  isDraft(elements) ? current(elements) : elements;
 
 /** Where an element is: its plan matrix and elevation (what the app has, for updates sent back to it). */
 export function placedOf(elements: ElementTable, element: Element): { m: number[]; z: number } {
@@ -168,6 +169,10 @@ export function placedOf(elements: ElementTable, element: Element): { m: number[
 }
 
 export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): BridgeSyncReport {
+  return withAppendIndices(ctx.doc.elements as ElementTable, () => syncModel(ctx, input));
+}
+
+function syncModel(ctx: MutationContext, input: BridgeSyncInput): BridgeSyncReport {
   const bridge = ensureBridge(ctx);
   const known = bridge.sources[input.key];
   if (known && input.changeId && known.lastChangeId === input.changeId && known.lastAck) return { ...(snapshot(known.lastAck as object) as BridgeSyncReport), repeated: true };
@@ -228,14 +233,18 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
   const released = new Set<string>();
   for (const binding of Object.values(bridge.elements)) for (const h of binding.history ?? []) if (h.source === key) released.add(h.id);
   /** The app's editable copies of ArchAI elements, seen for the first time: item → element. */
-  const copyOf = new Map<string, string>(input.model.meshes.flatMap((mesh) => (mesh.archai ? [[`meshes/${mesh.id}`, mesh.archai] as const] : [])));
+  const copyOf = new Map<string, string>(input.model.meshes.flatMap((mesh) =>
+      mesh.archai ? [[`meshes/${mesh.id}`, mesh.archai] as const] : [],
+    ));
   const copies = new Map<string, string>();
   /** Objects an older plugin sent under another id: `meshes/<new id>` → `meshes/<old id>`. */
   const renamed = new Map<string, string>();
   const currentIds = new Set(input.model.meshes.map((mesh) => mesh.id));
   for (const mesh of input.model.meshes) if (mesh.was && mesh.was !== mesh.id && !currentIds.has(mesh.was)) renamed.set(`meshes/${mesh.id}`, `meshes/${mesh.was}`);
   const created: { item: string; collection: ExchangeCollection; id: string; element: string }[] = [];
-  const existingMaterials = new Map(Object.values(ctx.doc.materials).flatMap((material) => (material.source ? [[material.source, material.id] as const] : [])));
+  const existingMaterials = new Map(Object.values(ctx.doc.materials).flatMap((material) =>
+      material.source ? [[material.source, material.id] as const] : [],
+    ));
 
   const imported = importRevitModel(ctx, input.model, {
     reuseMaterial: (material) => existingMaterials.get(materialSource(key, material)),
@@ -297,8 +306,10 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
 
   let elements = plain(ctx.doc.elements);
   let children = childLookup(elements);
-  type Merge = { entry: (typeof created)[number]; target: string; apply: Set<BridgeFacet>; edited: Set<BridgeFacet>; converged: Set<BridgeFacet>; kept: Set<BridgeFacet> };
+  type Merge = { entry: (typeof created)[number]; target: string; apply: Set<BridgeFacet>; edited: Set<BridgeFacet>; converged: Set<BridgeFacet>; kept: Set<BridgeFacet>;
+  };
   const merges: Merge[] = [];
+  const retiredBlobs = new Set<string>();
   for (const entry of created) {
     const target = changed.get(entry.item);
     if (target) {
@@ -307,6 +318,8 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
     }
     const original = copies.get(entry.item);
     const element = elements[entry.element]!;
+    const incomingMesh = element.meta?.['mesh'];
+    if (incomingMesh && typeof incomingMesh === 'object' && !Array.isArray(incomingMesh) && typeof incomingMesh['blobId'] === 'string') retiredBlobs.add(incomingMesh['blobId']);
     if (original) {
       // The app's copy of an ArchAI element: linked to it, the element itself stays as it is.
       const target = elements[original]!;
@@ -382,6 +395,14 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
     if (apply.size) {
       ctx.doc.elements[target] = mergeFacets(mine, theirs, apply);
       if (apply.has('geometry')) {
+        const oldMesh = mine.meta?.['mesh'];
+        if (
+          oldMesh &&
+          typeof oldMesh === 'object' &&
+          !Array.isArray(oldMesh) &&
+          typeof oldMesh['blobId'] === 'string'
+        )
+          retiredBlobs.add(oldMesh['blobId']);
         for (const child of children(target)) if (ctx.doc.elements[child.id]) removeSubtree(ctx.doc, child.id);
         for (const child of children(entry.element)) ctx.doc.elements[child.id]!.parentId = target;
       }
@@ -487,6 +508,17 @@ export function runBridgeSync(ctx: MutationContext, input: BridgeSyncInput): Bri
     }
   }
   source.lastSync = now;
+  // Replaced mesh bytes must not accumulate in the document. Conflicts, definitions and
+  // snapshots may still refer to them; undo records the deletion patch and restores the bytes.
+  if (retiredBlobs.size) {
+    const visit = (value: unknown): void => {
+      if (typeof value === 'string') retiredBlobs.delete(value);
+      else if (Array.isArray(value)) value.forEach(visit);
+      else if (value && typeof value === 'object') Object.values(value).forEach(visit);
+    };
+    for (const [name, value] of Object.entries(ctx.doc)) if (name !== 'blobs') visit(value);
+    for (const id of retiredBlobs) delete ctx.doc.blobs[id];
+  }
   source.complete = input.complete;
   source.lastChangeId = input.changeId;
   const { built: _built, skipped: _skipped, ...ack } = report;

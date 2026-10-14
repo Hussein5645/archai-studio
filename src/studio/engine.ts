@@ -23,7 +23,7 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
-import { PhysicalCamera, WebGLPathTracer } from 'three-gpu-pathtracer';
+import { EquirectCamera, PhysicalCamera, WebGLPathTracer } from 'three-gpu-pathtracer';
 import { ParallelMeshBVHWorker } from 'three-mesh-bvh/worker';
 import type { AssetCatalog } from '@/catalog';
 import type { ArchaiDocument } from '@/document';
@@ -32,9 +32,11 @@ import { buildSurfaces } from '@/view3d/vrExport';
 import type { CameraState, SurfaceTarget } from '@/view3d/SceneView';
 import { GROUNDS, type EntourageItem, type RenderSettings } from './settings';
 import type { LibraryModel } from './library';
+import { bakeScene, type BakedScene } from './bake';
+import { throwIfCancelled, VR_QUALITY, type VrQuality } from './vrPreparation';
 
 export type RenderMode = 'realtime' | 'pathtrace';
-export type ClickMode = 'select' | 'place' | 'focus' | 'paint' | 'pick';
+export type ClickMode = 'preview' | 'select' | 'place' | 'focus' | 'paint' | 'pick';
 
 export interface EngineEvents {
   /** Path tracing progress (samples so far) or null in real time. */
@@ -110,6 +112,7 @@ export class StudioEngine {
   private compiling = false;
   private down: { x: number; y: number } | null = null;
   private bounds = new THREE.Sphere(new THREE.Vector3(), 30);
+  private previewBake: THREE.Group | null = null;
 
   constructor(private readonly container: HTMLElement, private readonly events: EngineEvents = {}) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
@@ -190,6 +193,7 @@ export class StudioEngine {
   // ---- the model ------------------------------------------------------------------------------
 
   async setDocument(doc: ArchaiDocument, catalog: AssetCatalog): Promise<void> {
+    this.showBake(null);
     const root = await buildSurfaces(doc, catalog);
     if (this.disposed) return;
     root.traverse((child) => {
@@ -251,7 +255,7 @@ export class StudioEngine {
     const previous = this.settings;
     this.settings = settings;
     this.renderer.toneMapping = TONE[settings.toneMapping];
-    this.renderer.toneMappingExposure = 2 ** settings.exposure;
+    this.renderer.toneMappingExposure = 2 ** settings.exposure * (this.previewBake?.userData['bakeScale'] as number ?? 1);
     this.gtao.blendIntensity = settings.ambientOcclusion;
     this.gtao.enabled = settings.ambientOcclusion > 0;
     this.bloom.strength = settings.bloom;
@@ -522,7 +526,7 @@ export class StudioEngine {
 
   setClickMode(mode: ClickMode): void {
     this.click = mode;
-    this.renderer.domElement.style.cursor = mode === 'select' ? '' : mode === 'paint' ? 'cell' : mode === 'pick' ? 'copy' : 'crosshair';
+    this.renderer.domElement.style.cursor = mode === 'select' || mode === 'preview' ? '' : mode === 'paint' ? 'cell' : mode === 'pick' ? 'copy' : 'crosshair';
   }
 
   // ---- interaction ----------------------------------------------------------------------------
@@ -532,6 +536,7 @@ export class StudioEngine {
   };
 
   private onPointerUp = (event: PointerEvent) => {
+    if (this.click === 'preview') { this.down = null; return; }
     const down = this.down;
     this.down = null;
     if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4 || event.button !== 0) return;
@@ -611,6 +616,152 @@ export class StudioEngine {
   }
 
   // ---- rendering ------------------------------------------------------------------------------
+
+  showBake(root: THREE.Group | null): void {
+    if (this.previewBake) this.scene.remove(this.previewBake);
+    this.previewBake = root;
+    this.renderer.toneMappingExposure = 2 ** (this.settings?.exposure ?? 0) * (root?.userData['bakeScale'] as number ?? 1);
+    if (root) this.scene.add(root);
+    this.content.visible = !root;
+    this.entourage.visible = !root;
+    this.ground.visible = !root && this.settings?.ground !== 'none';
+    this.gizmo.getHelper().visible = !root && this.mode === 'realtime';
+    this.traceStale = true;
+    this.dirty = true;
+  }
+
+  async bakeVr(quality: VrQuality, signal: AbortSignal, progress: (fraction: number) => void): Promise<BakedScene> {
+    this.assertLegacyLoaded();
+    this.showBake(null);
+    const source = new THREE.Group();
+    source.add(this.content.clone(true), this.entourage.clone(true));
+    if (this.ground.visible) {
+      const ground = this.ground.clone();
+      // The preview ground covers the horizon. Publish only the area visitors can reach.
+      ground.geometry = new THREE.CircleGeometry(Math.max(30, this.bounds.radius * 2), 48);
+      ground.position.x = this.bounds.center.x;
+      ground.position.z = this.bounds.center.z;
+      source.add(ground);
+    }
+    const image = this.skyTexture?.image as { data?: Float32Array; width?: number; height?: number } | undefined;
+    const environment = image?.data instanceof Float32Array && image.width && image.height ? { data: image.data.slice(), width: image.width, height: image.height, rotation: this.settings?.sky === 'hdri' ? THREE.MathUtils.degToRad(this.settings.hdriRotation) : 0 } : null;
+    const background = this.bakeBackground();
+    try {
+      return await bakeScene(source, { environment, sun: this.sunVector().toArray() as [number, number, number], sunIntensity: this.sun.visible ? this.sun.intensity : 0, skyIntensity: this.settings?.skyIntensity ?? 1 }, quality, signal, progress, background ?? undefined);
+    } catch (error) {
+      background?.dispose();
+      throw error;
+    } finally {
+      // Only the temporary ground is owned by this snapshot; project geometry is shared.
+      if (this.ground.visible) (source.children.at(-1) as THREE.Mesh)?.geometry.dispose();
+    }
+  }
+
+  /** Embed the chosen sky as a display-ready texture, so shared VR needs no account/HDRI fetch. */
+  private bakeBackground(): THREE.Texture | null {
+    if (!this.skyTexture) return null;
+    const width = 1024, height = 512;
+    const target = new THREE.WebGLRenderTarget(width, height);
+    target.texture.colorSpace = THREE.SRGBColorSpace;
+    const mapping = this.settings?.toneMapping === 'aces' ? 'ACESFilmicToneMapping' : this.settings?.toneMapping === 'neutral' ? 'NeutralToneMapping' : 'AgXToneMapping';
+    const material = new THREE.ShaderMaterial({
+      toneMapped: false,
+      uniforms: { sky: { value: this.skyTexture }, strength: { value: this.settings?.skyIntensity ?? 1 }, rotation: { value: this.settings?.sky === 'hdri' ? THREE.MathUtils.degToRad(this.settings.hdriRotation) / (2 * Math.PI) : 0 }, toneMappingExposure: { value: 2 ** (this.settings?.exposure ?? 0) } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: `uniform sampler2D sky; uniform float strength; uniform float rotation; varying vec2 vUv;
+        #include <tonemapping_pars_fragment>
+        void main() { vec3 colour = texture2D(sky, vec2(fract(vUv.x + rotation), vUv.y)).rgb * strength;
+          gl_FragColor = vec4(${mapping}(colour), 1.0);
+          #include <colorspace_fragment>
+        }`,
+    });
+    const quad = new FullScreenQuad(material);
+    const savedTarget = this.renderer.getRenderTarget();
+    try {
+      this.renderer.setRenderTarget(target);
+      quad.render(this.renderer);
+      const pixels = new Uint8Array(width * height * 4);
+      this.renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+      const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('The prepared sky could not be encoded');
+      const image = context.createImageData(width, height);
+      for (let row = 0; row < height; row++) image.data.set(pixels.subarray(row * width * 4, (row + 1) * width * 4), (height - row - 1) * width * 4);
+      context.putImageData(image, 0, 0);
+      const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+      return texture;
+    } finally { this.renderer.setRenderTarget(savedTarget); quad.dispose(); material.dispose(); target.dispose(); }
+  }
+
+  async renderPanorama(quality: VrQuality, signal: AbortSignal, progress: (fraction: number) => void): Promise<Blob> {
+    this.assertLegacyLoaded();
+    throwIfCancelled(signal);
+    this.showBake(null);
+    this.busy = true;
+    const helper = this.gizmo.getHelper();
+    const helperVisible = helper.visible;
+    helper.visible = false;
+    const pixelRatio = this.renderer.getPixelRatio();
+    const controlsEnabled = this.controls.enabled;
+    this.controls.enabled = false;
+    const { dynamicLowRes, rasterizeScene, renderDelay, fadeDuration, minSamples } = this.pathTracer;
+    const tiles = this.pathTracer.tiles.clone();
+    const preset = VR_QUALITY[quality];
+    try {
+      await this.prepareTrace();
+      throwIfCancelled(signal);
+      const camera = new EquirectCamera();
+      camera.position.copy(this.camera.position);
+      // Store a world-oriented panorama; the viewer chooses the initial facing direction.
+      camera.updateMatrixWorld(true);
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(preset.panoramaWidth, preset.panoramaWidth / 2, false);
+      this.pathTracer.dynamicLowRes = false;
+      this.pathTracer.rasterizeScene = false;
+      this.pathTracer.renderDelay = 0;
+      this.pathTracer.fadeDuration = 0;
+      this.pathTracer.minSamples = 1;
+      this.pathTracer.tiles.set(3, 3);
+      this.pathTracer.setCamera(camera);
+      this.pathTracer.reset();
+      let last = performance.now();
+      while (this.pathTracer.samples < preset.panoramaSamples) {
+        throwIfCancelled(signal);
+        if (this.disposed) throw new DOMException('Preparation cancelled', 'AbortError');
+        this.pathTracer.renderSample();
+        if (performance.now() - last > 30) {
+          progress(Math.min(1, this.pathTracer.samples / preset.panoramaSamples));
+          await nextFrame();
+          last = performance.now();
+        }
+      }
+      throwIfCancelled(signal);
+      const blob = await new Promise<Blob>((resolve, reject) => this.renderer.domElement.toBlob((result) => result ? resolve(result) : reject(new Error('The panorama could not be encoded')), 'image/png'));
+      progress(1);
+      return blob;
+    } finally {
+      this.pathTracer.dynamicLowRes = dynamicLowRes;
+      this.pathTracer.rasterizeScene = rasterizeScene;
+      this.pathTracer.renderDelay = renderDelay;
+      this.pathTracer.fadeDuration = fadeDuration;
+      this.pathTracer.minSamples = minSamples;
+      this.pathTracer.tiles.copy(tiles);
+      this.controls.enabled = controlsEnabled;
+      helper.visible = helperVisible;
+      this.busy = false;
+      if (!this.disposed) {
+        this.pathTracer.setCamera(this.camera);
+        this.renderer.setPixelRatio(pixelRatio);
+        this.layout();
+        this.pathTracer.reset();
+      }
+    }
+  }
+
+  private assertLegacyLoaded(): void {
+    const missing = this.settings?.entourage.filter((item) => !this.entourage.children.some((child) => child.userData['entourageId'] === item.id));
+    if (missing?.length) throw new Error('Some saved Render placements could not be loaded. Sign in and reopen VR preparation before exporting this scene.');
+  }
 
   setMode(mode: RenderMode): void {
     if (this.mode === mode) return;

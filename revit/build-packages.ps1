@@ -2,7 +2,7 @@ param(
     [string]$Dotnet = 'dotnet',
     [ValidateSet('2024','2025','2026','2027')][string[]]$Versions = @('2024','2025','2026','2027'),
     [switch]$UseApiPackages,
-    [string]$Version = '0.2.0-beta.1'
+    [string]$Version = '0.5.3-beta.1'
 )
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^[0-9A-Za-z.-]+$') { throw 'Version must contain only letters, digits, dots and hyphens.' }

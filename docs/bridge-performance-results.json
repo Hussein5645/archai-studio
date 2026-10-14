@@ -1,0 +1,69 @@
+{
+  "generatedAt": "2026-10-14T03:12:26.737Z",
+  "node": "v24.21.0",
+  "cpu": "12th Gen Intel(R) Core(TM) i5-12400F",
+  "logicalCpus": 12,
+  "ramGiB": 31.8,
+  "notes": "One sample per case after 25-object warmup. Synthetic valid unique GLBs. Node command timings exclude HTTP, Electron IPC, GPU, host export and asynchronous guard scheduling. Heap is a process snapshot, not peak or isolated case memory.",
+  "rows": [
+    {
+      "count": 250,
+      "initialMs": 138.2,
+      "unchangedMs": 16.81,
+      "oneObjectPartialMs": 22.97,
+      "guardAllMs": 0.93,
+      "freshPullPlanMs": 3.22,
+      "unchangedPullPlanMs": 3.56,
+      "workingCopyMs": 2.18,
+      "workingCopyBytes": 341029,
+      "payloadBytes": 155535,
+      "heapUsedMiB": 45.3
+    },
+    {
+      "count": 1000,
+      "initialMs": 476.07,
+      "unchangedMs": 44.78,
+      "oneObjectPartialMs": 61.87,
+      "guardAllMs": 1.82,
+      "freshPullPlanMs": 7.98,
+      "unchangedPullPlanMs": 6.2,
+      "workingCopyMs": 5.25,
+      "workingCopyBytes": 1367297,
+      "payloadBytes": 623285,
+      "heapUsedMiB": 55.1
+    },
+    {
+      "count": 2500,
+      "initialMs": 1161.8,
+      "unchangedMs": 122.44,
+      "oneObjectPartialMs": 125.96,
+      "guardAllMs": 5.23,
+      "freshPullPlanMs": 24.52,
+      "unchangedPullPlanMs": 15.84,
+      "workingCopyMs": 11.06,
+      "workingCopyBytes": 3431045,
+      "payloadBytes": 1562285,
+      "heapUsedMiB": 87.8
+    }
+  ],
+  "dense": [
+    {
+      "triangles": 10000,
+      "binaryMiB": 0.34,
+      "planMs": 38.58,
+      "segments": 30000
+    },
+    {
+      "triangles": 100000,
+      "binaryMiB": 3.43,
+      "planMs": 260.68,
+      "segments": 30000
+    },
+    {
+      "triangles": 500000,
+      "binaryMiB": 17.17,
+      "planMs": 1726.22,
+      "segments": 30000
+    }
+  ]
+}

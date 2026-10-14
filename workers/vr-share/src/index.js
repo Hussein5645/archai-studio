@@ -18,6 +18,7 @@
  */
 
 const FILES = { 'model.glb': 'model/gltf-binary', 'tour.json': 'application/json' };
+const assetType = (file) => (Object.hasOwn(FILES, file) ? FILES[file] : null) || (/^model-[a-f0-9]{32}\.glb$/.test(file) ? 'model/gltf-binary' : /^panorama-[a-f0-9]{32}\.png$/.test(file) ? 'image/png' : null);
 const MAX_MODEL_BYTES = 95 * 1024 * 1024;
 const MAX_TOUR_BYTES = 512 * 1024;
 // No 0/o, 1/l/i: ids are typed by hand on a headset keyboard.
@@ -91,7 +92,9 @@ async function upload(request, env, id, file, auth) {
       return json({ error: 'Tour file is not JSON' }, 400);
     }
     if (tour?.format !== 'archai-vr' || !Array.isArray(tour.spaces)) return json({ error: 'Not an ArchAI VR tour' }, 400);
-    await env.BUCKET.put(`tours/${id}/tour.json`, text, { httpMetadata: { contentType: FILES[file] } });
+    const asset = tour.mode === 'panorama' ? tour.panorama : typeof tour.model === 'string' ? tour.model.split('?')[0] : null;
+    const expectedType = tour.mode === 'panorama' ? 'image/png' : 'model/gltf-binary';
+    if (!asset || assetType(asset) !== expectedType || !(await env.BUCKET.head(`tours/${id}/${asset}`))) return json({ error: 'Upload the prepared asset before publishing its tour' }, 400);
     if (auth.userId && env.DB) {
       const at = new Date().toISOString();
       const name = typeof tour.name === 'string' ? tour.name.slice(0, 200) : null;
@@ -99,11 +102,13 @@ async function upload(request, env, id, file, auth) {
         .bind(id, auth.userId, name, at, at)
         .run();
     }
+    // This is the commit: metadata failures above must not replace the old scene.
+    await env.BUCKET.put(`tours/${id}/tour.json`, text, { httpMetadata: { contentType: FILES[file] } });
     return json({ ok: true });
   }
   if (!Number.isFinite(length)) return json({ error: 'Content-Length required' }, 411);
   if (length > MAX_MODEL_BYTES) return json({ error: `Model too large (${Math.round(length / 1048576)} MB, limit 95 MB)` }, 413);
-  await env.BUCKET.put(`tours/${id}/${file}`, request.body, { httpMetadata: { contentType: FILES[file] } });
+  await env.BUCKET.put(`tours/${id}/${file}`, request.body, { httpMetadata: { contentType: assetType(file) } });
   return json({ ok: true });
 }
 
@@ -113,14 +118,20 @@ async function listTours(request, env, userId) {
   const origin = new URL(request.url).origin;
   const tours = await Promise.all(
     results.map(async (row) => {
-      const [model, tour] = await Promise.all([env.BUCKET.head(`tours/${row.id}/model.glb`), env.BUCKET.get(`tours/${row.id}/tour.json`)]);
+      const tour = await env.BUCKET.get(`tours/${row.id}/tour.json`);
       let stops = null;
+      let model = null;
+      let mode = 'raw';
       try {
-        stops = tour ? (await tour.json()).spaces?.length ?? null : null;
+        const data = tour ? await tour.json() : null;
+        stops = data?.spaces?.length ?? null;
+        mode = data?.mode ?? (data?.lighting === 'baked' ? 'baked' : 'raw');
+        const asset = mode === 'panorama' ? data?.panorama : data?.model?.split('?')[0];
+        if (asset && assetType(asset)) model = await env.BUCKET.head(`tours/${row.id}/${asset}`);
       } catch {
         stops = null;
       }
-      return { id: row.id, name: row.name ?? 'VR tour', createdAt: row.created_at, updatedAt: row.updated_at, link: `${origin}/v/${row.id}`, modelBytes: model?.size ?? null, stops, available: Boolean(tour) };
+      return { id: row.id, name: row.name ?? 'VR tour', createdAt: row.created_at, updatedAt: row.updated_at, link: `${origin}/v/${row.id}`, modelBytes: model?.size ?? null, mode, stops, available: Boolean(tour) };
     }),
   );
   return json({ tours });
@@ -129,7 +140,12 @@ async function listTours(request, env, userId) {
 async function deleteTour(env, id, userId) {
   const row = await env.DB.prepare('SELECT user_id FROM vr_tours WHERE id = ?').bind(id).first();
   if (!row || row.user_id !== userId) return json({ error: 'This tour does not exist or is not yours' }, 404);
-  await env.BUCKET.delete([`tours/${id}/model.glb`, `tours/${id}/tour.json`, created(id)]);
+  let cursor;
+  do {
+    const page = await env.BUCKET.list({ prefix: `tours/${id}/`, ...(cursor ? { cursor } : {}) });
+    if (page.objects.length) await env.BUCKET.delete(page.objects.map((object) => object.key));
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
   await env.DB.prepare('DELETE FROM vr_tours WHERE id = ?').bind(id).run();
   return json({ ok: true });
 }
@@ -138,7 +154,7 @@ async function read(request, env, id, file) {
   const object = await env.BUCKET.get(`tours/${id}/${file}`, { onlyIf: request.headers });
   if (!object) return reply('Not found', 404);
   const headers = {
-    'Content-Type': FILES[file],
+    'Content-Type': assetType(file),
     ETag: object.httpEtag,
     // The tour file always revalidates (republishing replaces it); the model URL carries a version.
     'Cache-Control': file === 'tour.json' ? 'no-cache' : 'public, max-age=86400',
@@ -175,7 +191,7 @@ export default {
         return userId ? deleteTour(env, parts[1], userId) : json({ error: 'Sign in to ArchAI to manage your VR links' }, 401);
       }
       const [, id, file] = parts;
-      if (parts.length !== 3 || !ID.test(id ?? '') || !(file in FILES)) return reply('Not found', 404);
+      if (parts.length !== 3 || !ID.test(id ?? '') || !assetType(file ?? '')) return reply('Not found', 404);
       if (request.method === 'GET' || request.method === 'HEAD') return read(request, env, id, file);
       if (request.method === 'PUT') {
         const auth = await authorised(request, env);

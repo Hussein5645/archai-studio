@@ -41,6 +41,26 @@ class MeshStore {
   private readonly pending = new Map<string, Promise<void>>();
   private readonly failed = new Set<string>();
   private readonly loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  private active = 0;
+  private readonly waiting: (() => void)[] = [];
+
+  private async decode(data: string): Promise<THREE.Object3D> {
+    if (this.active >= 4) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    else this.active++;
+    try {
+      const bytes = base64ToBytes(data);
+      return (
+        await this.loader.parseAsync(
+          bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+          '',
+        )
+      ).scene;
+    } finally {
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.active--;
+    }
+  }
 
   /** Decodes the meshes of the document not seen before; resolves true when any arrived. */
   async prepare(doc: ArchaiDocument): Promise<boolean> {
@@ -48,14 +68,21 @@ class MeshStore {
     const jobs: Promise<void>[] = [];
     for (const element of Object.values(doc.elements)) {
       const mesh = meshOf(element);
-      if (!mesh || this.models.has(mesh.blobId) || this.pending.has(mesh.blobId) || this.failed.has(mesh.blobId)) continue;
+      if (!mesh || this.models.has(mesh.blobId) || this.failed.has(mesh.blobId)) continue;
+      const pending = this.pending.get(mesh.blobId);
+      if (pending) {
+        jobs.push(
+          pending.then(() => {
+            changed = true;
+          }),
+        );
+        continue;
+      }
       const blob = doc.blobs[mesh.blobId];
       if (!blob) continue;
-      const bytes = base64ToBytes(blob.data);
-      const job = this.loader
-        .parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, '')
-        .then((gltf) => {
-          this.models.set(mesh.blobId, gltf.scene);
+      const job = this.decode(blob.data)
+        .then((model) => {
+          this.models.set(mesh.blobId, model);
           changed = true;
         })
         .catch(() => {

@@ -14,5 +14,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "playwright.config.ts", "eslint.config.js", "scripts", "e2e"]
+  "include": ["vite.config.ts", "playwright.config.ts", "eslint.config.js", "scripts", "e2e"],
+  "exclude": ["scripts/bridge-performance.audit.ts"]
 }

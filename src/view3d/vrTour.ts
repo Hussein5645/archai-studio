@@ -33,7 +33,13 @@ export interface VrTourJson {
   name: string;
   /** Relative to the tour file. */
   model: string;
-  lighting: 'live';
+  lighting: 'live' | 'baked';
+  /** Absent on legacy tours. */
+  mode?: 'raw' | 'baked' | 'panorama';
+  panorama?: string;
+  bake?: 'vertex';
+  bakeScale?: number;
+  toneMapping?: 'agx' | 'aces' | 'neutral';
   exposure: number;
   credit: string;
   start: string;

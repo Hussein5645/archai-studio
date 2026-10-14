@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -75,6 +76,8 @@ public sealed class LiveLink : IDisposable
         public long? Own;
         public int Protocol = 1;
         public bool Mismatch;
+        public string Mode = "two-way";
+        public long SyncRequest;
     }
 
     /// <summary>The host's model now (runs through <see cref="OnHost"/>).</summary>
@@ -116,6 +119,29 @@ public sealed class LiveLink : IDisposable
     private long lastPulled = -1;
     private long lastSeen = -1;
     private bool pushPending;
+    private long syncRequest;
+    private readonly Dictionary<string, string> sentMeshes = new Dictionary<string, string>();
+    private (JObject Body, Dictionary<string, string> Hashes, HashSet<string> Ids, List<string> Deleted, bool Complete)? pendingPush;
+
+    /// <summary>Only acknowledged mesh versions may be skipped; dependencies invalidate them.</summary>
+    public static (JObject Model, Dictionary<string, string> Hashes) MeshDelta(JObject exchange, IReadOnlyDictionary<string, string> previous)
+    {
+        var context = (exchange["materials"]?.ToString(Formatting.None) ?? "[]") + (exchange["levels"]?.ToString(Formatting.None) ?? "[]");
+        var hashes = new Dictionary<string, string>();
+        var changed = new JArray();
+        using var sha = SHA256.Create();
+        foreach (var mesh in exchange["meshes"] as JArray ?? new JArray())
+        {
+            var id = (string?)mesh["id"] ?? "";
+            var hash = Convert.ToBase64String(sha.ComputeHash(Encoding.UTF8.GetBytes(context + mesh.ToString(Formatting.None))));
+            hashes[id] = hash;
+            if (!previous.TryGetValue(id, out var before) || before != hash) changed.Add(mesh.DeepClone());
+        }
+        var model = new JObject();
+        foreach (var property in exchange.Properties()) if (property.Name != "meshes") model[property.Name] = property.Value.DeepClone();
+        model["meshes"] = changed;
+        return (model, hashes);
+    }
     private DateTime quietUntil = DateTime.MinValue;
     /// <summary>Host ids ArchAI has from this model; ArchAI element id → hash it sent; update tokens applied.</summary>
     private HashSet<string> known = new HashSet<string>();
@@ -145,6 +171,7 @@ public sealed class LiveLink : IDisposable
         Running = true;
         lastPulled = -1;
         have = new Dictionary<string, string>();
+        sentMeshes.Clear();
         Report("Connecting to ArchAI…");
         pushPending = true;
         poll = new Timer(_ => _ = Tick(), null, TimeSpan.Zero, PollEvery);
@@ -219,7 +246,7 @@ public sealed class LiveLink : IDisposable
         var result = await Post("/live/bind", body).ConfigureAwait(false);
         var id = (string?)result["document"]?["id"] ?? "";
         var name = (string?)result["document"]?["name"] ?? "";
-        if (Project?.Id != id) known = new HashSet<string>();
+        if (Project?.Id != id) { known = new HashSet<string>(); pendingPush = null; sentMeshes.Clear(); }
         Project = (id, name);
         have = new Dictionary<string, string>();
         lastPulled = -1;
@@ -242,7 +269,7 @@ public sealed class LiveLink : IDisposable
         if ((bool?)reply["cancelled"] == true) return null;
         var id = (string?)reply["document"]?["id"] ?? "";
         var name = (string?)reply["document"]?["name"] ?? "";
-        if (Project?.Id != id) known = new HashSet<string>();
+        if (Project?.Id != id) { known = new HashSet<string>(); pendingPush = null; sentMeshes.Clear(); }
         Project = (id, name);
         have = new Dictionary<string, string>();
         lastPulled = -1;
@@ -275,6 +302,8 @@ public sealed class LiveLink : IDisposable
                 Own = (long?)body["own"],
                 Protocol = (int?)body["protocol"] ?? 1,
                 Mismatch = body["mismatch"] is JObject,
+                Mode = (string?)body["mode"] ?? "two-way",
+                SyncRequest = (long?)body["syncRequest"] ?? 0,
             };
         }
         catch (Exception) { return new Status { Running = false }; }
@@ -305,13 +334,25 @@ public sealed class LiveLink : IDisposable
                 if (Project == null || Project.Value.Id != status.ProjectId) await BindAsync(status.ProjectId).ConfigureAwait(false);
             }
             // Paused: still seen by ArchAI (its panel shows the link), but nothing is sent or received.
-            if (Paused) return;
-            var upToDate = lastSeen == lastPulled && lastPulled >= 0;
-            if (pushPending)
+            if (Paused || status.Mode == "paused" || status.Mode == "disconnected")
             {
-                pushPending = false;
+                Report(status.Mode == "disconnected" ? "Disconnected in ArchAI" : "Paused");
+                return;
+            }
+            if (syncRequest != status.SyncRequest && status.Mode == "two-way")
+            {
+                syncRequest = status.SyncRequest;
+                sentMeshes.Clear();
+                pushPending = true;
+            }
+            var upToDate = lastSeen == lastPulled && lastPulled >= 0;
+            if ((pushPending || pendingPush != null) && status.Mode == "two-way")
+            {
+                if (pendingPush == null) pushPending = false;
                 SyncProgress?.Invoke($"Reading the {App} model", null);
-                var read = await OnHostAsync(() => (Model: Export?.Invoke(), Ids: bridge ? AllIds?.Invoke()?.ToList() : null)).ConfigureAwait(false);
+                var read = pendingPush != null
+                    ? (Model: (JObject?)pendingPush.Value.Body["model"], Ids: (List<string>?)null)
+                    : await OnHostAsync(() => (Model: Export?.Invoke(), Ids: bridge ? AllIds?.Invoke()?.ToList() : null)).ConfigureAwait(false);
                 var exchange = read.Model;
                 if (exchange != null)
                 {
@@ -335,6 +376,19 @@ public sealed class LiveLink : IDisposable
                         body["complete"] = complete;
                         body["deleted"] = new JArray(deleted);
                     }
+                    var hashes = new Dictionary<string, string>();
+                    if (bridge && !complete && pendingPush == null)
+                    {
+                        var delta = MeshDelta(exchange, sentMeshes);
+                        body["model"] = delta.Model;
+                        hashes = delta.Hashes;
+                    }
+                    if (pendingPush != null)
+                    {
+                        body = pendingPush.Value.Body; hashes = pendingPush.Value.Hashes;
+                        sentIds = pendingPush.Value.Ids; deleted = pendingPush.Value.Deleted; complete = pendingPush.Value.Complete;
+                    }
+                    else pendingPush = (body, hashes, sentIds, deleted, complete);
                     void Sent(long sent, long total)
                     {
                         if (sent < total) SyncProgress?.Invoke($"Sending {Progress.Megabytes(sent)} of {Progress.Megabytes(total)} to ArchAI", 0.1 + 0.6 * sent / total);
@@ -350,9 +404,14 @@ public sealed class LiveLink : IDisposable
                     }
                     if (bridge)
                     {
-                        known = complete ? sentIds : new HashSet<string>(known.Where(i => !deleted.Contains(i)).Concat(sentIds));
+                        if ((string?)result["ack"] != (string?)body["changeId"]) throw new InvalidOperationException("ArchAI did not acknowledge this change; it remains pending");
+                        foreach (var entry in hashes) sentMeshes[entry.Key] = entry.Value;
+                        foreach (var id in deleted) sentMeshes.Remove(id);
+                        var removed = new HashSet<string>(deleted);
+                        known = complete ? sentIds : new HashSet<string>(known.Where(i => !removed.Contains(i)).Concat(sentIds));
                         SaveState();
                     }
+                    pendingPush = null;
                     var revision = (long?)result["revision"] ?? 0;
                     // Up to date before this push, and nothing else changed in ArchAI meanwhile: nothing new to bring back.
                     var before = (long?)result["before"];

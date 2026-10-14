@@ -69,7 +69,7 @@ const tourKey = (docId: string) => `vr-tour:${docId}`;
 
 export const publishVrTour = defineEffect({
   id: 'publish-vr-tour',
-  label: 'Get VR link',
+  label: 'Export Raw VR Link',
   description: 'Uploads the 3D model and its VR stops and returns a link that opens the tour in a VR headset (Meta Quest Browser) or any browser. Republishing a document keeps its link.',
   aliases: ['vr', 'virtual reality', 'quest', 'headset', 'share 3d'],
   group: 'document',

@@ -362,6 +362,24 @@ describe('Live Bridge ids', () => {
 });
 
 describe('Live Bridge models on the board', () => {
+  it('keeps batch ordering unique and applies a control preset to multiple sources in one undo step', () => {
+    const app = createTestApp();
+    const meshes = Array.from({ length: 300 }, (_, i) => mesh(`m${i}`, i * 500));
+    sync(app, 'rhino:batch', model({ meshes }));
+    const elements = real(app);
+    expect(new Set(elements.map((element) => element.index)).size).toBe(300);
+    const group = bridge(app).sources['rhino:batch']!.groupId;
+    expect(elements.every((element) => element.parentId === group)).toBe(true);
+    const ids = elements.slice(0, 2).map((element) => element.id);
+    run(app, 'bridge-set-control', { ids, control: 'placement' });
+    for (const id of ids) expect(bridge(app).elements[id]!.owners).toEqual({ geometry: 'origin', material: 'origin', transform: 'archai', metadata: 'archai' });
+    app.executor.undo();
+    for (const id of ids) expect(bridge(app).elements[id]!.owners).toBeUndefined();
+    app.executor.undo();
+    expect(real(app)).toHaveLength(0);
+    app.executor.redo();
+    expect(real(app)).toHaveLength(300);
+  });
   it('puts each model in a group of its own', () => {
     const app = createTestApp();
     sync(app, 'rhino:facade', model({ meshes: [mesh('a'), mesh('b', 900)] }));
@@ -388,6 +406,23 @@ describe('Live Bridge models on the board', () => {
 });
 
 describe('Live Bridge export', () => {
+  it('sends model-group moves to receivers and permitted source objects with a new update token', () => {
+    const app = createTestApp();
+    sync(app, 'rhino:facade', model({ meshes: [mesh('a', 1000)] }));
+    const group = bridge(app).sources['rhino:facade']!.groupId!;
+    const id = bound(app, 'rhino:facade', 'a')!.id;
+    run(app, 'bridge-set-control', { ids: [id], control: 'placement' });
+    const before = pullPlan(doc(app), 'other', null);
+    run(app, 'select', { ids: [group] });
+    run(app, 'move-selection', { ids: [group], dx: 500, dy: 200 });
+    expect(pullPlan(doc(app), 'other', before.sent).nodes.has(id)).toBe(true);
+    const first = pullPlan(doc(app), 'rhino:facade', null).updates[0]!;
+    expect(first.move).toEqual([500, 200, 0]);
+    run(app, 'move-selection', { ids: [group], dx: 100, dy: 0 });
+    const second = pullPlan(doc(app), 'rhino:facade', null).updates[0]!;
+    expect(second.move).toEqual([600, 200, 0]);
+    expect(second.token).not.toBe(first.token);
+  });
   it('dissolves source groups for export, keeping world positions', () => {
     const app = createTestApp();
     sync(app, 'rhino:facade', model({ meshes: [mesh('a', 1000)] }));
@@ -433,6 +468,24 @@ describe('Live Bridge on online projects', () => {
 });
 
 describe('Live Bridge generic meshes', () => {
+  it('drops retired mesh bytes only when unreferenced and restores them on undo', () => {
+    const app = createTestApp();
+    sync(app, 'test', model({ meshes: [mesh('a')] }));
+    const id = bound(app, 'test', 'a')!.id;
+    const before = Object.keys(doc(app).blobs);
+    sync(app, 'test', model({ meshes: [{ ...mesh('a'), glb: 'AAAB' }] }), { complete: false });
+    expect(Object.keys(doc(app).blobs)).toHaveLength(1);
+    expect(Object.keys(doc(app).blobs)).not.toEqual(before);
+    app.executor.undo();
+    expect(Object.keys(doc(app).blobs)).toEqual(before);
+    expect(doc(app).elements[id]!.meta!['mesh']).toMatchObject({ blobId: before[0] });
+    app.executor.redo();
+    expect(Object.keys(doc(app).blobs)).toHaveLength(1);
+    // A second element still using a blob prevents collection when only the first changes.
+    sync(app, 'test', model({ meshes: [{ ...mesh('a'), glb: 'AAAB' }, { ...mesh('b'), glb: 'AAAB' }] }), { complete: false });
+    sync(app, 'test', model({ meshes: [{ ...mesh('a'), glb: 'AAAC' }] }), { complete: false });
+    expect(Object.keys(doc(app).blobs)).toHaveLength(2);
+  });
   it('turns an element an app used to send as a wall into the mesh it now sends, in place', () => {
     const app = createTestApp();
     sync(app, 'revit:tower', model({ app: 'Revit', walls: [wall('e101')] }));

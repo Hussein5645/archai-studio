@@ -8,13 +8,13 @@
 import { z } from 'zod';
 import { parseSystemParameters } from '@/catalog';
 import { doorMountOffset, doorTemplate, windowMountOffset } from '@/assets/system-geometry';
-import type { JsonValue } from '@/document';
+import type { JsonValue, ElementTable } from '@/document';
 import { defineMutation, CommandError, type MutationContext } from '@/commands/contract';
 import { createArchElement, createRoomEnclosure, createSlabEnclosure } from '@/commands/builtin/assets';
 import { createRect, ensureBlob } from '@/commands/builtin/create';
 import { createLevel, setElementLevelLink } from '@/commands/builtin/levels';
 import { createMaterial } from '@/commands/builtin/materials';
-import { snapshot } from '@/commands/helpers';
+import { snapshot, withAppendIndices } from '@/commands/helpers';
 import { RevitExchangeSchema, type RevitExchange } from './exchange';
 
 export interface RevitImportReport {
@@ -24,7 +24,8 @@ export interface RevitImportReport {
 
 type Plan = [number, number];
 
-function bounds(points: readonly Plan[]): { minX: number; minY: number; maxX: number; maxY: number } {
+function bounds(points: readonly Plan[]): { minX: number; minY: number; maxX: number; maxY: number;
+} {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -79,7 +80,18 @@ export interface RevitImportOptions {
 /** The exchange file's element collections (materials aside). */
 export type ExchangeCollection = 'levels' | 'walls' | 'openings' | 'slabs' | 'columns' | 'railings' | 'rooms' | 'meshes';
 
-export function importRevitModel(ctx: MutationContext, model: RevitExchange, options: RevitImportOptions = {}): RevitImportReport {
+export function importRevitModel(ctx: MutationContext, model: RevitExchange, options: RevitImportOptions = {},
+): RevitImportReport {
+  return withAppendIndices(ctx.doc.elements as ElementTable, () =>
+    importModel(ctx, model, options),
+  );
+}
+
+function importModel(
+  ctx: MutationContext,
+  model: RevitExchange,
+  options: RevitImportOptions,
+): RevitImportReport {
   const report: RevitImportReport = { created: {}, skipped: [] };
   const count = (kind: string) => (report.created[kind] = (report.created[kind] ?? 0) + 1);
   const attempt = (kind: string, id: string, build: () => void) => {

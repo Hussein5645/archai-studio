@@ -1,5 +1,7 @@
 # Live Bridge
 
+For the current workspace's performance fixes, selection-wide geometry controls, plugin deltas and validation, see [bridge improvements](bridge-improvements.md).
+
 ArchAI as the hub of a multi-app workflow: Revit, AutoCAD, Rhino, SketchUp, Blender, 3ds Max and
 Unreal link to the same ArchAI project at once. Each app's model lives in the project with its own
 colour and identity; changes travel element by element; who may change what is decided per part

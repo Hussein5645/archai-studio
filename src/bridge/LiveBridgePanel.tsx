@@ -12,7 +12,7 @@
 import { Cable, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAppState, useDispatch } from '@/app/context';
-import type { BridgeData, BridgeFacet, BridgeMode } from '@/document';
+import type { BridgeData, BridgeFacet } from '@/document';
 import { BRIDGE_FACETS } from '@/document';
 import { boardDoc } from '@/store';
 import { isLive, liveBridgeControls, useLiveConnections, type LiveConnection } from '@/live/board';
@@ -30,7 +30,7 @@ function ago(time: number | null | undefined, now: number): string {
   return new Date(time).toLocaleString();
 }
 
-export type LinkStatus = 'Connected' | 'Syncing' | 'Disconnected' | 'Error';
+export type LinkStatus = 'Connected' | 'Syncing' | 'Disconnected' | 'Error' | 'Paused';
 
 export function linkStatus(connection: LiveConnection | undefined, now: number): LinkStatus {
   if (connection?.error) return 'Error';
@@ -69,13 +69,18 @@ export function LiveBridgeChip() {
         {apps.length ? apps.join(', ') : 'Live Bridge'}
         {attention > 0 && <span className={styles.badge}>{attention}</span>}
       </button>
-      {open && <LiveBridgePanel bridge={bridge} connections={connections} now={now} onClose={() => setOpen(false)} />}
+      {open && (
+        <LiveBridgePanel bridge={bridge} connections={connections} now={now} onClose={() => setOpen(false)} />
+      )}
     </div>
   );
 }
 
-function LiveBridgePanel({ bridge, connections, now, onClose }: { bridge: BridgeData | undefined; connections: LiveConnection[]; now: number; onClose: () => void }) {
-  const [tab, setTab] = useState<Tab>(() => ((bridge?.conflicts.length ?? 0) + (bridge?.held.length ?? 0) > 0 ? 'conflicts' : 'apps'));
+function LiveBridgePanel({ bridge, connections, now, onClose }: { bridge: BridgeData | undefined; connections: LiveConnection[]; now: number; onClose: () => void;
+}) {
+  const [tab, setTab] = useState<Tab>(() =>
+    (bridge?.conflicts.length ?? 0) + (bridge?.held.length ?? 0) > 0 ? 'conflicts' : 'apps',
+  );
   const colours = useBridgeColours();
   const conflicts = (bridge?.conflicts.length ?? 0) + (bridge?.held.length ?? 0);
   return (
@@ -86,7 +91,9 @@ function LiveBridgePanel({ bridge, connections, now, onClose }: { bridge: Bridge
           <X size={14} />
         </button>
       </header>
-      <p className={styles.lead}>Apps linked to this project send their model as you edit and receive what the others share.</p>
+      <p className={styles.lead}>
+        Apps linked to this project send their model as you edit and receive what the others share.
+      </p>
       <div className={styles.tabs} role="tablist">
         {(['apps', 'conflicts', 'activity'] as const).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} data-active={tab === t || undefined} onClick={() => setTab(t)}>
@@ -107,11 +114,15 @@ function LiveBridgePanel({ bridge, connections, now, onClose }: { bridge: Bridge
   );
 }
 
-function Apps({ bridge, connections, now }: { bridge: BridgeData | undefined; connections: LiveConnection[]; now: number }) {
+function Apps({ bridge, connections, now }: { bridge: BridgeData | undefined; connections: LiveConnection[]; now: number;
+}) {
   const dispatch = useDispatch();
   const byKey = new Map(connections.map((c) => [c.key, c]));
   const keys = [...new Set([...Object.keys(bridge?.sources ?? {}), ...connections.filter((c) => isLive(c, now)).map((c) => c.key)])];
-  if (keys.length === 0) return <p className={styles.empty}>No app is linked yet. Turn on Live Bridge in an app's ArchAI plugin.</p>;
+  if (keys.length === 0) return (
+      <p className={styles.empty}>No app is linked yet. Turn on Live Bridge in an app's ArchAI plugin.
+      </p>
+    );
   const counts = new Map<string, number>();
   for (const binding of Object.values(bridge?.elements ?? {})) {
     if (binding.removed) continue;
@@ -122,7 +133,7 @@ function Apps({ bridge, connections, now }: { bridge: BridgeData | undefined; co
       {keys.map((key) => {
         const source = bridge?.sources[key];
         const connection = byKey.get(key);
-        const status = linkStatus(connection, now);
+        const status = source?.mode === 'paused' ? 'Paused' : linkStatus(connection, now);
         const app = source?.app || connection?.app || 'App';
         // Another app never decides this app's elements (release them into ArchAI first).
         const ownerOptions = [
@@ -149,10 +160,16 @@ function Apps({ bridge, connections, now }: { bridge: BridgeData | undefined; co
               <>
                 <div className={styles.grid}>
                   <label>
-                    Link
-                    <select value={source.mode} onChange={(e) => setSource({ mode: e.target.value as BridgeMode })}>
-                      <option value="two-way">Two-way</option>
-                      <option value="read-only">Only receives</option>
+                    Direction
+                    <select value={
+                        source.mode === 'two-way' && source.receives === 'nothing'
+                          ? 'send-only'
+                          : source.mode} onChange={(e) => setSource({ mode: e.target.value === 'send-only' ? 'two-way' : e.target.value,
+                          receives: e.target.value === 'send-only' ? 'nothing' : 'shared',
+                        })}>
+                      <option value="two-way">Send and receive</option>
+                      <option value="send-only">Send only</option>
+                      <option value="read-only">Receive only</option>
                       <option value="paused">Paused</option>
                     </select>
                   </label>
@@ -165,7 +182,11 @@ function Apps({ bridge, connections, now }: { bridge: BridgeData | undefined; co
                   </label>
                 </div>
                 <details className={styles.authority}>
-                  <summary>Who decides its elements' parts</summary>
+                  <summary>Where geometry and edits are controlled</summary>
+                  <small className={styles.meta}>
+                    The source app controls its geometry by default. Give ArchAI control of position
+                    or names to edit those here. Shared changes ask you to resolve conflicts.
+                  </small>
                   <div className={styles.grid}>
                     {BRIDGE_FACETS.map((facet: BridgeFacet) => (
                       <label key={facet}>
@@ -182,9 +203,23 @@ function Apps({ bridge, connections, now }: { bridge: BridgeData | undefined; co
               </>
             )}
             <div className={styles.actions}>
-              {source?.groupId && <button type="button" onClick={() => void dispatch('select', { ids: [source.groupId!] })}>Select model</button>}
-              {source && <button type="button" onClick={() => setSource({ mode: source.mode === 'paused' ? 'two-way' : 'paused' })}>{source.mode === 'paused' ? 'Resume' : 'Pause'}</button>}
-              {liveBridgeControls.available() && <button type="button" onClick={() => liveBridgeControls.resync(key)}>Sync now</button>}
+              {source?.groupId && (
+                <button type="button" onClick={() => void dispatch('select', { ids: [source.groupId!] })}>
+                  Select model
+                </button>
+              )}
+              {source && (
+                <button type="button" onClick={() => setSource({ mode: source.mode === 'paused' ? 'two-way' : 'paused' })}>{source.mode === 'paused' ? 'Resume' : 'Pause'}</button>
+              )}
+              {liveBridgeControls.available() && (
+                <button type="button"
+                  disabled={source?.mode === 'paused'}
+                  onClick={() => liveBridgeControls.resync(key)}
+                  title="Requests the source's latest changes and sends ArchAI's shared geometry again"
+                >
+                  Sync now
+                </button>
+              )}
               {liveBridgeControls.available() && source && (
                 <button type="button" className={styles.danger} onClick={() => liveBridgeControls.disconnect(key)} title="Its elements stay in ArchAI as ArchAI elements">
                   Disconnect
@@ -203,18 +238,33 @@ function Conflicts({ bridge }: { bridge: BridgeData | undefined }) {
   const elements = useAppState((s) => boardDoc(s).elements);
   const conflicts = bridge?.conflicts ?? [];
   const held = bridge?.held ?? [];
-  if (conflicts.length === 0 && held.length === 0) return <p className={styles.empty}>No conflicts. When ArchAI and an app change the same part of an element and nobody owns it, it shows up here.</p>;
+  if (conflicts.length === 0 && held.length === 0) return (
+      <p className={styles.empty}>
+        No conflicts. When ArchAI and an app change the same part of an element and nobody owns it,
+        it shows up here.
+      </p>
+    );
   const appOf = (key: string) => bridge?.sources[key]?.app || 'The app';
   return (
     <>
       {held.map((h) => (
         <section key={h.id} className={styles.conflict}>
-          <strong>{appOf(h.source)} would delete {h.elements.length} elements</strong>
-          <small>Held because it is a large share of its model. If the app only sent part of its model, keep them.</small>
+          <strong>{appOf(h.source)} would delete {h.elements.length} elements
+          </strong>
+          <small>
+            Held because it is a large share of its model. If the app only sent part of its model,
+            keep them.
+          </small>
           <div className={styles.actions}>
-            <button type="button" onClick={() => void dispatch('select', { ids: h.elements.filter((id) => elements[id]) })}>Select</button>
-            <button type="button" className={styles.danger} onClick={() => void dispatch('bridge-held', { id: h.id, apply: true })}>Delete them</button>
-            <button type="button" onClick={() => void dispatch('bridge-held', { id: h.id, apply: false })}>Keep them</button>
+            <button type="button" onClick={() => void dispatch('select', { ids: h.elements.filter((id) => elements[id]) })}>
+              Select
+            </button>
+            <button type="button" className={styles.danger} onClick={() => void dispatch('bridge-held', { id: h.id, apply: true })}>
+              Delete them
+            </button>
+            <button type="button" onClick={() => void dispatch('bridge-held', { id: h.id, apply: false })}>
+              Keep them
+            </button>
           </div>
         </section>
       ))}
@@ -228,9 +278,14 @@ function Conflicts({ bridge }: { bridge: BridgeData | undefined }) {
               {appOf(c.source)} {what}, and it was changed in ArchAI too.
             </small>
             <div className={styles.actions}>
-              {element && <button type="button" onClick={() => void dispatch('select', { ids: [c.element] })}>Select</button>}
+              {element && (
+                <button type="button" onClick={() => void dispatch('select', { ids: [c.element] })}>
+                  Select
+                </button>
+              )}
               <button type="button" onClick={() => void dispatch('bridge-resolve', { conflict: c.id, take: 'theirs' })}>{c.facet === 'delete' ? 'Delete it' : `Take ${appOf(c.source)}'s`}</button>
-              <button type="button" onClick={() => void dispatch('bridge-resolve', { conflict: c.id, take: 'mine' })}>Keep ArchAI's</button>
+              <button type="button" onClick={() => void dispatch('bridge-resolve', { conflict: c.id, take: 'mine' })}>Keep ArchAI's
+              </button>
             </div>
           </section>
         );
@@ -250,7 +305,8 @@ function Activity({ bridge, now }: { bridge: BridgeData | undefined; now: number
           <li key={`${entry.at}-${i}`}>
             <span className={styles.swatch} style={{ background: source?.color ?? '#9aa0aa' }} />
             <div>
-              <strong>{source?.app || (entry.source === 'archai' ? 'ArchAI' : 'App')}</strong> {entry.text}
+              <strong>{source?.app || (entry.source === 'archai' ? 'ArchAI' : 'App')}</strong> {' '}
+              {entry.text}
               <small>{ago(entry.at, now)}</small>
             </div>
           </li>

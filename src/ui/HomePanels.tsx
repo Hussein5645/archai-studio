@@ -94,7 +94,7 @@ export function VrLinksPanel() {
     <div className={styles.panel} data-testid="vr-links">
       <div className={styles.toolbar}>
         <p className={styles.hint}>
-          {t('Tours you published with VR link in the 3D view or Open in VR in a plugin. Open a link in the Meta Quest Browser and press Enter VR.')}
+          {t('Raw VR, baked VR and 360 links published from the VR menu or a plugin. Open a link in the Meta Quest Browser and press Enter VR.')}
         </p>
         <IconButton label={t('Refresh')} onClick={() => setReload((n) => n + 1)}>
           <RefreshCw size={14} />
@@ -105,7 +105,7 @@ export function VrLinksPanel() {
       {tours && tours.length === 0 && (
         <div className={styles.empty}>
           <Glasses size={24} aria-hidden="true" />
-          <p>{t('No VR links yet. In a project, add VR stops in the 3D view and press VR link.')}</p>
+          <p>{t('No VR links yet. Open the VR menu in a 3D view to export a raw link or prepare a rendered link.')}</p>
         </div>
       )}
       {tours && tours.length > 0 && (
@@ -119,6 +119,7 @@ export function VrLinksPanel() {
                 <strong>{tour.name}</strong>
                 <small>
                   {t('Updated')} {new Date(tour.updatedAt).toLocaleDateString()}
+                  {` · ${t(tour.mode === 'panorama' ? '360 image' : tour.mode === 'baked' ? 'Baked VR' : 'Raw VR')}`}
                   {tour.stops !== null ? ` · ${tour.stops} ${tour.stops === 1 ? t('stop') : t('stops')}` : ''}
                   {tour.modelBytes ? ` · ${sizeText(tour.modelBytes)}` : ''}
                   {!tour.available ? ` · ${t('upload not finished')}` : ''}

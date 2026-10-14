@@ -13,6 +13,7 @@ export interface VrTour {
   /** The short link a headset opens. */
   link: string;
   modelBytes: number | null;
+  mode?: 'raw' | 'baked' | 'panorama';
   stops: number | null;
   /** False when the tour was reserved but never finished uploading. */
   available: boolean;

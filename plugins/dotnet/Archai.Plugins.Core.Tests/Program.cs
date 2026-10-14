@@ -8,6 +8,21 @@ void Check(string label, Action test) { test(); passed++; Console.WriteLine("PAS
 void Near(double actual, double expected, double tolerance = 1e-4) { if (Math.Abs(actual - expected) > tolerance) throw new Exception($"Expected {expected}; got {actual}."); }
 void True(bool value, string what) { if (!value) throw new Exception("Expected " + what); }
 
+Check("mesh deltas skip only acknowledged versions and preserve export data", () =>
+{
+    var model = new JObject { ["meshes"] = new JArray(new JObject { ["id"] = "a", ["glb"] = "AAAA", ["name"] = "A" }, new JObject { ["id"] = "b", ["glb"] = "AAAA" }) };
+    var first = LiveLink.MeshDelta(model, new Dictionary<string, string>());
+    True(((JArray)first.Model["meshes"]!).Count == 2, "first sync includes all objects");
+    var unchanged = LiveLink.MeshDelta(model, first.Hashes);
+    True(((JArray)unchanged.Model["meshes"]!).Count == 0, "unchanged geometry skipped");
+    model["meshes"]![0]!["name"] = "Changed";
+    var delta = LiveLink.MeshDelta(model, first.Hashes);
+    True(((JArray)delta.Model["meshes"]!).Count == 1, "only changed item sent");
+    True(((JArray)model["meshes"]!).Count == 2, "export unchanged");
+    model["levels"] = new JArray(new JObject { ["id"] = "ground", ["elevation"] = 100 });
+    True(((JArray)LiveLink.MeshDelta(model, first.Hashes).Model["meshes"]!).Count == 2, "dependencies invalidate hashes");
+});
+
 // A 1 m x 2 m x 3 m box at host (10 m, 20 m, 0) in a Z-up millimetre host.
 SceneObject Box(string name)
 {

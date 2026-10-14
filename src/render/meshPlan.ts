@@ -40,7 +40,8 @@ function multiply(a: Mat4, b: Mat4): Mat4 {
   return out;
 }
 
-interface GltfNode { matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[]; mesh?: number; children?: number[] }
+interface GltfNode { matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[]; mesh?: number; children?: number[];
+}
 
 function localMatrix(node: GltfNode): Mat4 {
   if (node.matrix) return node.matrix;
@@ -66,8 +67,10 @@ export function glbTriangles(bytes: Uint8Array): Float32Array {
     nodes?: GltfNode[];
     scenes?: { nodes?: number[] }[];
     scene?: number;
-    meshes?: { primitives?: { mode?: number; attributes?: { POSITION?: number }; indices?: number }[] }[];
-    accessors?: { bufferView?: number; byteOffset?: number; componentType: number; count: number; type: string }[];
+    meshes?: { primitives?: { mode?: number; attributes?: { POSITION?: number }; indices?: number }[];
+    }[];
+    accessors?: { bufferView?: number; byteOffset?: number; componentType: number; count: number; type: string;
+    }[];
     bufferViews?: { byteOffset?: number; byteLength: number; byteStride?: number }[];
   } | null = null;
   let bin: Uint8Array | null = null;
@@ -220,12 +223,23 @@ export function segmentsPath(segments: readonly number[]): string {
 }
 
 /** Plans by blob id, computed in the background a few at a time; the board re-renders as they arrive. */
-class MeshPlanStore {
+export class MeshPlanStore {
   private readonly plans = new Map<string, MeshPlan>();
   private readonly queue = new Map<string, string>();
   private readonly listeners = new Set<() => void>();
   private version = 0;
   private scheduled = false;
+  private worker: Worker | null = null;
+  private processing: string | null = null;
+
+  private publish(blobId: string, plan: MeshPlan): void {
+    this.plans.set(blobId, plan);
+    this.processing = null;
+    this.scheduled = false;
+    this.version += 1;
+    for (const listener of this.listeners) listener();
+    if (this.queue.size) this.schedule();
+  }
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -243,7 +257,7 @@ class MeshPlanStore {
       this.plans.set(blobId, computed);
       return computed;
     }
-    this.queue.set(blobId, data);
+    if (this.processing !== blobId) this.queue.set(blobId, data);
     this.schedule();
     return null;
   }
@@ -251,6 +265,24 @@ class MeshPlanStore {
   private schedule(): void {
     if (this.scheduled) return;
     this.scheduled = true;
+    // One job at a time bounds copied payloads. Dense geometry never runs on the UI thread.
+    if (typeof Worker !== 'undefined') {
+      this.worker ??= new Worker(new URL('./meshPlan.worker.ts', import.meta.url), {
+        type: 'module',
+        name: 'mesh-plans',
+      });
+      const [blobId, data] = this.queue.entries().next().value!;
+      this.processing = blobId;
+      this.queue.delete(blobId);
+      this.worker.onmessage = (event: MessageEvent<MeshPlan>) => this.publish(blobId, event.data);
+      this.worker.onerror = () => {
+        this.worker?.terminate();
+        this.worker = null;
+        this.publish(blobId, { cut: [], edges: [] });
+      };
+      this.worker.postMessage(data);
+      return;
+    }
     setTimeout(() => {
       this.scheduled = false;
       const started = performance.now();

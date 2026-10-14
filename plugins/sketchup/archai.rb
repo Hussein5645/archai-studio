@@ -7,7 +7,7 @@ module ArchAI
   unless file_loaded?(__FILE__)
     extension = SketchupExtension.new('ArchAI', 'archai/main')
     extension.description = 'Send models to ArchAI, open ArchAI .AIR files and walk through the model in VR (Meta Quest Browser or any browser).'
-    extension.version = '0.5.2'
+    extension.version = '0.5.3'
     extension.creator = 'ArchAI'
     extension.copyright = 'ArchAI'
     Sketchup.register_extension(extension, true)

@@ -33,7 +33,7 @@ import { IPC, LiveReplyInput, type LiveRequest } from '../shared/ipc.js';
 
 export const LIVE_PORT = Number(process.env['ARCHAI_LIVE_PORT']) || 47821;
 const MAX_BODY = 768 * 1024 * 1024;
-const TIMEOUT_MS = 120_000;
+const TIMEOUT_MS = 170_000;
 
 const pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
 
@@ -138,7 +138,7 @@ export function startLiveLink(board: () => BrowserWindow | null, version: string
         return send(response, 200, result);
       }
       if (request.method === 'GET' && url.pathname === '/live/pull') {
-        const result = (await ask(board(), 'pull', { key, protocol: Number(url.searchParams.get('protocol')) || 1, fresh: url.searchParams.get('fresh') === '1', resend: (url.searchParams.get('resend') ?? '').slice(0, 40_000) })) as { glb: Uint8Array; revision: number; name: string } | null;
+        const result = (await ask(board(), 'pull', { key, project: (url.searchParams.get('project') ?? '').slice(0, 64), protocol: Number(url.searchParams.get('protocol')) || 1, fresh: url.searchParams.get('fresh') === '1', resend: (url.searchParams.get('resend') ?? '').slice(0, 40_000) })) as { glb: Uint8Array; revision: number; name: string } | null;
         if (!result) return send(response, 204, {});
         const bytes = Buffer.from(result.glb.buffer, result.glb.byteOffset, result.glb.byteLength);
         response.writeHead(200, {

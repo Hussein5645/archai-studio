@@ -7,8 +7,8 @@ import { CommandError, defineEffect } from '../contract';
 
 export const openRender = defineEffect({
   id: 'open-render-studio',
-  label: 'Open ArchAI Render',
-  description: 'Opens ArchAI Render, the rendering studio of the desktop app (real-time and path-traced images, sun and sky, entourage), live-linked to this document.',
+  label: 'Prepare Rendered VR Link',
+  description: 'Opens VR preparation to bake the project scene and publish a baked VR link or a rendered 360 image link.',
   aliases: ['render', 'rendering', 'visualise', 'visualize', 'path tracing', 'd5', 'twinmotion', 'lumion'],
   group: 'document',
   input: z.void(),
