@@ -126,7 +126,7 @@ as a `copy` ref of the same element; only the offered parts of their edits apply
 ### Protocol 2
 
 ```
-GET  /live/status?key&app&name&protocol=2&project   { protocol, document, bound, mismatch?, revision, own }
+GET  /live/status?key&app&name&protocol=2&project   { protocol, document, needsLink, linkPending, bound, mismatch?, revision, own }
 GET  /live/projects                                 { open, projects: [{ id, name, updatedAt, online, open }] }
 POST /live/bind   { key, app, name, project | newName | choose: true }   { document, revision } | { cancelled }
 POST /live/push   { protocol: 2, key, app, name, project, changeId, complete, deleted, model }
@@ -137,10 +137,17 @@ GET  /live/pull?key&protocol=2&project[&fresh=1]    glTF; nodes' extras.archai =
                                                     { present, updates, document, revision }
 ```
 
-A plugin bound to another project than the one ArchAI shows is refused (`project-mismatch`);
-revisions are time-based, so a reconnect after a restart never looks unchanged. **Link to
-project...** in every plugin asks ArchAI, which shows one picker (an existing project or a new
-one).
+A plugin continues syncing its remembered project in the background when ArchAI shows another
+project. Batches naming a previous destination after relinking are refused (`project-mismatch`).
+Revisions are time-based, so a reconnect after a restart never looks unchanged. The first status
+request from an unlinked model, or an `archai://live` launch, opens the project picker automatically.
+**Link to project...** joins that picker when it is already open. Cancelling dismisses automatic
+requests until the bridge is restarted; the explicit Link button can reopen it.
+
+When linking a different model from the same app to a project, ArchAI asks whether to **Create
+new link** (keep both models) or **Replace** a chosen existing model. Replacement removes that
+model's source geometry and disconnects its old link; the project change is undoable. Relinking
+the same source key reuses its existing model without this prompt.
 
 ## In ArchAI
 

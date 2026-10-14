@@ -55,10 +55,10 @@ app.commandLine.appendSwitch('use-angle', process.env['ARCHAI_ANGLE'] || (proces
 let mainWindow: BrowserWindow | null = null;
 
 /**
- * archai:// links (invite links: archai://invite/<token>) arrive in the command line, of this
+ * archai:// links (invite/<token> or live?key=...) arrive in the command line, of this
  * launch or of a second one. The board asks for the first one when it is ready (IPC.linkTake).
  */
-const linkOf = (argv: readonly string[]): string | null => argv.find((arg) => /^archai:\/\/invite\//i.test(arg)) ?? null;
+const linkOf = (argv: readonly string[]): string | null => argv.find((arg) => /^archai:\/\/(?:invite\/|live(?:[/?#]|$))/i.test(arg)) ?? null;
 let pendingLink: string | null = linkOf(process.argv);
 
 /** Paths a native open/save dialog has handed back this session. `filesSaveDocumentTo` only

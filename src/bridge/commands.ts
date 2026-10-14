@@ -7,7 +7,7 @@ import { defineMutation, CommandError } from '@/commands/contract';
 import { removeSubtree } from '@/commands/helpers';
 import { BRIDGE_FACETS, BRIDGE_MODES, BRIDGE_SHARES, BridgeOwnerSchema, IdSchema, type BridgeData, type Element, type JsonValue } from '@/document';
 import { RevitExchangeSchema } from '@/revit/exchange';
-import { bridgeLog, editableElsewhere, ensureBridge, originOf, ownerOf, runBridgeSync, unbind } from './engine';
+import { bridgeLog, editableElsewhere, ensureBridge, originOf, ownerOf, registerSource, runBridgeSync, unbind } from './engine';
 import { childLookup, facetHashes, facetsOf, withFacetValue } from './facets';
 import { current, isDraft } from 'immer';
 
@@ -378,6 +378,38 @@ export const bridgeForget = defineMutation({
   },
 });
 
-export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeHeld, bridgeSetSource, bridgeSetOwner,
+export const bridgeLinkSource = defineMutation({
+  id: 'bridge-link-source',
+  label: 'Link app model',
+  description: 'Registers an app model, optionally replacing a previous link from the same app and its source geometry.',
+  group: 'document',
+  palette: false,
+  history: 'record',
+  input: z.object({ key: z.string().min(1).max(300), app: z.string().max(60), name: z.string().max(200), replace: z.string().min(1).max(300).optional() }),
+  run: (ctx, input) => {
+    const bridge = ensureBridge(ctx);
+    if (input.replace) {
+      const old = bridge.sources[input.replace];
+      if (!old || input.replace === input.key || old.app.trim().toLowerCase() !== input.app.trim().toLowerCase())
+        throw new CommandError('rejected', 'The previous app link changed. Link the model again.');
+      const removed = new Set<string>();
+      for (const [id, binding] of Object.entries(bridge.elements)) {
+        if (originOf(binding) === input.replace && ctx.doc.elements[id])
+          for (const child of removeSubtree(ctx.doc, id)) removed.add(child);
+      }
+      for (const id of removed) delete bridge.elements[id];
+      for (const id of Object.keys(bridge.elements)) unbind(bridge, id, input.replace);
+      bridge.conflicts = bridge.conflicts.filter((c) => c.source !== input.replace && !removed.has(c.element));
+      bridge.held = bridge.held.filter((h) => h.source !== input.replace).map((h) => ({ ...h, elements: h.elements.filter((id) => !removed.has(id)) })).filter((h) => h.elements.length > 0);
+      if (old.groupId && !Object.values(ctx.doc.elements).some((e) => e.parentId === old.groupId)) delete ctx.doc.elements[old.groupId];
+      delete bridge.sources[input.replace];
+      bridgeLog(ctx, input.key, `Replaced ${old.app} (${old.name}) with ${input.name}`);
+    }
+    registerSource(ctx, input.key, input.app, input.name);
+    return { ok: true };
+  },
+});
+
+export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeHeld, bridgeSetSource, bridgeSetOwner, bridgeLinkSource,
   bridgeSetControl,
   bridgeSetShare, bridgeOffer, bridgeConvert, bridgeRevert, bridgeForget];

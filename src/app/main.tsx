@@ -164,7 +164,7 @@ async function boot(): Promise<void> {
   const account = currentAccount();
   const cloud = new CloudProjects(account, persistence, store, executor, toasts);
   cloud.start();
-  startLiveLink(platform, store, executor, catalog, toasts, persistence, {
+  const openBridgeLink = startLiveLink(platform, store, executor, catalog, toasts, persistence, {
     load: (id) => cloud.loadForBridge(id),
     save: (doc) => cloud.saveForBridge(doc),
     open: (id) => persistence.entry(id)?.cloud || cloud.list().projects.some((project) => project.id === id) ? cloud.open(id) : persistence.openStored(id),
@@ -177,14 +177,15 @@ async function boot(): Promise<void> {
   const setHostProgress = platform.window.setProgress;
   if (setHostProgress) setHostProgressReporter((fraction, active) => setHostProgress(!active ? null : fraction === null ? 'indeterminate' : fraction));
 
-  // Invite links: archai://invite/<token> (desktop) or ?invite=<token> (web) open the Join dialog.
-  const showInvite = (text: string) => {
+  // Desktop links open either bridge linking or an invite. Web invites use ?invite=<token>.
+  const showLink = (text: string) => {
+    openBridgeLink?.(text);
     if (inviteToken(text)) openJoinDialog(text);
   };
-  platform.links?.subscribe(showInvite);
+  platform.links?.subscribe(showLink);
   const webInvite = new URLSearchParams(location.search).get('invite');
   if (webInvite) {
-    showInvite(webInvite);
+    showLink(webInvite);
     const url = new URL(location.href);
     url.searchParams.delete('invite');
     history.replaceState(history.state, '', url.toString());

@@ -7,6 +7,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { useApp, useCloudProjects } from '@/app/context';
 import styles from '@/ui/AccountDialog.module.css';
 import own from './LiveBridgePanel.module.css';
+import { SourceLinkPicker } from './SourceLinkPicker';
 
 export type ProjectChoice = { project: string } | { newName: string } | null;
 
@@ -45,7 +46,7 @@ export function ProjectPicker() {
     },
     () => current,
   );
-  return request ? <Picker key={`${request.app}:${request.name}`} request={request} /> : null;
+  return <>{request && <Picker key={`${request.app}:${request.name}`} request={request} />}<SourceLinkPicker /></>;
 }
 
 function Picker({ request }: { request: Request }) {

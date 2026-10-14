@@ -33,6 +33,7 @@ import { startProgress } from '@/progress';
 import type { BridgeSyncReport } from '@/bridge/engine';
 import { flattenSourceGroups, pullPlan } from '@/bridge/pull';
 import { chooseProject } from '@/bridge/ProjectPicker';
+import { chooseSourceLink } from '@/bridge/SourceLinkPicker';
 
 /** The Live Bridge protocol this ArchAI speaks (plugins 0.4.x speak 1). */
 export const BRIDGE_PROTOCOL = 2;
@@ -116,12 +117,14 @@ export function nameFromKey(key: string): string {
 
 /** Board window, once at boot (desktop app only). */
 
-export function startLiveLink(platform: Platform, store: AppStore, executor: CommandExecutor, catalog: AssetCatalog, toasts: ToastStore, persistence: Pick<PersistenceService, 'openStored' | 'recent' | 'loadStored' | 'storeDocument' | 'entry'> | null = null, background?: { load(id: string): Promise<ArchaiDocument | null>; save(doc: ArchaiDocument): Promise<void>; open(id: string): Promise<boolean> }): void {
+export function startLiveLink(platform: Platform, store: AppStore, executor: CommandExecutor, catalog: AssetCatalog, toasts: ToastStore, persistence: Pick<PersistenceService, 'openStored' | 'recent' | 'loadStored' | 'storeDocument' | 'entry'> | null = null, background?: { load(id: string): Promise<ArchaiDocument | null>; save(doc: ArchaiDocument): Promise<void>; open(id: string): Promise<boolean> }): ((url: string) => void) | undefined {
   if (!platform.live) return;
   const boardStore = store;
   const boardExecutor = executor;
   // Serialize syncs, including background writes, so two plugins cannot overwrite a project.
   let queue: Promise<unknown> = Promise.resolve();
+  const linking = new Map<string, Promise<unknown>>();
+  const cancelledLinks = new Set<string>();
   // Time-based, so a plugin reconnecting after ArchAI restarted never sees an old revision again.
   let revision = Date.now();
   /** Protocol 2: what each app received in this session (element → hash), so pulls carry changes only. */
@@ -170,6 +173,28 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
     queue = request.catch(() => undefined);
     return request;
   });
+  // A cold launch can arrive before the plugin's next poll. Start the same picker now.
+  return (text) => {
+    let url: URL;
+    try { url = new URL(text); } catch { return; }
+    if (url.protocol !== 'archai:' || url.hostname !== 'live') return;
+    const payload = Object.fromEntries(url.searchParams);
+    const request = queue.then(() => handle('status', payload));
+    queue = request.catch(() => undefined);
+  };
+
+  function linkProject(key: string, app: string, name: string): Promise<unknown> {
+    const pending = linking.get(key);
+    if (pending) return pending;
+    const request = (async () => {
+      const choice = await chooseProject(app || 'The app', name);
+      if (!choice) { cancelledLinks.add(key); return { protocol: BRIDGE_PROTOCOL, cancelled: true }; }
+      const result = await ('project' in choice ? bindQueued(key, app, name, choice.project, '') : bindQueued(key, app, name, '', choice.newName));
+      return result;
+    })().finally(() => linking.delete(key));
+    linking.set(key, request);
+    return request;
+  }
   async function handle(kind: LiveRequestKind, payload: Record<string, unknown>): Promise<unknown> {
     let store = boardStore;
     let executor = boardExecutor;
@@ -192,6 +217,7 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
     const key = str(payload['key'], 300);
     const project = str(payload['project'], 64);
     if (kind === 'stop') {
+      cancelledLinks.delete(key);
       disconnected.delete(key);
       connections = new Map(connections);
       connections.delete(key);
@@ -202,10 +228,8 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       const app = str(payload['app'], 60);
       const name = str(payload['name']);
       if (payload['choose'] === true) {
-        // The plugin's Link to project button: the user picks here.
-        const choice = await chooseProject(app || 'The app', name);
-        if (!choice) return { protocol: BRIDGE_PROTOCOL, cancelled: true };
-        return 'project' in choice ? bindQueued(key, app, name, choice.project, '') : bindQueued(key, app, name, '', choice.newName);
+        cancelledLinks.delete(key);
+        return linkProject(key, app, name);
       }
       return bindQueued(key, app, name, project, str(payload['newName']));
     }
@@ -222,16 +246,26 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
       }
     }
     const state = store.getState();
-    const hasProject = Boolean(target && state.doc.id === target && (store !== boardStore || state.ui.screen !== 'home'));
+    const appName = str(payload['app'], 60);
+    const needsSourceChoice = Boolean(key && appName && !disconnected.has(key) && !state.doc.bridge?.sources[key] &&
+      Object.values(state.doc.bridge?.sources ?? {}).some((source) => source.app.trim().toLowerCase() === appName.trim().toLowerCase()));
+    const hasProject = Boolean(target && state.doc.id === target && (store !== boardStore || state.ui.screen !== 'home') && !needsSourceChoice);
     /** A protocol-2 plugin bound to another project than the open one. */
     const mismatch = Boolean(project && project !== state.doc.id);
     const current = hasProject ? { id: state.doc.id, name: state.doc.meta.name || 'Untitled' } : null;
     if (kind === 'status') {
+      if (!hasProject && key && str(payload['app']) && !cancelledLinks.has(key) && !disconnected.has(key)) {
+        void linkProject(key, str(payload['app'], 60), str(payload['name'])).catch((error) => {
+          cancelledLinks.add(key);
+          toasts.push({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
+        });
+      }
       if (key) touch(key, { protocol: Number(payload['protocol']) || connections.get(key)?.protocol || 1 });
       return {
         protocol: BRIDGE_PROTOCOL,
         document: current,
         needsLink: !hasProject,
+        linkPending: linking.has(key),
         ...(hasProject && project !== state.doc.id ? { known: sourceIds(state.doc, key) } : {}),
         bound: Boolean(key && state.doc.bridge?.sources[key]),
         ...(!hasProject && project ? { mismatch: { bound: project, open: state.doc.id } } : {}),
@@ -389,6 +423,25 @@ export function startLiveLink(platform: Platform, store: AppStore, executor: Com
     } else if (!project) {
       const created = executor.dispatchSync('new-document', { name: newName || name || nameFromKey(key) });
       if (!created.ok) throw new Error(created.error.message);
+    }
+    state = store.getState();
+    const projectId = state.doc.id;
+    const sameApp = Object.entries(state.doc.bridge?.sources ?? {}).filter(([other, source]) => other !== key && app.trim() && source.app.trim().toLowerCase() === app.trim().toLowerCase());
+    let replace: string | undefined;
+    if (!state.doc.bridge?.sources[key] && sameApp.length) {
+      const choice = await chooseSourceLink(app, name, sameApp.map(([key, source]) => ({ key, name: source.name })));
+      if (!choice) { cancelledLinks.add(key); return { protocol: BRIDGE_PROTOCOL, cancelled: true }; }
+      if ('replace' in choice) replace = choice.replace;
+    }
+    if (store.getState().doc.id !== projectId || store.getState().ui.screen === 'home') throw new Error('The project changed. Link the model again.');
+    const linked = await executor.dispatch('bridge-link-source', { key, app, name, replace });
+    if (!linked.ok) throw new Error(linked.error.message);
+    if (replace) {
+      disconnected.add(replace);
+      sentTo.delete(replace);
+      connections = new Map(connections);
+      connections.delete(replace);
+      changed();
     }
     state = store.getState();
     if (persistence) await persistence.storeDocument(state.doc, { cloud: persistence.entry(state.doc.id)?.cloud });

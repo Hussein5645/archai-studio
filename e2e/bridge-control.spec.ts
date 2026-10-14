@@ -72,9 +72,30 @@ test('bridge model selection controls its geometry in bulk and plans arrive from
   await expect.poll(() => page.evaluate(() => Object.values(window.__archai!.store.getState().doc.bridge!.elements).map((binding) => (binding as BridgeBinding).owners?.geometry))).toEqual(['shared', 'shared']);
   await page.getByTestId('live-link-chip').click();
   const panel = page.getByTestId('live-bridge-panel');
+  expect(await panel.evaluate((element) => getComputedStyle(element).getPropertyValue('-webkit-app-region'))).toBe('no-drag');
+  expect(await panel.getByRole('combobox', { name: 'Direction', exact: true }).evaluate((element) => getComputedStyle(element).getPropertyValue('-webkit-app-region'))).toBe('no-drag');
   await panel.getByRole('combobox', { name: 'Direction', exact: true }).selectOption('send-only');
   await expect.poll(() => page.evaluate(() => window.__archai!.store.getState().doc.bridge!.sources['test']!.receives)).toBe('nothing');
   await panel.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect(panel.locator('[data-status="Paused"]')).toBeVisible();
   await page.screenshot({ path: 'test-results/bridge-controls.png' });
+});
+
+test('bridge panel scrolls when several app models are linked', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => Boolean(window.__archai));
+  await page.evaluate(async () => {
+    const { executor } = window.__archai!;
+    await executor.dispatch('new-document', { name: 'Bridge scrolling' });
+    for (let i = 0; i < 10; i++) await executor.dispatch('bridge-sync', {
+      key: `scroll:${i}`, app: 'Revit', name: `Model ${i}`, model: { archaiRevit: 1, meshes: [] },
+    });
+  });
+  await page.getByTestId('live-link-chip').click();
+  const panel = page.getByTestId('live-bridge-panel');
+  await panel.getByTestId('live-bridge-app').first().hover();
+  await page.mouse.wheel(0, 1500);
+  await expect.poll(() => panel.getByTestId('live-bridge-app').first().evaluate((element) => element.parentElement!.scrollTop)).toBeGreaterThan(0);
+  await panel.getByRole('combobox', { name: 'Direction', exact: true }).last().selectOption('paused');
+  await expect(panel.locator('[data-status="Paused"]')).toHaveCount(1);
 });

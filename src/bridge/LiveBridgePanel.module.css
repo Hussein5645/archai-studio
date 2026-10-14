@@ -1,4 +1,4 @@
-.anchor { position: relative; }
+.anchor { position: relative; -webkit-app-region: no-drag; }
 .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); font-size: var(--text-sm); white-space: nowrap; -webkit-app-region: no-drag; }
 .chip:hover { background: var(--bg-hover); }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
@@ -13,7 +13,9 @@
 .tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--border); }
 .tabs button { padding: 6px 8px; border-bottom: 2px solid transparent; color: var(--text-muted); font-size: 12px; }
 .tabs button[data-active] { border-bottom-color: var(--accent, #1c7ed6); color: var(--text); font-weight: 600; }
-.body { flex: 1; overflow: auto; padding: 4px 12px 8px; }
+.panel, .panel * { -webkit-app-region: no-drag; }
+.header, .lead, .tabs, .footer { flex-shrink: 0; }
+.body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 12px 8px; }
 .empty { margin: 12px 0; color: var(--text-muted); font-size: 12px; line-height: 1.4; }
 .app, .conflict { display: flex; flex-direction: column; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .app:last-child, .conflict:last-child { border-bottom: none; }

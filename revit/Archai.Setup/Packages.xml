@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Release version="0.5.4-beta.1">
-  <Package revitVersion="2024" url="https://pub-c7e9dfac353641459603485335c5537d.r2.dev/ArchAI-AIR-Importer-0.5.4-beta.1-Revit-2024.zip" sha256="8faaf7e42e712ddc6db6b6a1f8e8d36ba869a34b59060ee4dd457047ba0b13d0" sizeBytes="535014" />
-  <Package revitVersion="2025" url="https://pub-c7e9dfac353641459603485335c5537d.r2.dev/ArchAI-AIR-Importer-0.5.4-beta.1-Revit-2025.zip" sha256="4390adf2a7badb8a427da31df11cef45440abc276084123ba1814b7ccac09485" sizeBytes="535862" />
-  <Package revitVersion="2026" url="https://pub-c7e9dfac353641459603485335c5537d.r2.dev/ArchAI-AIR-Importer-0.5.4-beta.1-Revit-2026.zip" sha256="baecf22b37d15d2540ee39fbb92388bba2fad91c4a937a393999baff1914308f" sizeBytes="535865" />
-  <Package revitVersion="2027" url="https://pub-c7e9dfac353641459603485335c5537d.r2.dev/ArchAI-AIR-Importer-0.5.4-beta.1-Revit-2027.zip" sha256="f43ab0e113424063f235e220e9c3ef3e48533c9b5ac6f61aaa7bb1320ce4bc8c" sizeBytes="536235" />
+<Release version="0.5.5-beta.1">
+  <Package revitVersion="2024" url="https://pub-c7e9dfac353641459603485335c5537d.r2.dev/ArchAI-AIR-Importer-0.5.5-beta.1-Revit-2024.zip" sha256="e81c1b5cb30028c12f12cc6e292feb48a25a7c63a396261a7674194be5d64214" sizeBytes="535007" />
+  <Package revitVersion="2025" url="https://pub-c7e9dfac353641459603485335c5537d.r2.dev/ArchAI-AIR-Importer-0.5.5-beta.1-Revit-2025.zip" sha256="13965f44350e7ba26755c2a64f31ce8a822bd05c502acfdc37f9c76e759816a6" sizeBytes="535861" />
+  <Package revitVersion="2026" url="https://pub-c7e9dfac353641459603485335c5537d.r2.dev/ArchAI-AIR-Importer-0.5.5-beta.1-Revit-2026.zip" sha256="fa233e4286c7449765b64d3f92020d80b64592c836a688ed73859a64819a4b3a" sizeBytes="535861" />
+  <Package revitVersion="2027" url="https://pub-c7e9dfac353641459603485335c5537d.r2.dev/ArchAI-AIR-Importer-0.5.5-beta.1-Revit-2027.zip" sha256="df7835558299fcc1acdf4480c5ca2195aac6e73609918ad087e30b671b80ac64" sizeBytes="536227" />
 </Release>

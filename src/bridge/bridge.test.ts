@@ -33,6 +33,36 @@ const bound = (app: TestApp, key: string, id: string): Element | undefined => {
   return entry ? doc(app).elements[entry[0]] : undefined;
 };
 
+it('replaces only the chosen app model and restores it with undo', async () => {
+  const app = createTestApp();
+  sync(app, 'old', model({ walls: [wall('a')], app: 'Revit' }));
+  sync(app, 'other', model({ walls: [wall('b', 1000)], app: 'Rhino' }));
+  const old = bound(app, 'old', 'a')!;
+  const other = bound(app, 'other', 'b')!;
+  const group = bridge(app).sources['old']!.groupId!;
+  run(app, 'create-rect', { x: 5000, y: 5000, width: 100, height: 100 });
+  const before = doc(app);
+  run(app, 'bridge-link-source', { key: 'new', app: 'revit', name: 'Replacement', replace: 'old' });
+  expect(doc(app).elements[old.id]).toBeUndefined();
+  expect(doc(app).elements[group]).toBeUndefined();
+  expect(doc(app).elements[other.id]).toBeDefined();
+  expect(bridge(app).sources['old']).toBeUndefined();
+  expect(bridge(app).sources['new']?.name).toBe('Replacement');
+  expect(Object.keys(doc(app).elements)).toHaveLength(Object.keys(before.elements).length - 2);
+  await app.executor.dispatch('undo');
+  expect(doc(app).elements).toEqual(before.elements);
+  expect(bridge(app).sources).toEqual(before.bridge!.sources);
+});
+
+it('refuses to replace a model from another app', () => {
+  const app = createTestApp();
+  sync(app, 'rhino-model', model({ walls: [wall('a')], app: 'Rhino' }));
+  const before = doc(app);
+  const result = app.executor.dispatchSync('bridge-link-source', { key: 'revit-model', app: 'Revit', name: 'Tower', replace: 'rhino-model' });
+  expect(result.ok).toBe(false);
+  expect(doc(app)).toBe(before);
+});
+
 describe('Live Bridge sync', () => {
   it('keeps ArchAI whole-object paint while the source updates geometry, names and embedded material slots', () => {
     const app = createTestApp();

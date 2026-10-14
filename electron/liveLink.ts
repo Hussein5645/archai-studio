@@ -5,7 +5,7 @@
  *
  *   GET  /live/status?key=K&name=N&app=A[&project=P&protocol=2]
  *                              { app, version, protocol, document, bound, mismatch?, revision, own }
- *                              (saved destination or needsLink: true; never auto-selects)
+ *                              (saved destination or needsLink: true; opens the picker for an unlinked model)
  *   POST /live/push           { key, app, name, model[, protocol: 2, project, changeId, complete,
  *                              deleted] }  → { protocol, ack, revision, document, applied, created,
  *                              skipped } or { refused, message }: the plugin's model (the exchange
@@ -105,6 +105,14 @@ export function startLiveLink(board: () => BrowserWindow | null, version: string
           project: (url.searchParams.get('project') ?? '').slice(0, 64),
           protocol: Number(url.searchParams.get('protocol')) || 1,
         })) as Record<string, unknown>;
+        if (status['linkPending']) {
+          const window = board();
+          if (window && !window.isDestroyed()) {
+            if (window.isMinimized()) window.restore();
+            window.show();
+            window.focus();
+          }
+        }
         return send(response, 200, { app: 'ArchAI', version, ...status });
       }
       if (request.method === 'GET' && url.pathname === '/live/projects') {

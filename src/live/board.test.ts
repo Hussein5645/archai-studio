@@ -6,11 +6,14 @@ import { liveBridgeControls, startLiveLink, nameFromKey } from './board';
 import { PersistenceService } from '@/persistence/service';
 
 const exporter = vi.hoisted(() => vi.fn(async () => new ArrayBuffer(0)));
+const projectPicker = vi.hoisted(() => vi.fn(async (): Promise<{ project: string } | null> => null));
 vi.mock('@/view3d/vrExport', () => ({ exportSceneSnapshot: exporter }));
+vi.mock('@/bridge/ProjectPicker', () => ({ chooseProject: projectPicker }));
 afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
   exporter.mockReset();
+  projectPicker.mockClear();
 });
 
 function setup(stored = false) {
@@ -25,8 +28,8 @@ function setup(stored = false) {
     },
   };
   const persistence = new PersistenceService(app.store, app.executor, app.platform);
-  startLiveLink(app.platform, app.store, app.executor, app.catalog, createToastStore(), stored ? persistence : null);
-  return { app, request, persistence };
+  const openLink = startLiveLink(app.platform, app.store, app.executor, app.catalog, createToastStore(), stored ? persistence : null)!;
+  return { app, request, persistence, openLink };
 }
 
 it('requires an explicit destination even when another project is open, without creating a project', async () => {
@@ -135,4 +138,33 @@ it('does not commit a pull when the user switches projects during export', async
   await expect(request('pull', { key: 'receiver', project, protocol: 2 })).rejects.toThrow(
     'project changed',
   );
+});
+
+it('opens the project picker on a cold-launch link without waiting for another plugin request', async () => {
+  const { app, request, openLink } = setup();
+  const doc = app.store.getState().doc;
+  openLink('archai://live?key=revit%3Acold&app=Revit&name=Tower');
+  await vi.waitFor(() => expect(projectPicker).toHaveBeenCalledWith('Revit', 'Tower'));
+  expect(app.store.getState().doc).toBe(doc);
+  // Cancellation stays dismissed while the older plugin keeps polling.
+  await request('status', { key: 'revit:cold', app: 'Revit', name: 'Tower' });
+  expect(projectPicker).toHaveBeenCalledTimes(1);
+  await request('stop', { key: 'revit:cold' });
+  await request('status', { key: 'revit:cold', app: 'Revit', name: 'Tower' });
+  expect(projectPicker).toHaveBeenCalledTimes(2);
+});
+
+it('joins the picker opened by status when the plugin also asks to choose a project', async () => {
+  const { app, request } = setup();
+  const project = app.store.getState().doc.id;
+  let resolve!: (value: { project: string }) => void;
+  projectPicker.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  expect(await request('status', { key: 'joined-picker', app: 'Revit', name: 'Tower' })).toMatchObject({ needsLink: true, linkPending: true });
+  const binding = request('bind', { key: 'joined-picker', app: 'Revit', name: 'Tower', choose: true });
+  // The waiting picker does not block normal bridge requests.
+  expect(await request('projects', {})).toMatchObject({ protocol: 2 });
+  resolve({ project });
+  expect(await binding).toMatchObject({ document: { id: project } });
+  expect(projectPicker).toHaveBeenCalledTimes(1);
+  expect(await request('status', { key: 'joined-picker', app: 'Revit' })).toMatchObject({ needsLink: false, linkPending: false });
 });
