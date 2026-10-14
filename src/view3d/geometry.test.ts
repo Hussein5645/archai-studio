@@ -1,12 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import type { Mesh } from 'three';
+import * as THREE from 'three';
 import { createTestApp, run } from '@/test/harness';
 import { buildScene, type Built } from './geometry';
+import { meshStore } from './meshes';
 
 const options = { lod: 'high' as const, models: new Map(), textures: new Map() };
 const byId = (built: Built[]) => new Map(built.map((item) => [item.id, item]));
 
 describe('incremental scene builds', () => {
+  it('uses whole-object ArchAI paint on new source material slots without mutating cached source materials', () => {
+    const app = createTestApp();
+    const materialId = run<string>(app, 'create-material', { material: { name: 'ArchAI orange', color: '#ff6600' } });
+    const blobId = 'mesh-material-priority-test';
+    const sourceMaterial = new THREE.MeshStandardMaterial({color: '#008800'});
+    sourceMaterial.name = 'Renamed source slot';
+    const source = new THREE.Group();
+    source.add(new THREE.Mesh(new THREE.BoxGeometry(100,100,100), sourceMaterial));
+    meshStore.models.set(blobId, source);
+    try {
+      const id = run<string>(app, 'create-rect', { x: 0, y: 0, width: 100, height: 100, meta: { mesh: { blobId, height: 100 }, materials: { body: materialId, 'asset:Old slot': materialId } } });
+      const built = buildScene(app.store.getState().doc, options).find(entry => entry.id === id)!;
+      const materials: THREE.Material[] = [];
+      built.object.traverse(object => { if (object instanceof THREE.Mesh) materials.push(...(Array.isArray(object.material) ? object.material : [object.material])); });
+      expect(materials.length).toBeGreaterThan(0);
+      for (const material of materials) expect((material as THREE.MeshStandardMaterial).color.getHexString()).toBe('ff6600');
+      expect(sourceMaterial.color.getHexString()).toBe('008800');
+    } finally { meshStore.models.delete(blobId); }
+  });
   it('selects geometry before construction while retaining hosted opening context', () => {
     const app = createTestApp();
     const wall = run<string>(app, 'create-arch-element', {

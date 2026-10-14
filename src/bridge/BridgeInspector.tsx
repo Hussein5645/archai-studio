@@ -76,14 +76,14 @@ export function BridgeInspector({ ids: selectedIds }: { ids: string[] }) {
           <button
             type="button"
             onClick={() => void dispatch('bridge-set-control', { ids, control: 'source' })}
-            title="The source app controls geometry, placement, materials and names"
+            title="The source app controls geometry, placement and names; ArchAI keeps materials"
           >
-            Source controls all
+            Source controls geometry
           </button>
           <button
             type="button"
             onClick={() => void dispatch('bridge-set-control', { ids, control: 'placement' })}
-            title="Keep geometry and materials in the source app; move and rename the selection in ArchAI"
+            title="Keep geometry in the source app; choose materials, move and rename in ArchAI"
           >
             Place in ArchAI
           </button>
@@ -114,7 +114,7 @@ export function BridgeInspector({ ids: selectedIds }: { ids: string[] }) {
               return (
               <label key={facet}>
                 {FACET_LABELS[facet]}
-                <select value={owners.size === 1 ? [...owners][0] : 'mixed'} onChange={(e) => void dispatch('bridge-set-owner', { ids, facet, owner: e.target.value || null })}>
+                <select disabled={facet === 'material'} value={owners.size === 1 ? [...owners][0] : 'mixed'} onChange={(e) => void dispatch('bridge-set-owner', { ids, facet, owner: e.target.value || null })}>
                     {owners.size > 1 && (
                       <option value="mixed" disabled>
                         Mixed

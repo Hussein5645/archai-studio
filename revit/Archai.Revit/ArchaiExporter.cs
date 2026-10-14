@@ -29,7 +29,15 @@ internal sealed class ArchaiExporter
     public readonly List<string> Warnings = new List<string>();
     public readonly Dictionary<string, int> Counts = new Dictionary<string, int>();
 
-    public ArchaiExporter(Document doc) { this.doc = doc; }
+    public ArchaiExporter(Document doc, View3D? view = null)
+    {
+        this.doc = doc;
+        if (view != null)
+        {
+            // Revit forbids an explicit detail level when a view supplies geometry.
+            geometryOptions = new Options { View = view, ComputeReferences = false, IncludeNonVisibleObjects = false };
+        }
+    }
 
     private static long Key(ElementId id) => id.Value;
     private static string Id(Element element) => "e" + element.Id.Value;

@@ -4,7 +4,7 @@ import type { ArchaiDocument, BridgeData, Element } from '@/document';
 import { withoutLink } from '@/live/sync';
 import type { BridgeSyncReport } from './engine';
 import { flattenSourceGroups, pullPlan, type PullPlan } from './pull';
-import { startBridgeGuard } from './guard';
+import { needsRevert, startBridgeGuard } from './guard';
 
 type Mesh = { id: string; name?: string; category?: string; origin: [number, number, number]; size: [number, number, number]; glb: string; archai?: string; was?: string };
 type Wall = { id: string; points: [number, number][]; base: number; height: number; layers: { name: string; role: 'core'; thickness: number; material?: string }[]; level?: string };
@@ -34,6 +34,49 @@ const bound = (app: TestApp, key: string, id: string): Element | undefined => {
 };
 
 describe('Live Bridge sync', () => {
+  it('keeps ArchAI whole-object paint while the source updates geometry, names and embedded material slots', () => {
+    const app = createTestApp();
+    sync(app, 'revit:paint', model({ meshes: [mesh('a')] }));
+    const id = bound(app, 'revit:paint', 'a')!.id;
+    const materialId = run<string>(app, 'create-material', { material: { name: 'ArchAI finish', color: '#ff5500' } });
+    const stop = startBridgeGuard(app.executor, app.store);
+    run(app, 'paint-element', { ids: [id], materialId, assetSlots: ['asset:Old source finish'] });
+    expect(needsRevert(doc(app), id)).toBe(false);
+    sync(app, 'revit:paint', model({ meshes: [{ ...mesh('a', 2300, 'New source name'), glb: 'BBBB' }] }));
+    const updated = doc(app).elements[id]!;
+    expect(updated.x).toBe(2300);
+    expect(updated.meta?.['materials']).toEqual({ body: materialId, 'asset:Old source finish': materialId });
+    expect(updated.meta?.['mesh']).not.toEqual(undefined);
+    stop();
+  });
+
+  it('retains a project material edited in ArchAI when the source changes its colour and wall geometry', () => {
+    const app = createTestApp();
+    sync(app, 'revit:finish', model({ walls: [wall('w')] }));
+    const materialId = Object.values(doc(app).materials).find(m => m.name === 'Plaster')!.id;
+    run(app, 'update-material', { id: materialId, patch: { color: '#dd4400' } });
+    sync(app, 'revit:finish', model({ walls: [wall('w', 0, 6500)], color: '#22bb00' }));
+    expect(doc(app).materials[materialId]!.color).toBe('#dd4400');
+    expect(Object.values(doc(app).materials).filter(m => m.name === 'Plaster')).toHaveLength(1);
+  });
+
+  it('hides source-view omissions without deletion/conflicts and restores the same painted element on unhide', () => {
+    const app = createTestApp();
+    const scoped = (visible: string[], meshes: Mesh[]) => ({ ...model({ meshes }), viewScope: { visible } });
+    sync(app, 'revit:view', scoped(['a'], [mesh('a')]), { complete: false });
+    const id = bound(app, 'revit:view', 'a')!.id;
+    const materialId = run<string>(app, 'create-material', { material: { name: 'Saved paint', color: '#0066ff' } });
+    run(app, 'paint-element', { ids: [id], materialId });
+    const hidden = sync(app, 'revit:view', scoped([], []), { complete: false });
+    expect(hidden).toMatchObject({ deleted: 0, held: 0, conflicts: 0 });
+    expect(doc(app).elements[id]!.visible).toBe(false);
+    expect(pullPlan(doc(app), 'other-app', null).nodes.has(id)).toBe(false);
+    sync(app, 'revit:view', scoped(['a'], [{ ...mesh('a', 1200), glb: 'BBBB' }]), { complete: false });
+    expect(bound(app, 'revit:view', 'a')!.id).toBe(id);
+    expect(doc(app).elements[id]!.visible).toBe(true);
+    expect(doc(app).elements[id]!.meta?.['materials']).toEqual({ body: materialId });
+    expect(pullPlan(doc(app), 'other-app', null).nodes.has(id)).toBe(true);
+  });
   it('keeps element identity across syncs and skips unchanged items', () => {
     const app = createTestApp();
     const first = sync(app, 'rhino:house', model({ meshes: [mesh('a'), mesh('b')], walls: [wall('w')] }));
@@ -331,7 +374,7 @@ describe('Live Bridge pulls and updates', () => {
     // Released into an ArchAI element first: then it can be offered.
     run(app, 'bridge-convert', { ids: [stair] });
     run(app, 'bridge-offer', { ids: [stair], key: 'blender:viz', facets: ['metadata', 'material'] });
-    expect(pullPlan(doc(app), 'blender:viz', null).nodes.get(stair)!['editable']).toEqual(['metadata', 'material']);
+    expect(pullPlan(doc(app), 'blender:viz', null).nodes.get(stair)!['editable']).toEqual(['metadata']);
     // Revit's next sync does not bring its stair back as a new element: it was released.
     expect(sync(app, 'revit:tower', model({ app: 'Revit', meshes: [mesh('stair', 0, 'Stair')] })).created).toBe(0);
     // Blender made its copy and sends it with the element it came from.
@@ -372,7 +415,7 @@ describe('Live Bridge models on the board', () => {
     expect(elements.every((element) => element.parentId === group)).toBe(true);
     const ids = elements.slice(0, 2).map((element) => element.id);
     run(app, 'bridge-set-control', { ids, control: 'placement' });
-    for (const id of ids) expect(bridge(app).elements[id]!.owners).toEqual({ geometry: 'origin', material: 'origin', transform: 'archai', metadata: 'archai' });
+    for (const id of ids) expect(bridge(app).elements[id]!.owners).toEqual({ geometry: 'origin', material: 'archai', transform: 'archai', metadata: 'archai' });
     app.executor.undo();
     for (const id of ids) expect(bridge(app).elements[id]!.owners).toBeUndefined();
     app.executor.undo();

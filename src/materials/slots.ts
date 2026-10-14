@@ -80,7 +80,7 @@ export function slotsOf(element: Element, assetSlots: readonly string[] = []): S
       break;
   }
   // Mesh elements (Revit imports): the materials inside their model.
-  if (element.kind === 'rect' && element.meta?.['mesh']) return assetSlots.map((name) => ({ key: `asset:${name}`, label: name, fallback: '' }));
+  if (element.kind === 'rect' && element.meta?.['mesh']) return [{ key: 'body', label: 'Whole object', fallback: 'default:asset' }, ...assetSlots.map((name) => ({ key: `asset:${name}`, label: name, fallback: '' }))];
   if (element.kind === 'instance') return [{ key: 'body', label: 'Box', fallback: 'default:asset' }, ...assetSlots.map((name) => ({ key: `asset:${name}`, label: name, fallback: '' }))];
   if (element.kind === 'line') return [{ key: 'body', label: 'Solid', fallback: element.closed && element.style.fill ? 'default:generic' : 'default:line' }];
   if (element.kind === 'rect' || element.kind === 'image') return [{ key: 'body', label: 'Solid', fallback: 'default:generic' }];

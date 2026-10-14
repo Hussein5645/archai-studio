@@ -823,7 +823,7 @@ function modelSlots(clone: THREE.Object3D, look: Look): void {
     if (!(child instanceof THREE.Mesh)) return;
     const list: THREE.Material[] = Array.isArray(child.material) ? child.material : [child.material];
     const slots = list.map((material) => `asset:${assetMaterialName(material)}`);
-    const replaced = list.map((material, index) => look.assigned(slots[index]!) ?? material);
+    const replaced = list.map((material, index) => look.assigned(slots[index]!) ?? look.assigned('body') ?? material);
     child.userData['assetMesh'] = true;
     child.userData['slots'] = slots;
     child.userData['slot'] = slots[0];

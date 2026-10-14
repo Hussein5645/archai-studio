@@ -67,6 +67,8 @@ export const BridgeRefSchema = z.object({
 export type BridgeRef = z.infer<typeof BridgeRefSchema>;
 
 export const BridgeBindingSchema = z.object({
+  /** Visibility before the source view hid this element; restored on unhide. */
+  sourceVisibility: z.boolean().optional(),
   share: z.enum(BRIDGE_SHARES).optional(),
   owners: z.partialRecord(Facet, BridgeOwnerSchema).optional(),
   /** Apps offered this element as an editable copy, with the facets each may change. */

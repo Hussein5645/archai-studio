@@ -191,7 +191,7 @@ function Apps({ bridge, connections, now }: { bridge: BridgeData | undefined; co
                     {BRIDGE_FACETS.map((facet: BridgeFacet) => (
                       <label key={facet}>
                         {FACET_LABELS[facet]}
-                        <select value={source.authority[facet] ?? 'origin'} onChange={(e) => setSource({ authority: { [facet]: e.target.value } })}>
+                        <select disabled={facet === 'material'} value={facet === 'material' ? 'archai' : source.authority[facet] ?? 'origin'} onChange={(e) => setSource({ authority: { [facet]: e.target.value } })}>
                           {ownerOptions.map((o) => (
                             <option key={o.value} value={o.value}>{o.label}</option>
                           ))}

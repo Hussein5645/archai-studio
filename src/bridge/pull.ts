@@ -116,6 +116,7 @@ export function pullPlan(doc: ArchaiDocument, key: string, sent: ReadonlyMap<str
   }
   const isExcluded = (element: Element): boolean => {
     for (let current: Element | undefined = element; current; current = current.parentId ? elements[current.parentId] : undefined) {
+      if (!current.visible || bridge?.elements[current.id]?.sourceVisibility !== undefined) return true;
       if (excluded.has(current.id) && !plan.nodes.get(current.id)?.['ref']) return true;
     }
     return false;
@@ -124,12 +125,12 @@ export function pullPlan(doc: ArchaiDocument, key: string, sent: ReadonlyMap<str
   for (const element of Object.values(elements)) {
     // Groups (a model's source group among them) carry no geometry of their own.
     if (element.kind === 'group') continue;
+    if (isExcluded(element)) { plan.nodes.delete(element.id); continue; }
     if (plan.nodes.has(element.id)) {
       plan.present.push(element.id);
       plan.sent.set(element.id, plan.nodes.get(element.id)!['hash'] as string);
       continue;
     }
-    if (isExcluded(element)) continue;
     const hash = nodeHash(element.id);
     plan.present.push(element.id);
     plan.sent.set(element.id, hash);
@@ -143,7 +144,8 @@ export function pullPlan(doc: ArchaiDocument, key: string, sent: ReadonlyMap<str
       if (color) extras['color'] = color;
     }
     const offered = binding?.offers?.[key];
-    if (offered?.length && editableElsewhere(binding)) extras['editable'] = offered;
+    const editable = offered?.filter(facet => facet !== 'material');
+    if (editable?.length && editableElsewhere(binding)) extras['editable'] = editable;
     plan.nodes.set(element.id, extras);
   }
   return plan;

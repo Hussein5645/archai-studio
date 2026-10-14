@@ -13,6 +13,44 @@ function triangleGlb(): string {
   return bytes.toString('base64');
 }
 
+test('ArchAI paint survives source changes and source-view hide/unhide retains the painted binding', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => Boolean(window.__archai));
+  await page.evaluate(async glb => {
+    const { executor } = window.__archai!;
+    await executor.dispatch('new-document', { name: 'Visible source and paint' });
+    await executor.dispatch('bridge-sync', { key: 'revit:test-view', app: 'Revit', name: 'View', complete: false,
+      model: { archaiRevit: 1, viewScope: { visible: ['a'] }, meshes: [{ id: 'a', origin: [0,0,0], size: [500,500,10], glb }] } });
+    const win = window.__archai!;
+    const id = Object.keys(win.store.getState().doc.bridge!.elements)[0]!;
+    const created = await executor.dispatch('create-material', { material: { name: 'ArchAI finish', color: '#ff6600' } });
+    if (!created.ok) throw new Error(created.error.message);
+    await executor.dispatch('paint-element', { ids: [id], materialId: created.value });
+  }, triangleGlb());
+  await expect(page.locator('[data-mesh-plan="true"]')).toHaveCount(1);
+  const original = await page.evaluate(() => {
+    const doc = window.__archai!.store.getState().doc;
+    const id = Object.keys(doc.bridge!.elements)[0]!;
+    return { id, materials: doc.elements[id]!.meta!['materials'] };
+  });
+  await page.evaluate(async () => {
+    const result = await window.__archai!.executor.dispatch('bridge-sync', { key: 'revit:test-view', app: 'Revit', complete: false,
+      model: { archaiRevit: 1, viewScope: { visible: [] }, meshes: [] } });
+    if (!result.ok) throw new Error(result.error.message);
+  });
+  await expect.poll(() => page.evaluate(id => window.__archai!.store.getState().doc.elements[id]!.visible, original.id)).toBe(false);
+  await expect(page.locator('[data-mesh-plan="true"]')).toHaveCount(0);
+  await page.evaluate(async glb => {
+    await window.__archai!.executor.dispatch('bridge-sync', { key: 'revit:test-view', app: 'Revit', complete: false,
+      model: { archaiRevit: 1, viewScope: { visible: ['a'] }, meshes: [{ id: 'a', name: 'Source updated', origin: [1500,0,0], size: [500,500,10], glb }] } });
+  }, triangleGlb());
+  await expect(page.locator('[data-mesh-plan="true"]')).toHaveCount(1);
+  expect(await page.evaluate(id => {
+    const doc = window.__archai!.store.getState().doc;
+    return { id, materials: doc.elements[id]!.meta!['materials'], visible: doc.elements[id]!.visible, x: (doc.elements[id] as {x:number}).x };
+  }, original.id)).toEqual({ ...original, visible: true, x: 1500 });
+});
+
 test('bridge model selection controls its geometry in bulk and plans arrive from the worker', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => Boolean(window.__archai));

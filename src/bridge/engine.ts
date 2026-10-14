@@ -103,6 +103,8 @@ export function originOf(binding: BridgeBinding | undefined): string | null {
  * edit it only once it is released (Convert to ArchAI element) and offered to that app.
  */
 export function ownerOf(bridge: BridgeData, binding: BridgeBinding, facet: BridgeFacet): string {
+  // Source apps own their shapes; appearance chosen in ArchAI stays ArchAI's.
+  if (facet === 'material') return 'archai';
   const origin = originOf(binding);
   const owner = binding.owners?.[facet] ?? (origin ? bridge.sources[origin]?.authority[facet] : undefined) ?? 'origin';
   if (owner === 'origin') return origin ?? 'archai';
@@ -152,7 +154,7 @@ export function itemHashes(model: RevitExchange): Map<string, string> {
   return hashes;
 }
 
-const materialSource = (key: string, material: { name: string; color: string }) => `live:${key}:${material.name}:${material.color}`.slice(0, 200);
+const materialSource = (key: string, material: { id: string }) => `live:${hashValue(key)}:material:${hashValue(material.id)}`;
 
 function legacyTag(element: Element): string | null {
   const value = element.meta?.['liveLink'];
@@ -247,7 +249,12 @@ function syncModel(ctx: MutationContext, input: BridgeSyncInput): BridgeSyncRepo
     ));
 
   const imported = importRevitModel(ctx, input.model, {
-    reuseMaterial: (material) => existingMaterials.get(materialSource(key, material)),
+    reuseMaterial: (material) => {
+      const stable = materialSource(key, material);
+      const found = existingMaterials.get(stable) ?? [...existingMaterials].find(([source]) => source.startsWith(`live:${key}:${material.name}:`))?.[1];
+      if (found && ctx.doc.materials[found]) ctx.doc.materials[found]!.source = stable;
+      return found;
+    },
     materialSource: (material) => materialSource(key, material),
     existing: (collection, id) => {
       const item = `${collection}/${id}`;
@@ -357,6 +364,10 @@ function syncModel(ctx: MutationContext, input: BridgeSyncInput): BridgeSyncRepo
     for (const facet of BRIDGE_FACETS) {
       const editedHere = present[facet] !== binding.state[facet];
       if (editedHere) merge.edited.add(facet);
+      if (facet === 'material') {
+        merge.kept.add(facet);
+        continue;
+      }
       if (incoming[facet] === ref.base[facet]) continue;
       // The app now has what ArchAI has (it applied an update ArchAI sent): in sync, not a change.
       if (nearlyEqual(theirFacets[facet], myFacets[facet])) {
@@ -436,6 +447,25 @@ function syncModel(ctx: MutationContext, input: BridgeSyncInput): BridgeSyncRepo
   if (overwritten) notes.push(`${overwritten} ArchAI edits replaced by ${input.app || 'the source'} (it owns them)`);
   if (report.rejected) notes.push(`${report.rejected} changes not applied (owned by ArchAI or another app)`);
 
+  // View-hidden geometry is not deleted: preserve its binding and ArchAI paint for unhide.
+  let visibilityChanges = 0;
+  if (input.model.viewScope) {
+    const visible = new Set(input.model.viewScope.visible);
+    for (const [elementId, binding] of Object.entries(bridge.elements)) {
+      const ref = binding.refs[key];
+      const element = ctx.doc.elements[elementId];
+      if (!ref || ref.role !== 'origin' || !element) continue;
+      if (!visible.has(ref.id)) {
+        if (binding.sourceVisibility === undefined) { binding.sourceVisibility = element.visible; visibilityChanges++; }
+        element.visible = false;
+      } else if (binding.sourceVisibility !== undefined) {
+        element.visible = binding.sourceVisibility;
+        delete binding.sourceVisibility;
+        visibilityChanges++;
+      }
+    }
+  }
+  if (visibilityChanges) notes.push(`${visibilityChanges} source view visibility changes`);
   // Deletions: only from complete snapshots or explicit ids.
   const present = new Set(hashes.keys());
   const explicit = new Set(input.deleted);
@@ -443,7 +473,7 @@ function syncModel(ctx: MutationContext, input: BridgeSyncInput): BridgeSyncRepo
   for (const [item, elementId] of bound) {
     const ref = bridge.elements[elementId]?.refs[key];
     if (!ref) continue;
-    if ((input.complete && !present.has(item)) || explicit.has(ref.id)) candidates.push(elementId);
+    if ((input.complete && !input.model.viewScope && !present.has(item)) || explicit.has(ref.id)) candidates.push(elementId);
   }
   const deletable: string[] = [];
   elements = plain(ctx.doc.elements);

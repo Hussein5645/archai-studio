@@ -151,6 +151,7 @@ export const bridgeSetSource = defineMutation({
     if (input.mode) source.mode = input.mode;
     if (input.receives) source.receives = input.receives;
     if (input.authority) source.authority = { ...source.authority, ...input.authority };
+    source.authority.material = 'archai';
     return { ok: true };
   },
 });
@@ -175,7 +176,8 @@ export const bridgeSetOwner = defineMutation({
       }
       const binding = (bridge.elements[id] ??= { state: {}, refs: {} });
       const owners = { ...(binding.owners ?? {}) };
-      if (input.owner === null) delete owners[input.facet];
+      if (input.facet === 'material') owners.material = 'archai';
+      else if (input.owner === null) delete owners[input.facet];
       else owners[input.facet] = input.owner;
       if (Object.keys(owners).length) binding.owners = owners;
       else delete binding.owners;
@@ -204,7 +206,7 @@ export const bridgeSetControl = defineMutation({
       binding.owners = Object.fromEntries(
         BRIDGE_FACETS.map((facet) => [
           facet,
-          input.control === 'shared'
+          facet === 'material' ? 'archai' : input.control === 'shared'
             ? 'shared'
             : input.control === 'placement' && (facet === 'transform' || facet === 'metadata')
               ? 'archai'

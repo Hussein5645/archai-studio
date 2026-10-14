@@ -1,7 +1,7 @@
 /**
  * An app's geometry stays the app's (docs/live-bridge.md): an element that came from a linked app
- * and is edited in ArchAI (moved, reshaped, renamed, recoloured, deleted) is put back as the app
- * sent it, for every part the app decides (by default all of them). Converting it into an ArchAI
+ * and is edited in ArchAI (moved, reshaped, renamed, deleted) is put back as the app
+ * sent it, for every part the app decides. Material assignments always remain ArchAI's. Converting it into an ArchAI
  * element releases it; parts handed to ArchAI or shared in the Live Bridge panel stay editable.
  *
  * The guard watches document changes (commands, undo, redo) and runs `bridge-revert` right after

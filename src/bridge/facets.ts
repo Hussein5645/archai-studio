@@ -33,6 +33,7 @@ const META: Record<string, BridgeFacet | null> = {
   instanceElevation: 'transform',
   levelConstraint: 'transform',
   materials: 'material',
+  surfaces: 'material',
   // The Live Bridge's old tag, replaced by the binding graph.
   liveLink: null,
 };

@@ -115,6 +115,8 @@ export const RevitExchangeSchema = z.object({
   name: z.string().max(200).default('Revit model'),
   source: z.string().max(1000).default(''),
   revitVersion: z.string().max(40).default(''),
+  /** View-scoped sources retain hidden bindings and ArchAI material assignments. */
+  viewScope: z.object({ visible: z.array(Id).max(200_000) }).optional(),
   materials: z.array(RevitMaterialSchema).default([]),
   levels: z.array(RevitLevelSchema).default([]),
   walls: z.array(RevitWallSchema).default([]),

@@ -47,8 +47,23 @@ elements.) Links made by Revit 0.5.0 become these meshes in place on the next sy
 
 ### Geometry from an app is edited only in that app
 
+**Materials always remain ArchAI-controlled.** Slot assignments, whole-object paint and surface
+paint survive source geometry updates, even for source-controlled and shared presets. Imported
+material entries keep stable source identities, so source colour changes do not replace finishes
+edited in ArchAI. Whole-object paint also covers new or renamed source material slots. Unpainted
+mesh slots continue to use their embedded source appearance. Material authority controls are
+read-only and editable copies never grant another app permission to replace ArchAI materials.
+
+**Revit Live Bridge uses the active 3D view.** Start it from a non-template 3D view; plans and
+sheets suspend outgoing geometry without clearing the last linked scene. View-scoped collection,
+geometry extraction at the view's detail level, permanent/category hiding and temporary hide/isolate
+determine what is shared. Switching views or changing visibility refreshes the visible scope.
+Objects leaving the source view are hidden in ArchAI and excluded from outgoing geometry, while
+their binding and ArchAI paint remain for unhide. Actual source deletions still follow existing
+conflict and mass-deletion protections. Manual `.AIR` exports remain document exports.
+
 An element that came from an app (it has an `origin` ref) is changed only by that app. **Edited
-in ArchAI** (moved, reshaped, renamed, recoloured or deleted), it is put back right away as the
+in ArchAI** (moved, reshaped, renamed or deleted), it is put back right away as the
 app sent it (`src/bridge/guard.ts`, command `bridge-revert`, from the snapshot ArchAI keeps of
 each element as its app last sent it), with a message saying which app decides it; moving the
 app's whole model group stays possible (it places the model). Parts handed to ArchAI or shared in

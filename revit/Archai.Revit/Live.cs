@@ -7,6 +7,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Events;
 using Autodesk.Revit.UI;
+using Autodesk.Revit.UI.Events;
 using Archai.Plugins;
 using Archai.Plugins.Windows;
 
@@ -35,9 +36,14 @@ public sealed class LiveCommand : IExternalCommand
             ArchaiDialog.Show("Live Bridge", "The Live Bridge with ArchAI is off. The ArchAI Live shapes stay in the model until you delete them.");
             return Result.Succeeded;
         }
+        if (LiveViewScope.Active(data.Application, doc) == null)
+        {
+            ArchaiDialog.Show("Live Bridge", "Open a 3D view first. Only the model visible in that view will be linked to ArchAI.");
+            return Result.Cancelled;
+        }
         Live.Current?.Dispose();
         Live.Current = new Live(data.Application, doc);
-        ArchaiDialog.Show("Live Bridge", "The Live Bridge with ArchAI is on.\n\nChanges you make go to the project open in the ArchAI desktop app a moment later, and ArchAI's model comes back as ArchAI Live generic models. Click Live Bridge again to stop.");
+        ArchaiDialog.Show("Live Bridge", "The Live Bridge with ArchAI is on.\n\nOnly geometry visible in the active 3D view goes to ArchAI. Hidden and temporarily isolated-out elements are excluded. Open a 3D view to resume after working in a plan or sheet. ArchAI material assignments are preserved when source geometry changes. Click Live Bridge again to stop.");
         return Result.Succeeded;
     }
 }
@@ -120,6 +126,10 @@ internal sealed class Live : IDisposable, IExternalEventHandler
     private readonly HashSet<long> changed = new HashSet<long>();
     private bool wholeModelSent;
     private bool firstSyncDone;
+    private long scopedView = -1;
+    private HashSet<long> visibleScope = new HashSet<long>();
+    private readonly HashSet<string> exportedIds = new HashSet<string>();
+    private DateTime nextVisibilityCheck;
 
     public Live(UIApplication ui, Document doc)
     {
@@ -133,7 +143,7 @@ internal sealed class Live : IDisposable, IExternalEventHandler
             // Generic meshes, and after the first sync only what changed (fast, so Revit is not held up).
             Export = ExportChanges,
             Import = Replace,
-            // Live Bridge: element by element, and every element id (hiding deletes nothing in ArchAI).
+            // Physical existence stays separate from view visibility, preserving paint on unhide.
             Apply = ApplyDelta,
             AllIds = () => new FilteredElementCollector(doc).WhereElementIsNotElementType().ToElementIds().Select(id => "e" + id.Value).ToList(),
         };
@@ -146,6 +156,8 @@ internal sealed class Live : IDisposable, IExternalEventHandler
         };
         ui.Application.DocumentChanged += Changed;
         ui.Application.DocumentClosing += Closing;
+        ui.ViewActivated += ViewActivated;
+        ui.Idling += VisibilityChanged;
         link.Start();
     }
 
@@ -174,7 +186,10 @@ internal sealed class Live : IDisposable, IExternalEventHandler
         lock (changed)
         {
             foreach (var id in e.GetAddedElementIds().Concat(e.GetModifiedElementIds()))
+            {
                 if (!liveShapes.ContainsKey(id.Value)) changed.Add(id.Value);
+                if (Doc.GetElement(id) is View or ElementType or Material or FilterElement) wholeModelSent = false;
+            }
         }
         if (reset.Count == 0 || changed.Count > 0) link.ModelChanged();
     }
@@ -182,18 +197,56 @@ internal sealed class Live : IDisposable, IExternalEventHandler
     /// <summary>The model as generic meshes: everything on the first sync, then only what changed.</summary>
     private Newtonsoft.Json.Linq.JObject ExportChanges()
     {
+        var view = LiveViewScope.Active(ui, Doc);
+        // A plan/sheet is not a new empty snapshot: retain the last linked 3D scene.
+        if (view == null) return null!; // LiveLink explicitly treats null as no export, not an empty model.
+        var visible = LiveViewScope.VisibleIds(Doc, view);
+        if (scopedView != view.Id.Value || !visibleScope.SetEquals(visible)) wholeModelSent = false;
+        scopedView = view.Id.Value;
+        visibleScope = visible;
         List<long>? only = null;
         if (wholeModelSent)
         {
             lock (changed)
             {
-                only = changed.ToList();
+                only = changed.Where(visible.Contains).ToList();
                 changed.Clear();
             }
         }
-        var exchange = new ArchaiExporter(Doc) { MeshesOnly = true, Only = only }.Export();
+        else lock (changed) changed.Clear();
+        var requested = only ?? visible.ToList();
+        var exchange = new ArchaiExporter(Doc, view) { MeshesOnly = true, Only = requested }.Export();
+        exportedIds.RemoveWhere(id => !visible.Contains(long.Parse(id.Substring(1))));
+        // Elements with no drawable geometry in this view must not keep an old shared mesh.
+        foreach (var id in requested) exportedIds.Remove("e" + id);
+        foreach (var item in (Newtonsoft.Json.Linq.JArray)exchange["meshes"]!)
+            exportedIds.Add((string)item["id"]!);
+        exchange["viewScope"] = new Newtonsoft.Json.Linq.JObject { ["visible"] = new Newtonsoft.Json.Linq.JArray(exportedIds.OrderBy(id => id, StringComparer.Ordinal)) };
         wholeModelSent = true;
         return exchange;
+    }
+
+    private void ViewActivated(object? sender, ViewActivatedEventArgs e)
+    {
+        wholeModelSent = false;
+        link.ModelChanged();
+    }
+
+    private void VisibilityChanged(object? sender, IdlingEventArgs e)
+    {
+        // Temporary hide/isolate does not reliably raise DocumentChanged.
+        if (link.Importing || DateTime.UtcNow < nextVisibilityCheck) return;
+        nextVisibilityCheck = DateTime.UtcNow.AddSeconds(1);
+        var view = LiveViewScope.Active(ui, Doc);
+        if (view == null) return;
+        var visible = LiveViewScope.VisibleIds(Doc, view);
+        if (view.Id.Value != scopedView || !visibleScope.SetEquals(visible))
+        {
+            wholeModelSent = false;
+            scopedView = view.Id.Value;
+            visibleScope = visible;
+            link.ModelChanged();
+        }
     }
 
     private void Closing(object? sender, DocumentClosingEventArgs e)
@@ -344,6 +397,8 @@ internal sealed class Live : IDisposable, IExternalEventHandler
         progress.Dispose();
         ui.Application.DocumentChanged -= Changed;
         ui.Application.DocumentClosing -= Closing;
+        ui.ViewActivated -= ViewActivated;
+        ui.Idling -= VisibilityChanged;
         link.Dispose();
         wake.Dispose();
     }
