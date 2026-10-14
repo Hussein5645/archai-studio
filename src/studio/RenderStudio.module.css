@@ -17,7 +17,12 @@
   grid-template-areas: 'top top top' 'library viewport inspector' 'library scenes inspector';
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.4 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  font:
+    13px/1.4 'Segoe UI',
+    -apple-system,
+    BlinkMacSystemFont,
+    Roboto,
+    sans-serif;
   user-select: none;
   color-scheme: dark;
 }
@@ -27,14 +32,67 @@
   color: inherit;
   cursor: pointer;
 }
-.studio button:disabled { opacity: .45; cursor: default; }
-.preparationSettings { border: 0; margin: 0; padding: 14px; min-width: 0; overflow-y: auto; height: 100%; box-sizing: border-box; }
-.error { color: #ffb4a8; overflow-wrap: anywhere; }
-.published { display: grid; gap: 8px; }
-.published a { color: #8db8ff; }
-.panoramaPreview { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; background: #16171a; padding: 16px; }
-.panoramaPreview img { width: 100%; max-height: calc(100% - 60px); object-fit: contain; }
-.studio progress { width: 100%; accent-color: var(--accent); }
+.studio button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.preparationSettings {
+  border: 0;
+  margin: 0;
+  padding: 14px;
+  min-width: 0;
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+.error {
+  color: #ffb4a8;
+  overflow-wrap: anywhere;
+}
+.published {
+  display: grid;
+  gap: 8px;
+}
+.published a {
+  color: #8db8ff;
+}
+.panoramaPreview {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  background: #16171a;
+  padding: 16px;
+}
+.panoramaPreview img {
+  width: 100%;
+  max-height: calc(100% - 60px);
+  object-fit: contain;
+}
+.studio progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.preparingOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgba(22, 23, 26, 0.8);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+.preparingOverlay progress,
+.preparingOverlay button {
+  max-width: 320px;
+}
 
 .top {
   grid-area: top;

@@ -19,16 +19,26 @@ export function prepareBakeGeometry(
   root.updateWorldMatrix(true, true);
   const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
   let originalTriangles = 0;
+  let outputTriangles = 0;
   root.traverseVisible((object) => {
-    if (object instanceof THREE.Mesh)
-      originalTriangles +=
+    if (object instanceof THREE.Mesh) {
+      const count =
         (object.geometry.index?.count ?? object.geometry.getAttribute('position').count) / 3;
+      originalTriangles += count;
+      outputTriangles +=
+        count *
+        ((Array.isArray(object.material) ? object.material : [object.material]).some(
+          (m) => m.side === THREE.DoubleSide,
+        )
+          ? 2
+          : 1);
+    }
   });
   if (originalTriangles > 1_000_000)
     throw new Error(
       'This scene exceeds one million triangles. Reduce model detail before baking for VR.',
     );
-  let remaining = Math.max(0, triangleBudget - originalTriangles);
+  let remaining = Math.max(0, triangleBudget - outputTriangles);
   root.traverseVisible((object) => {
     if (!(object instanceof THREE.Mesh)) return;
     const geometry = object.geometry.index
@@ -56,6 +66,7 @@ export function prepareBakeGeometry(
     for (const group of groups) {
       const material = materials[group.materialIndex ?? 0];
       if (!material) continue;
+      const twoSided = material.side === THREE.DoubleSide;
       const p: number[] = [],
         n: number[] = [],
         u: number[] = [],
@@ -67,8 +78,8 @@ export function prepareBakeGeometry(
           d.p.distanceToSquared(a.p),
         ];
         const longest = Math.max(...lengths);
-        if (remaining > 0 && depth < 8 && longest > edge * edge) {
-          remaining--;
+        if (remaining >= (twoSided ? 2 : 1) && depth < 8 && longest > edge * edge) {
+          remaining -= twoSided ? 2 : 1;
           if (longest === lengths[0]) {
             const m = midpoint(a, b);
             write(a, m, d, depth + 1);
@@ -90,9 +101,30 @@ export function prepareBakeGeometry(
           u.push(v.uv.x, v.uv.y);
           c.push(v.c.r, v.c.g, v.c.b);
         }
+        // A double-sided import may have inward winding (Revit terrain/roofs).
+        // Each visible side needs its own lighting, not one interpolated colour
+        // sampled on the underside and then displayed from both directions.
+        if (twoSided)
+          for (const v of [d, b, a]) {
+            p.push(v.p.x, v.p.y, v.p.z);
+            n.push(-v.n.x, -v.n.y, -v.n.z);
+            u.push(v.uv.x, v.uv.y);
+            c.push(v.c.r, v.c.g, v.c.b);
+          }
       };
       const end = Math.min(position.count, group.start + group.count);
-      for (let i = group.start; i + 2 < end; i += 3) write(read(i), read(i + 1), read(i + 2), 0);
+      for (let i = group.start; i + 2 < end; i += 3) {
+        const a = read(i),
+          b = read(i + 1),
+          d = read(i + 2);
+        if ((material as THREE.MeshStandardMaterial).flatShading) {
+          const face = b.p.clone().sub(a.p).cross(d.p.clone().sub(a.p)).normalize();
+          a.n.copy(face);
+          b.n.copy(face);
+          d.n.copy(face);
+        }
+        write(a, b, d, 0);
+      }
       if (!p.length) continue;
       const piece = new THREE.BufferGeometry();
       piece.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
@@ -108,6 +140,22 @@ export function prepareBakeGeometry(
     const merged = mergeGeometries(pieces, false)!;
     const geometry = mergeVertices(merged, 0.00001);
     merged.dispose();
+    // Some imports already contain both windings of a two-sided face. Adding
+    // independently lit sides must not leave coincident front faces that z-fight.
+    const index = geometry.index!;
+    const seen = new Set<string>();
+    const unique: number[] = [];
+    for (let i = 0; i < index.count; i += 3) {
+      const a = index.getX(i),
+        b = index.getX(i + 1),
+        c = index.getX(i + 2);
+      const key = [a, b, c].sort((x, y) => x - y).join(',');
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(a, b, c);
+      }
+    }
+    geometry.setIndex(unique);
     for (const piece of pieces) piece.dispose();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = material.name || 'Baked surface';

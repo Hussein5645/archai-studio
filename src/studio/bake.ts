@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { prepareBakeGeometry } from './bakeGeometry';
 import type { BakeInput } from './bakeTrace';
 import { throwIfCancelled, VR_QUALITY, type VrQuality } from './vrPreparation';
@@ -10,6 +11,22 @@ export interface BakedScene {
   vertices: number;
   triangles: number;
   lightScale: number;
+  ownsTextures?: boolean;
+}
+
+export async function restoreBake(
+  model: ArrayBuffer,
+  metadata: Pick<BakedScene, 'vertices' | 'triangles' | 'lightScale'>,
+): Promise<BakedScene> {
+  const gltf = await new GLTFLoader().parseAsync(model, '');
+  const root = gltf.scene;
+  root.userData['bakeScale'] = metadata.lightScale;
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    for (const material of Array.isArray(object.material) ? object.material : [object.material])
+      if (material.userData['vrBackground']) material.toneMapped = false;
+  });
+  return { root, model, ...metadata, ownsTextures: true };
 }
 
 export function disposeBake(bake: BakedScene): void {
@@ -17,7 +34,11 @@ export function disposeBake(bake: BakedScene): void {
     if (object instanceof THREE.Mesh) {
       object.geometry.dispose();
       for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
-        if (material.userData['vrBackground']) (material as THREE.MeshBasicMaterial).map?.dispose();
+        if (bake.ownsTextures) {
+          for (const value of Object.values(material))
+            if (value instanceof THREE.Texture) value.dispose();
+        } else if (material.userData['vrBackground'])
+          (material as THREE.MeshBasicMaterial).map?.dispose();
         material.dispose();
       }
     }
@@ -159,7 +180,7 @@ export async function bakeScene(
         alphaMap: original.alphaMap ?? null,
         color: 0xffffff,
         vertexColors: true,
-        side: original.side,
+        side: original.side === THREE.DoubleSide ? THREE.FrontSide : original.side,
         transparent: original.transparent || glass,
         opacity: glass ? 0.2 : original.opacity,
         alphaTest: original.alphaTest,

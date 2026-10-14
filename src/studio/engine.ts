@@ -198,6 +198,12 @@ export class StudioEngine {
     if (this.disposed) return;
     root.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
+      // AO's override material needs normals even when an imported flat-shaded material does not.
+      // Clone cached asset geometry so the board and other views remain unchanged.
+      if (!child.geometry.getAttribute('normal')) {
+        child.geometry = child.geometry.clone();
+        child.geometry.computeVertexNormals();
+      }
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       const seeThrough = materials.some((m) => m.transparent || (m as THREE.MeshPhysicalMaterial).transmission > 0);
       child.castShadow = !seeThrough;
@@ -220,6 +226,7 @@ export class StudioEngine {
 
   /** Frames the whole model from a three-quarter view on its sunlit side. */
   frameAll(): void {
+    if (this.busy) return;
     const { center, radius } = this.bounds;
     const distance = Math.max(radius, 5) / Math.sin(THREE.MathUtils.degToRad(this.camera.fov / 2)) * 0.9;
     const sun = this.sunVector();
@@ -235,6 +242,7 @@ export class StudioEngine {
 
   /** A 3D view's camera (millimetres) in the studio's metres. */
   setCamera(state: CameraState): void {
+    if (this.busy) return;
     this.camera.position.set(state.position[0] / 1000, state.position[1] / 1000, state.position[2] / 1000);
     this.controls.target.set(state.target[0] / 1000, state.target[1] / 1000, state.target[2] / 1000);
     if (state.fov) this.camera.fov = state.fov;
@@ -620,6 +628,9 @@ export class StudioEngine {
   showBake(root: THREE.Group | null): void {
     if (this.previewBake) this.scene.remove(this.previewBake);
     this.previewBake = root;
+    // Unlit prepared geometry already contains occlusion and can omit normals.
+    this.gtao.enabled = !root && (this.settings?.ambientOcclusion ?? 0) > 0;
+    this.bloom.enabled = !root;
     this.renderer.toneMappingExposure = 2 ** (this.settings?.exposure ?? 0) * (root?.userData['bakeScale'] as number ?? 1);
     if (root) this.scene.add(root);
     this.content.visible = !root;
@@ -632,7 +643,12 @@ export class StudioEngine {
 
   async bakeVr(quality: VrQuality, signal: AbortSignal, progress: (fraction: number) => void): Promise<BakedScene> {
     this.assertLegacyLoaded();
+    throwIfCancelled(signal);
+    if (this.busy) throw new Error('Preparation is already running');
     this.showBake(null);
+    const controlsEnabled = this.controls.enabled;
+    this.controls.enabled = false;
+    this.busy = true;
     const source = new THREE.Group();
     source.add(this.content.clone(true), this.entourage.clone(true));
     if (this.ground.visible) {
@@ -645,8 +661,9 @@ export class StudioEngine {
     }
     const image = this.skyTexture?.image as { data?: Float32Array; width?: number; height?: number } | undefined;
     const environment = image?.data instanceof Float32Array && image.width && image.height ? { data: image.data.slice(), width: image.width, height: image.height, rotation: this.settings?.sky === 'hdri' ? THREE.MathUtils.degToRad(this.settings.hdriRotation) : 0 } : null;
-    const background = this.bakeBackground();
+    let background: THREE.Texture | null = null;
     try {
+      background = this.bakeBackground();
       return await bakeScene(source, { environment, sun: this.sunVector().toArray() as [number, number, number], sunIntensity: this.sun.visible ? this.sun.intensity : 0, skyIntensity: this.settings?.skyIntensity ?? 1 }, quality, signal, progress, background ?? undefined);
     } catch (error) {
       background?.dispose();
@@ -654,6 +671,9 @@ export class StudioEngine {
     } finally {
       // Only the temporary ground is owned by this snapshot; project geometry is shared.
       if (this.ground.visible) (source.children.at(-1) as THREE.Mesh)?.geometry.dispose();
+      this.controls.enabled = controlsEnabled;
+      this.busy = false;
+      this.dirty = true;
     }
   }
 

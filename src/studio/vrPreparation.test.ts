@@ -7,6 +7,57 @@ import { prepareBakeGeometry } from './bakeGeometry';
 import { traceBake, type BakeInput } from './bakeTrace';
 
 describe('VR preparation', () => {
+  it('lights both visible sides of an inward-wound flat import independently', () => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute([-2, 0, -2, 2, 0, -2, 0, 0, 2], 3),
+    );
+    const material = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, flatShading: true });
+    const root = new THREE.Group();
+    root.add(new THREE.Mesh(geometry, material));
+    const mesh = prepareBakeGeometry(root, 100, 10).children[0] as THREE.Mesh;
+    const normals = mesh.geometry.getAttribute('normal');
+    expect(normals.count).toBe(6);
+    expect(Array.from({ length: 6 }, (_, i) => normals.getY(i)).sort()).toEqual([
+      -1, -1, -1, 1, 1, 1,
+    ]);
+    const colors = traceBake({
+      positions: mesh.geometry.getAttribute('position').array as Float32Array,
+      normals: normals.array as Float32Array,
+      triangles: new Float32Array(),
+      albedos: new Float32Array(),
+      emission: new Float32Array(),
+      sun: [0, 1, 0],
+      sunIntensity: Math.PI,
+      skyIntensity: 0,
+      environment: null,
+      samples: 8,
+      bounces: 0,
+    });
+    for (let i = 0; i < normals.count; i++)
+      expect(colors[i * 3]).toBeCloseTo(normals.getY(i) > 0 ? 1 : 0);
+    expect(geometry.getAttribute('normal')).toBeUndefined();
+  });
+  it('does not duplicate faces when an import already includes both windings', () => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(
+        [-2, 0, -2, 2, 0, -2, 0, 0, 2, 0, 0, 2, 2, 0, -2, -2, 0, -2],
+        3,
+      ),
+    );
+    const root = new THREE.Group();
+    root.add(
+      new THREE.Mesh(
+        geometry,
+        new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, flatShading: true }),
+      ),
+    );
+    const baked = prepareBakeGeometry(root, 100, 10).children[0] as THREE.Mesh;
+    expect(baked.geometry.index!.count).toBe(6);
+  });
   it('invalidates lighting and project edits, including embedded models, without invalidating camera-only settings', () => {
     const doc = createTestApp().store.getState().doc;
     const settings = defaultSettings();

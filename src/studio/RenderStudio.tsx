@@ -10,7 +10,8 @@ import { uploadVrTour, vrShareConfig, VR_SIGN_IN_MESSAGE } from '@/view3d/vrShar
 import type { CameraState } from '@/view3d/SceneView';
 import { BRAND_MARK } from '@/ui/brand';
 import { StudioEngine } from './engine';
-import { disposeBake, type BakedScene } from './bake';
+import { disposeBake, restoreBake, type BakedScene } from './bake';
+import { loadPreparation, savePreparation } from './preparationCache';
 import { catalogEntourage, loadLibrary, type LibraryModel, type RenderLibrary } from './library';
 import type { SceneMessage } from './link';
 import {
@@ -68,6 +69,8 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
   const [result, setResult] = useState<Result | null>(null);
   const resultRef = useRef<Result | null>(null);
   const controller = useRef<AbortController | null>(null);
+  const locked = useRef(false);
+  const pendingScene = useRef<SceneMessage | null>(null);
   const mounted = useRef(true);
   const loading = useRef(0);
   const settingsDoc = useRef<string | null>(null);
@@ -81,6 +84,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
     [library, settings.hdri],
   );
   const signature = scene ? preparationSignature(scene.doc, settings, quality) : '';
+  const projectId = scene?.docId;
   const signatureRef = useRef(signature);
   useLayoutEffect(() => {
     signatureRef.current = signature;
@@ -96,6 +100,14 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
     if (prepared?.bake) disposeBake(prepared.bake);
     if (prepared?.url) URL.revokeObjectURL(prepared.url);
   }, []);
+  const unlock = () => {
+    locked.current = false;
+    if (mounted.current) {
+      setJob(null);
+      if (pendingScene.current) setScene(pendingScene.current);
+    }
+    pendingScene.current = null;
+  };
 
   useEffect(() => {
     mounted.current = true;
@@ -121,7 +133,8 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
     const unsubscribe = platform.studio.subscribe((message) => {
       if (message.type === 'scene') {
         connected = true;
-        setScene(message as unknown as SceneMessage);
+        if (locked.current) pendingScene.current = message as unknown as SceneMessage;
+        else setScene(message as unknown as SceneMessage);
       }
     });
     platform.studio.send({ type: 'hello' });
@@ -203,7 +216,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
 
   // Serialize asynchronous loads so old geometry or skies cannot replace the current scene.
   useEffect(() => {
-    if (!scene || settingsLoaded !== scene.docId) return;
+    if (!scene || settingsLoaded !== scene.docId || locked.current) return;
     const sequence = ++loading.current;
     const instance = engine.current;
     controller.current?.abort();
@@ -232,6 +245,12 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
         else if (changedDocument && !resultRef.current) instance.frameAll();
         setStatus(null);
         setReadySignature(preparationSignature(scene.doc, settings, quality));
+        const saved = resultRef.current;
+        if (
+          saved?.signature === preparationSignature(scene.doc, settings, quality) &&
+          saved.output === output
+        )
+          instance.showBake(saved.bake?.root ?? null);
       })
       .catch((reason: unknown) => {
         if (mounted.current && sequence === loading.current) {
@@ -239,7 +258,51 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
           setError(reason instanceof Error ? reason.message : String(reason));
         }
       });
-  }, [scene, settings, settingsLoaded, catalog, hdriUrl, models, quality]);
+  }, [scene, settings, settingsLoaded, catalog, hdriUrl, models, quality, job, output]);
+
+  // Restore both kinds independently; switching output never discards the project's saved bake.
+  useEffect(() => {
+    if (
+      !projectId ||
+      !ready ||
+      job ||
+      (resultRef.current?.docId === projectId && resultRef.current.output === output)
+    )
+      return;
+    let active = true;
+    const docId = projectId;
+    void loadPreparation(platform.storage, docId, output)
+      .then(async (saved) => {
+        if (!saved || !active) return;
+        const restored: Result = { ...saved.metadata };
+        if (output === 'baked')
+          restored.bake = await restoreBake(saved.bytes, {
+            vertices: saved.metadata.vertices ?? 0,
+            triangles: saved.metadata.triangles ?? 0,
+            lightScale: saved.metadata.lightScale ?? 1,
+          });
+        else {
+          restored.blob = new Blob([saved.bytes], { type: 'image/png' });
+          restored.url = URL.createObjectURL(restored.blob);
+        }
+        if (!active || locked.current || settingsDoc.current !== docId) {
+          release(restored);
+          return;
+        }
+        engine.current?.showBake(null);
+        release(resultRef.current);
+        resultRef.current = restored;
+        setResult(restored);
+        if (restored.signature === signatureRef.current)
+          engine.current?.showBake(restored.bake?.root ?? null);
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(`Could not restore saved preparation: ${String(reason)}`);
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId, ready, output, job, platform, release]);
   useEffect(() => {
     if (!scene || settingsLoaded !== scene.docId) return;
     const timer = setTimeout(() => {
@@ -272,6 +335,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
   const prepare = async () => {
     const instance = engine.current;
     if (!scene || !instance || !ready || job) return;
+    locked.current = true;
     const captured = signature;
     // Scene updates must wait for an active GPU capture to restore its camera and targets.
     let finishOperation!: () => void;
@@ -320,6 +384,41 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
           'The scene changed during preparation. Prepare it again.',
           'AbortError',
         );
+      try {
+        setJob((current) =>
+          current
+            ? { ...current, label: 'Saving preparation for this project', cancellable: false }
+            : null,
+        );
+        await platform.storage.set(settingsKey(scene.docId), JSON.stringify(settings));
+        await platform.storage.set(
+          preparationKey(scene.docId),
+          JSON.stringify({ quality, output }),
+        );
+        await savePreparation(
+          platform.storage,
+          {
+            signature: prepared.signature,
+            docId: prepared.docId,
+            output: prepared.output,
+            camera: prepared.camera,
+            ...(prepared.bake
+              ? {
+                  vertices: prepared.bake.vertices,
+                  triangles: prepared.bake.triangles,
+                  lightScale: prepared.bake.lightScale,
+                }
+              : {}),
+          },
+          prepared.bake?.model ?? (await prepared.blob!.arrayBuffer()),
+        );
+      } catch (reason) {
+        setError(
+          `Prepared successfully, but saving failed. Keep this window open and try baking again: ${String(reason)}`,
+        );
+      }
+      throwIfCancelled(abort.signal);
+      if (!mounted.current) throw new DOMException('Preparation cancelled', 'AbortError');
       instance.showBake(null);
       release(resultRef.current);
       resultRef.current = prepared;
@@ -332,7 +431,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
     } finally {
       finishOperation();
       if (controller.current === abort) controller.current = null;
-      if (mounted.current) setJob(null);
+      unlock();
     }
   };
   const publish = async () => {
@@ -348,6 +447,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
     }
     const captured = result,
       docId = scene.docId;
+    locked.current = true;
     setError(null);
     setJob({ label: 'Publishing the link', progress: 0, cancellable: false });
     try {
@@ -405,7 +505,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
     } catch (reason) {
       if (mounted.current) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      if (mounted.current) setJob(null);
+      unlock();
     }
   };
   const download = async () => {
@@ -435,8 +535,8 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
   };
 
   return (
-    <div className={styles.studio} data-testid="render-studio">
-      <header className={styles.top}>
+    <div className={styles.studio} data-testid="render-studio" aria-busy={!!job}>
+      <header className={styles.top} inert={!!job}>
         <div className={styles.brand}>
           <img src={BRAND_MARK} alt="" />
           <span>ArchAI VR Preparation</span>
@@ -475,7 +575,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
           <Maximize size={16} />
         </button>
       </header>
-      <aside className={styles.library} aria-label="VR publishing">
+      <aside className={styles.library} aria-label="VR publishing" inert={!!job}>
         <div className={styles.libBody}>
           <Section title="Prepare and publish">
             <p className={styles.note}>
@@ -644,7 +744,25 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
         </div>
       </aside>
       <main className={styles.viewport}>
-        <div ref={viewport} className={styles.canvas} />
+        <div ref={viewport} className={styles.canvas} inert={!!job} />
+        {job && (
+          <div className={styles.preparingOverlay} role="status" data-testid="preparation-lock">
+            <strong>
+              {job.label} · {Math.round(job.progress * 100)}%
+            </strong>
+            <p>Preparation is locked. Model updates will resume when this finishes.</p>
+            <progress max={1} value={job.progress} />
+            {job.cancellable && (
+              <button
+                type="button"
+                className={styles.wide}
+                onClick={() => controller.current?.abort()}
+              >
+                Cancel preparation
+              </button>
+            )}
+          </div>
+        )}
         {!scene && (
           <div className={styles.empty}>
             <CloudSun size={32} />
@@ -652,7 +770,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
             <p>Open a project, then choose VR → Prepare Rendered VR Link in the 3D view.</p>
           </div>
         )}
-        {fresh && output === 'panorama' && result?.url && (
+        {!job && fresh && output === 'panorama' && result?.url && (
           <div className={styles.panoramaPreview}>
             <img src={result.url} alt="Prepared equirectangular 360 image" />
             <button
@@ -672,7 +790,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
           <div className={styles.samples}>{samples} samples</div>
         )}
       </main>
-      <aside className={styles.inspector} aria-label="Scene preparation settings">
+      <aside className={styles.inspector} aria-label="Scene preparation settings" inert={!!job}>
         <fieldset className={styles.preparationSettings} disabled={!!job || !scene}>
           <Section title="Environment">
             <Segmented
@@ -851,7 +969,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
           </Section>
         </fieldset>
       </aside>
-      <footer className={styles.scenes} aria-label="Project cameras">
+      <footer className={styles.scenes} aria-label="Project cameras" inert={!!job}>
         <button
           type="button"
           className={styles.sceneCard}
