@@ -62,6 +62,11 @@ function contentHash(value: unknown): string {
         visit((entry as Record<string, unknown>)[key]);
       }
       add('}');
+    } else if (typeof entry === 'string') {
+      // Embedded models can contain hundreds of MB of base64. Hash in place rather
+      // than allocating another equally large escaped JSON string.
+      add(`string:${entry.length}:`);
+      add(entry);
     } else add(JSON.stringify(entry) ?? 'undefined');
     add('|');
   };
@@ -95,7 +100,7 @@ export function preparationSignature(
     ]);
     documentSignatures.set(doc, content);
   }
-  return `${content}:${contentHash([lighting, quality])}`;
+  return `quest-reduction-v2:${content}:${contentHash([lighting, quality])}`;
 }
 
 export function throwIfCancelled(signal: AbortSignal): void {

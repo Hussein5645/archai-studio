@@ -45,6 +45,7 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^1.47.0",
     "manifold-3d": "^3.5.3",
+    "meshoptimizer": "^1.1.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "svg2pdf.js": "^2.8.1",
@@ -74,7 +75,7 @@
   },
   "build": {
     "appId": "app.archai.desktop",
-    "buildVersion": "0.2.2.25",
+    "buildVersion": "0.2.2.27",
     "productName": "ArchAI",
     "directories": {
       "output": "release"

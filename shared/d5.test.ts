@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { zipSync } from 'fflate';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Box3, Vector3 } from 'three';
-import { convertD5Folder, d5ActorMatrix, parseD5Mesh } from './d5';
+import { convertD5Folder, convertD5FolderAsync, d5ActorMatrix, parseD5Mesh } from './d5';
 import type { D5FolderResult } from './ipc';
 
 function meshFixture(
-  options: { version?: number; indices?: number[]; texture?: boolean } = {},
+  options: { version?: number; indices?: number[]; texture?: boolean; native?: boolean } = {},
 ): Uint8Array {
   const parts: Uint8Array[] = [];
   const uint = (number: number) => {
@@ -31,12 +31,14 @@ function meshFixture(
     parts.push(bytes);
   };
   uint(options.version ?? 11);
-  string(JSON.stringify({ upVector: 2 }));
-  uint(1);
-  string('white');
-  string(
-    `<Material><DiffuseColor>#FFFFFF</DiffuseColor>${options.texture ? '<DiffuseMap>um/white.png</DiffuseMap>' : ''}</Material>`,
-  );
+  string(JSON.stringify(options.native ? { materialVersion: 2 } : { upVector: 2 }));
+  uint(options.native ? 0 : 1);
+  if (!options.native) {
+    string('white');
+    string(
+      `<Material><DiffuseColor>#FFFFFF</DiffuseColor>${options.texture ? '<DiffuseMap>um/white.png</DiffuseMap>' : ''}</Material>`,
+    );
+  }
   uint(1);
   string('triangle');
   string('white');
@@ -84,6 +86,51 @@ function gltf(bytes: Uint8Array) {
 }
 
 describe('D5 folder conversion', () => {
+  it('imports native meshes without an axis hint or embedded materials and reports placeholders', () => {
+    const input = folder();
+    input.files[1] = {
+      name: 'resource/model.d5a',
+      bytes: zipSync({ '1.d5mesh': meshFixture({ native: true }) }),
+    };
+    const result = convertD5Folder(input);
+    expect(result.report.actors).toBe(1);
+    expect(result.report.omitted.join(' ')).toContain('placeholder materials');
+    expect(gltf(result.glb).materials[0].name).toBe('white');
+  });
+  it('loads referenced assets on demand once, reuses repeats, and reports progress', async () => {
+    const input = folder([1, 2].map((i) => ({ uniqueActorId: String(i), resourceId: 'model' })));
+    const requests: string[][] = [],
+      progress: string[] = [];
+    const result = await convertD5FolderAsync(
+      { ...input, files: input.files.slice(0, 1) },
+      async (names) => {
+        requests.push(names);
+        return input.files.filter((file) => names.includes(file.name)).slice(0, 1);
+      },
+      (value) => progress.push(value.message),
+    );
+    expect(result.report).toMatchObject({ actors: 2, triangles: 2 });
+    expect(requests).toHaveLength(1);
+    expect(progress).toContain('Reading object 2 of 2: Model');
+    expect(progress.at(-1)).toBe('Assembling the imported scene');
+  });
+  it('stops after cancellation before loading another resource', async () => {
+    const input = folder(),
+      abort = new AbortController();
+    let reads = 0;
+    await expect(
+      convertD5FolderAsync(
+        input,
+        async () => {
+          reads++;
+          return [];
+        },
+        () => abort.abort(),
+        abort.signal,
+      ),
+    ).rejects.toThrow();
+    expect(reads).toBe(0);
+  });
   it('decodes the mesh and loads the exported GLB at metre scale', async () => {
     const result = convertD5Folder(folder());
     expect(result.report).toMatchObject({

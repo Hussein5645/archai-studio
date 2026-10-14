@@ -1,6 +1,8 @@
 import { IPC, type ArchaiBridge, type OpenDocumentResult, type OpenImageResult, type SaveDocumentResult } from '@shared/ipc';
 import { base64ToBytes } from '@/persistence/base64';
 import type { Platform } from './types';
+import { electronStorage } from './electronStorage';
+import { electronStudio } from './electronStudio';
 
 declare global {
   interface Window {
@@ -17,6 +19,7 @@ function fileName(path: string): string {
 }
 
 export function createElectronPlatform(bridge: ArchaiBridge): Platform {
+  const storage = electronStorage(bridge);
   return {
     kind: 'electron',
     files: {
@@ -43,12 +46,7 @@ export function createElectronPlatform(bridge: ArchaiBridge): Platform {
         return result ? { path: result.path } : null;
       },
     },
-    storage: {
-      get: (key) => bridge.invoke<string | null>(IPC.storageGet, { key }),
-      set: (key, value) => bridge.invoke<void>(IPC.storageSet, { key, value }),
-      delete: (key) => bridge.invoke<void>(IPC.storageDelete, { key }),
-      keys: (prefix) => bridge.invoke<string[]>(IPC.storageKeys, { prefix }),
-    },
+    storage,
     clipboard: {
       readText: () => bridge.invoke<string>(IPC.clipboardReadText),
       writeText: (text) => bridge.invoke<void>(IPC.clipboardWriteText, { text }),
@@ -63,14 +61,7 @@ export function createElectronPlatform(bridge: ArchaiBridge): Platform {
       openRender: () => void bridge.invoke(IPC.windowOpenRender),
       setProgress: (progress) => void bridge.invoke(IPC.windowSetProgress, { progress }),
     },
-    studio: bridge.onStudio
-      ? {
-          send: (message) => void bridge.invoke(IPC.studioSend, message),
-          subscribe: (listener) => bridge.onStudio!((message) => {
-            if (message && typeof message === 'object' && typeof (message as { type?: unknown }).type === 'string') listener(message as { type: string } & Record<string, unknown>);
-          }),
-        }
-      : null,
+    studio: electronStudio(bridge, storage),
     links: bridge.onLink
       ? {
           subscribe: (listener) => {

@@ -72,13 +72,21 @@ test('D5 folder import reports omissions, inserts the scene, and automatically b
     (window as Window & { archai?: ArchaiBridge }).archai = {
       platform: 'electron',
       onCommand: () => () => {},
-      invoke: async <T>(channel: string): Promise<T> =>
+      invoke: async <T>(channel: string, payload?: unknown): Promise<T> =>
         (channel === 'archai:files:openD5Folder'
           ? {
               ...data,
-              files: data.files.map((file) => ({ ...file, bytes: Uint8Array.from(file.bytes) })),
+              sessionId: '30d6aa3b-91b0-43c4-bd53-18f1405b7762',
+              files: data.files
+                .filter((file) => file.name === 'asset/1.save')
+                .map((file) => ({ ...file, bytes: Uint8Array.from(file.bytes) })),
             }
-          : null) as T,
+          : channel === 'archai:files:readD5Resources'
+            ? data.files
+                .filter((file) => (payload as { names: string[] }).names.includes(file.name))
+                .slice(0, 1)
+                .map((file) => ({ ...file, bytes: Uint8Array.from(file.bytes) }))
+            : null) as T,
     };
     const opened = await app.executor.dispatch('import-d5-folder');
     if (!opened.ok) throw new Error(opened.error.message);
@@ -101,7 +109,9 @@ test('D5 folder import reports omissions, inserts the scene, and automatically b
   });
   await expect(studio.getByText('Prepared output is ready to preview and publish.')).toBeVisible();
   const count = await page.evaluate(() => {
-    const elements = Object.values(window.__archai!.store.getState().doc.elements) as { meta?: Record<string, unknown> }[];
+    const elements = Object.values(window.__archai!.store.getState().doc.elements) as {
+      meta?: Record<string, unknown>;
+    }[];
     return {
       meshes: elements.filter((element) => element.meta?.['mesh']).length,
       stops: elements.filter((element) => element.meta?.['vrStop']).length,

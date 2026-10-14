@@ -15,6 +15,8 @@ export const IPC = {
   filesSaveBinary: 'archai:files:saveBinary',
   filesOpenFiles: 'archai:files:openFiles',
   filesOpenD5Folder: 'archai:files:openD5Folder',
+  filesReadD5Resources: 'archai:files:readD5Resources',
+  filesCloseD5Folder: 'archai:files:closeD5Folder',
   storageGet: 'archai:storage:get',
   storageSet: 'archai:storage:set',
   storageDelete: 'archai:storage:delete',
@@ -73,6 +75,8 @@ export const OpenFilesInput = z.object({
   filters: z.array(z.object({ name: z.string().min(1).max(100), extensions: z.array(z.string().regex(/^(\*|[a-z0-9]{1,10})$/i)).min(1).max(50) })).max(50),
 });
 export type OpenFilesInput = z.infer<typeof OpenFilesInput>;
+export const D5ReadResourcesInput = z.object({ sessionId: z.string().uuid(), names: z.array(z.string().min(1).max(1024)).min(1).max(3) });
+export const D5CloseFolderInput = z.object({ sessionId: z.string().uuid() });
 
 export const StorageKeyInput = z.object({ key: z.string().min(1).max(200) });
 export const StorageSetInput = z.object({ key: z.string().min(1).max(200), value: z.string() });
@@ -139,11 +143,16 @@ export interface OpenFileResult {
   name: string;
   bytes: Uint8Array;
 }
+export interface D5ResourceResult extends OpenFileResult {
+  unsupported?: string;
+}
 
 /** D5 relative file names are preserved so resources and textures resolve without collisions. */
 export interface D5FolderResult {
   name: string;
   files: OpenFileResult[];
+  /** Native folder access scoped to the selecting window. Only the scene index is loaded initially. */
+  sessionId?: string;
 }
 
 /** The API the preload script exposes on `window.archai`. */

@@ -9,6 +9,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import type { ArchaiDocument, Element } from '@/document';
 import { base64ToBytes } from '@/persistence/base64';
+import { reduceLargeScene } from './largeScene';
 
 export interface MeshMeta {
   blobId: string;
@@ -38,6 +39,8 @@ export function meshOf(element: Element | undefined | null): MeshMeta | null {
 class MeshStore {
   /** Decoded meshes by blob id. */
   readonly models = new Map<string, THREE.Object3D>();
+  /** Generated board previews; full geometry stays in models and in the saved blob. */
+  readonly lowModels = new Map<string, THREE.Object3D>();
   private readonly pending = new Map<string, Promise<void>>();
   private readonly failed = new Set<string>();
   private readonly loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
@@ -45,7 +48,7 @@ class MeshStore {
   private readonly waiting: (() => void)[] = [];
 
   private async decode(data: string): Promise<THREE.Object3D> {
-    if (this.active >= 4) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    if (this.active >= 1) await new Promise<void>((resolve) => this.waiting.push(resolve));
     else this.active++;
     try {
       const bytes = base64ToBytes(data);
@@ -81,8 +84,13 @@ class MeshStore {
       const blob = doc.blobs[mesh.blobId];
       if (!blob) continue;
       const job = this.decode(blob.data)
-        .then((model) => {
+        .then(async (model) => {
           this.models.set(mesh.blobId, model);
+          try {
+            this.lowModels.set(mesh.blobId, await reduceLargeScene(model, 350_000, 10));
+          } catch {
+            // The detailed model remains usable if the preview cannot be generated.
+          }
           changed = true;
         })
         .catch(() => {

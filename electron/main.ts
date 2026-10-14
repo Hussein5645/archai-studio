@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'ele
 import type { MenuItemConstructorOptions } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   ClipboardWriteInput,
@@ -13,6 +14,8 @@ import {
   SaveDocumentAsInput,
   SaveDocumentToInput,
   OpenFilesInput,
+  D5ReadResourcesInput,
+  D5CloseFolderInput,
   StorageKeyInput,
   StorageKeysInput,
   StorageSetInput,
@@ -26,7 +29,7 @@ import {
   type SaveDocumentResult,
 } from '../shared/ipc.js';
 import { liveReply, startLiveLink } from './liveLink.js';
-import { readD5Folder } from './d5Folder.js';
+import { readD5Folder, readD5Files } from './d5Folder.js';
 
 const DEV_URL = process.env['ARCHAI_DEV_URL'];
 /**
@@ -54,6 +57,8 @@ const IMAGE_MIME: Record<string, string> = {
 app.commandLine.appendSwitch('use-angle', process.env['ARCHAI_ANGLE'] || (process.platform === 'win32' ? 'gl' : 'default'));
 
 let mainWindow: BrowserWindow | null = null;
+const d5Folders = new Map<number, { sessionId: string; root: string }>();
+const d5Owners = new WeakSet<Electron.WebContents>();
 
 /**
  * archai:// links (invite/<token> or live?key=...) arrive in the command line, of this
@@ -333,7 +338,7 @@ function registerIpc(): void {
     return Promise.all(result.filePaths.map(async (file) => ({ name: path.basename(file), bytes: new Uint8Array(await fs.readFile(file)) })));
   });
 
-  ipcMain.handle(IPC.filesOpenD5Folder, async (_e, raw) => {
+  ipcMain.handle(IPC.filesOpenD5Folder, async (event, raw) => {
     z.void().parse(raw);
     if (!mainWindow) return null;
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -341,7 +346,26 @@ function registerIpc(): void {
     });
     const folder = result.filePaths[0];
     if (result.canceled || !folder) return null;
-    return readD5Folder(folder);
+    const root = await fs.realpath(folder);
+    const index = await readD5Folder(root);
+    const sessionId = randomUUID();
+    d5Folders.set(event.sender.id, { sessionId, root });
+    if (!d5Owners.has(event.sender)) {
+      d5Owners.add(event.sender);
+      const owner = event.sender.id;
+      event.sender.once('destroyed', () => d5Folders.delete(owner));
+    }
+    return { ...index, sessionId };
+  });
+  ipcMain.handle(IPC.filesReadD5Resources, async (event, raw) => {
+    const input = D5ReadResourcesInput.parse(raw);
+    const folder = d5Folders.get(event.sender.id);
+    if (!folder || folder.sessionId !== input.sessionId) throw new Error('This D5 folder session has closed. Choose the folder again.');
+    return readD5Files(folder.root, input.names);
+  });
+  ipcMain.handle(IPC.filesCloseD5Folder, (event, raw) => {
+    const input = D5CloseFolderInput.parse(raw);
+    if (d5Folders.get(event.sender.id)?.sessionId === input.sessionId) d5Folders.delete(event.sender.id);
   });
 
   ipcMain.handle(IPC.storageGet, (_e, raw) => storageGet(StorageKeyInput.parse(raw).key));

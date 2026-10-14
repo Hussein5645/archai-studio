@@ -9,6 +9,25 @@ const options = { lod: 'high' as const, models: new Map(), textures: new Map() }
 const byId = (built: Built[]) => new Map(built.map((item) => [item.id, item]));
 
 describe('incremental scene builds', () => {
+  it('uses a generated imported-model preview only in Low detail mode', () => {
+    const app = createTestApp();
+    const blobId = 'large-model-lod-test';
+    const full = new THREE.Group();
+    const low = new THREE.Group();
+    full.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), new THREE.MeshStandardMaterial()));
+    low.add(new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100), new THREE.MeshStandardMaterial()));
+    meshStore.models.set(blobId, full);
+    meshStore.lowModels.set(blobId, low);
+    try {
+      const id = run<string>(app, 'create-rect', { x: 0, y: 0, width: 100, height: 100, meta: { mesh: { blobId, height: 100 } } });
+      for (const lod of ['high', 'low'] as const) {
+        const built = buildScene(app.store.getState().doc, { ...options, lod }).find((entry) => entry.id === id)!;
+        const counts: number[] = [];
+        built.object.traverse((object) => { if (object instanceof THREE.Mesh) counts.push(object.geometry.index!.count); });
+        expect(counts).toEqual([((lod === 'high' ? full : low).children[0] as THREE.Mesh).geometry.index!.count]);
+      }
+    } finally { meshStore.models.delete(blobId); meshStore.lowModels.delete(blobId); }
+  });
   it('uses whole-object ArchAI paint on new source material slots without mutating cached source materials', () => {
     const app = createTestApp();
     const materialId = run<string>(app, 'create-material', { material: { name: 'ArchAI orange', color: '#ff6600' } });

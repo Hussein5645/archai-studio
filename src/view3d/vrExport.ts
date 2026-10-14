@@ -16,6 +16,7 @@ import { buildScene, sceneCentre, type Built } from './geometry';
 import { prepareParametric } from './parametricModels';
 import { meshStore } from './meshes';
 import { optimiseVrSurfaces } from './vrOptimise';
+import { disposeReducedScene, reduceLargeScene } from './largeScene';
 
 /** The document's 3D scene at high detail, in metres, without board-only helpers. */
 export async function buildSurfaces(doc: ArchaiDocument, catalog: AssetCatalog, wrap: (item: Built) => THREE.Object3D = (item) => item.object,
@@ -102,7 +103,8 @@ export async function exportVrModel(doc: ArchaiDocument, catalog: AssetCatalog):
   root.add(ground);
   root.updateMatrixWorld(true);
 
-  const optimized = optimiseVrSurfaces(root);
+  const reduced = await reduceLargeScene(root, 350_000, 0.02, undefined, false);
+  const optimized = optimiseVrSurfaces(reduced);
   try {
     const exported = await new GLTFExporter().parseAsync(optimized, { binary: true, onlyVisible: true, maxTextureSize: 2048 });
     if (!(exported instanceof ArrayBuffer)) throw new Error('The model could not be exported');
@@ -110,5 +112,6 @@ export async function exportVrModel(doc: ArchaiDocument, catalog: AssetCatalog):
   } finally {
     // Batched geometry is owned by the export, the cloned source geometry is shared.
     for (const child of optimized.children) if (child instanceof THREE.Mesh) child.geometry.dispose();
+    disposeReducedScene(reduced, root);
   }
 }

@@ -41,8 +41,36 @@ Terrain, grouped/scattered/procedural actors, native synced actors, material sty
 non-base-colour maps, lights, D5 environment/effects, cameras and animation are not reproduced.
 The report flags known omissions; it cannot guarantee every D5 field is understood. Non-identity
 mesh matrices and rotated scenes still need comparison against D5. ArchAI recalculates lighting
-with its existing diffuse vertex bake; D5's rendered lighting is not preserved. The folder limit
-is 256 MB / 10,000 files; scenes over one million triangles can be imported but cannot auto-bake.
+with its existing diffuse vertex bake; D5's rendered lighting is not preserved. There is no
+folder-wide size or file-count limit. The desktop loads the scene index and then referenced
+meshes and base-colour textures one resource at a time, reusing converted geometry for repeated
+actors and showing progress between objects/mesh parts. Conversion runs in a background worker
+and transfers binary buffers back to the app window. Unused files and hidden actors are not read;
+unused archive textures are not decoded. Unsupported local library mesh formats are identified
+from their header and listed as omissions without loading the payload. Native meshes that omit
+the axis hint are treated as Z-up; missing embedded materials get named placeholders with a warning.
+Individual resources/decoded mesh entries retain a 256 MB memory
+guard; GLB's 4 GB format ceiling and available memory still apply.
+
+Large imported models get a generated preview for the board's **Low detail** mode (target
+350,000 triangles, 10 mm simplification tolerance). **High detail** keeps the original geometry;
+the saved model blob remains unchanged. Preview generation runs in a worker and reuses repeated
+geometry. Textures, material boundaries and UV seams are protected. Model decoding is serialized
+to reduce peak memory use.
+The 2D plan reader preallocates typed triangle buffers and avoids collecting invisible edges.
+The existing 30,000-segment display cap per edge/cut layer remains; detailed geometry is retained.
+Large desktop working-copy values use atomic chunk manifests and 8 MB IPC messages, including
+model transfers to Render Studio. These working copies require the updated desktop version.
+
+VR export and baking reduce a detached scene with a 20 mm tolerance before processing it.
+Baking reserves half its quality preset's triangle budget for double-sided surfaces. Geometry
+reduction preserves textured UV seams and accounts for normal/colour changes; tiny isolated
+components may be removed. Unused UV seams need not restrict an untextured VR copy. This uses
+[meshoptimizer's attribute-aware simplification](https://github.com/zeux/meshoptimizer/blob/master/README.md#simplification).
+Targets are best effort: error limits and protected features can retain more triangles. Scenes
+still over one million source triangles after reduction need smaller VR areas or a panorama tour.
+VR publishing retains its 95 MB upload limit. Review the reduced bake before sharing; headset
+frame rate depends on the resulting geometry, materials, textures and device.
 
 Code: `electron/d5Folder.ts`, `shared/d5.ts`, `src/commands/builtin/d5.ts`,
 `src/ui/D5ImportDialog.tsx`; one-shot bake requests use `src/studio/link.ts`.

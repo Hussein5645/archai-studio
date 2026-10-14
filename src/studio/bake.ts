@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { prepareBakeGeometry } from './bakeGeometry';
+import { isCanonicalShadowFace } from './bakeOcclusion';
+import { disposeReducedScene, reduceLargeScene } from '@/view3d/largeScene';
 import type { BakeInput } from './bakeTrace';
 import { throwIfCancelled, VR_QUALITY, type VrQuality } from './vrPreparation';
 
@@ -55,7 +57,15 @@ export async function bakeScene(
 ): Promise<BakedScene> {
   throwIfCancelled(signal);
   const preset = VR_QUALITY[quality];
-  const root = prepareBakeGeometry(source, preset.edge, preset.triangles);
+  // Reserve room for independently lit back faces of double-sided imports.
+  const reduced = await reduceLargeScene(source, Math.floor(preset.triangles / 2), 0.02, signal, false);
+  let root: THREE.Group;
+  try {
+    throwIfCancelled(signal);
+    root = prepareBakeGeometry(reduced, preset.edge, preset.triangles);
+  } finally {
+    disposeReducedScene(reduced, source);
+  }
   const meshes = root.children as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>[];
   const vertices = meshes.reduce(
     (count, mesh) => count + mesh.geometry.getAttribute('position').count,
@@ -89,6 +99,7 @@ export async function bakeScene(
     )
       continue;
     for (let i = 0; i < index.count; i += 3) {
+      if (material.side === THREE.DoubleSide && !isCanonicalShadowFace(p, index.getX(i), index.getX(i + 1), index.getX(i + 2))) continue;
       for (let j = 0; j < 3; j++) {
         const v = index.getX(i + j);
         triangles.push(p.getX(v), p.getY(v), p.getZ(v));

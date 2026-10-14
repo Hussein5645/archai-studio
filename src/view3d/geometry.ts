@@ -837,10 +837,10 @@ function modelSlots(clone: THREE.Object3D, look: Look): void {
 }
 
 /** A mesh element (src/view3d/meshes.ts): its model, or its plan box while the model decodes. */
-function buildMeshElement(doc: ArchaiDocument, element: Element & { kind: 'rect' }, matrix: Mat, mesh: MeshMeta): THREE.Object3D | null {
+function buildMeshElement(doc: ArchaiDocument, element: Element & { kind: 'rect' }, matrix: Mat, mesh: MeshMeta, lod: 'high' | 'low'): THREE.Object3D | null {
   const look = lookOf(doc, element);
   const group = new THREE.Group();
-  const model = meshStore.models.get(mesh.blobId);
+  const model = (lod === 'low' ? meshStore.lowModels.get(mesh.blobId) : undefined) ?? meshStore.models.get(mesh.blobId);
   if (model) {
     const clone = model.clone(true);
     modelSlots(clone, look);
@@ -1032,7 +1032,7 @@ export function buildScene(doc: ArchaiDocument, options: BuildOptions, previous?
       // Built at the ground; its elevation is added below like any element's (the stem reaches back down).
       object = pointMarker(toScene(applyToPoint(matrix, { x: element.width / 2, y: element.height / 2 })), element.style.stroke ?? '#7c3aed', instanceElevationOf(element, elements), vrStopOf(element)?.heading ?? null);
     } else if (element.kind === 'rect' && meshOf(element)) {
-      object = buildMeshElement(doc, element, matrix, meshOf(element)!);
+      object = buildMeshElement(doc, element, matrix, meshOf(element)!, elementLod(element) ?? options.lod ?? 'high');
     } else if (element.kind === 'group' && isConceptGroup(element)) {
       object = buildConcept(elements, element);
     } else if (element.kind === 'group' || element.meta?.['paper']) {

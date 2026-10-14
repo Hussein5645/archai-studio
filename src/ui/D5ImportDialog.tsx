@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { FolderOpen, Loader2, X } from 'lucide-react';
 import { useApp, useAppState } from '@/app/context';
 import { getElectronBridge } from '@/platform/electron';
-import { IPC, type D5FolderResult } from '@shared/ipc';
-import { convertD5Folder, type D5ConvertedScene } from '@shared/d5';
+import { IPC, type D5FolderResult, type D5ResourceResult } from '@shared/ipc';
+import { type D5ConvertedScene, type D5Progress } from '@shared/d5';
+import { convertD5InWorker } from '@/view3d/d5Convert';
 import { bytesToBase64 } from '@/persistence/base64';
 import { withProgress } from '@/progress';
 import { useI18n } from './i18n';
@@ -22,6 +23,8 @@ function Dialog({ documentId }: { documentId: string }) {
   const [scene, setScene] = useState<D5ConvertedScene | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState<D5Progress | null>(null);
+  const controller = useRef<AbortController | null>(null);
   const active = useRef(true);
   const closeRef = useRef<HTMLButtonElement>(null);
   const close = () => {
@@ -32,6 +35,7 @@ function Dialog({ documentId }: { documentId: string }) {
     closeRef.current?.focus();
     return () => {
       active.current = false;
+      controller.current?.abort();
     };
   }, []);
   useEffect(() => {
@@ -51,21 +55,43 @@ function Dialog({ documentId }: { documentId: string }) {
     if (!bridge || busy) return;
     setBusy(true);
     setError('');
+    setProgress(null);
+    const abort = new AbortController();
+    controller.current = abort;
+    let sessionId: string | undefined;
     try {
       const folder = await bridge.invoke<D5FolderResult | null>(IPC.filesOpenD5Folder);
+      sessionId = folder?.sessionId;
+      abort.signal.throwIfAborted();
       if (!folder || !active.current) return;
+      if (!sessionId) throw new Error('Restart ArchAI to use the updated D5 folder importer.');
       const converted = await withProgress('Reading D5 project', async (task) => {
-        task.update('Converting scene geometry and materials', null);
-        await task.paint();
-        return convertD5Folder(folder);
+        return convertD5InWorker(
+          folder,
+          (names) =>
+            bridge.invoke<D5ResourceResult[]>(IPC.filesReadD5Resources, { sessionId, names }),
+          (value) => {
+            if (active.current) setProgress(value);
+            task.update(value.message, value.total ? value.completed / value.total : null);
+          },
+          abort.signal,
+        );
       });
       if (active.current) setScene(converted);
     } catch (caught) {
       if (active.current) {
         setScene(null);
-        setError(caught instanceof Error ? caught.message : String(caught));
+        setError(
+          (caught instanceof Error ? caught.message : String(caught)).replace(
+            /^Error invoking remote method '[^']+': (?:Error: )?/,
+            '',
+          ),
+        );
       }
     } finally {
+      if (sessionId)
+        await bridge.invoke(IPC.filesCloseD5Folder, { sessionId }).catch(() => undefined);
+      if (controller.current === abort) controller.current = null;
       if (active.current) setBusy(false);
     }
   };
@@ -73,6 +99,7 @@ function Dialog({ documentId }: { documentId: string }) {
     if (!scene || busy || store.getState().doc.id !== documentId) return;
     setBusy(true);
     setError('');
+    setProgress(null);
     try {
       const result = await executor.dispatch('place-d5-scene', {
         documentId,
@@ -136,8 +163,17 @@ function Dialog({ documentId }: { documentId: string }) {
           </TextButton>
           {busy && (
             <p role="status">
-              <Loader2 size={16} className={styles.spinner} /> {t('Preparing your D5 scene…')}
+              <Loader2 size={16} className={styles.spinner} />{' '}
+              {t(progress?.message ?? 'Preparing your D5 scene…')}
             </p>
+          )}
+          {busy && progress && (
+            <progress
+              aria-label={t('D5 import progress')}
+              max={Math.max(1, progress.total)}
+              value={progress.completed}
+              style={{ width: '100%' }}
+            />
           )}
           {error && (
             <p role="alert" className={styles.error}>
@@ -170,7 +206,7 @@ function Dialog({ documentId }: { documentId: string }) {
               {scene.report.triangles > 1_000_000 && (
                 <p className={styles.notice}>
                   {t(
-                    'This scene exceeds the bake limit of one million triangles. Reduce it before baking.',
+                    'ArchAI will prepare a lighter scene for VR. The detailed imported model stays available in High detail mode. Review the reduced scene before sharing.',
                   )}
                 </p>
               )}
@@ -198,7 +234,7 @@ function Dialog({ documentId }: { documentId: string }) {
           )}
           <TextButton
             primary
-            disabled={busy || !scene || scene.report.triangles > 1_000_000}
+            disabled={busy || !scene}
             onClick={() => void place(true)}
           >
             {scene?.report.omitted.length

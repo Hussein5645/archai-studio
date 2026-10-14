@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planOfTriangles } from './meshPlan';
+import { glbTriangles, planOfTriangles } from './meshPlan';
 
 /** A box's 12 triangles: x 0..w, up 0..h, plan y 0..d. */
 function box(w: number, h: number, d: number, x = 0, y = 0): number[] {
@@ -11,6 +11,27 @@ function box(w: number, h: number, d: number, x = 0, y = 0): number[] {
 const segments = (s: number[]) => s.length / 4;
 
 describe('mesh plans on the board', () => {
+  it('preallocates transformed GLB triangles, including repeated instances', () => {
+    const json = new TextEncoder().encode(JSON.stringify({ asset: { version: '2.0' }, scene: 0,
+      scenes: [{ nodes: [0, 1] }], nodes: [{ mesh: 0 }, { mesh: 0, translation: [10, 20, 30] }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+      accessors: [{ bufferView: 0, componentType: 5126, type: 'VEC3', count: 3 },
+        { bufferView: 1, componentType: 5123, type: 'SCALAR', count: 3 }],
+      bufferViews: [{ byteOffset: 0, byteLength: 36 }, { byteOffset: 36, byteLength: 6 }],
+    }));
+    const jsonLength = Math.ceil(json.length / 4) * 4;
+    const bytes = new Uint8Array(12 + 8 + jsonLength + 8 + 44);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(0, 0x46546c67, true); view.setUint32(4, 2, true); view.setUint32(8, bytes.length, true);
+    view.setUint32(12, jsonLength, true); view.setUint32(16, 0x4e4f534a, true);
+    bytes.fill(32, 20, 20 + jsonLength); bytes.set(json, 20);
+    const start = 20 + jsonLength;
+    view.setUint32(start, 44, true); view.setUint32(start + 4, 0x004e4942, true);
+    const positions = [0, 0, 0, 1, 0, 0, 0, 1, 0];
+    positions.forEach((v, i) => view.setFloat32(start + 8 + i * 4, v, true));
+    [0, 1, 2].forEach((v, i) => view.setUint16(start + 8 + 36 + i * 2, v, true));
+    expect(Array.from(glbTriangles(bytes))).toEqual([...positions, 10, 20, 30, 11, 20, 30, 10, 21, 30]);
+  });
   it('cuts a tall element at 1.2 m: its outline in bold, nothing from above the cut', () => {
     const plan = planOfTriangles(new Float32Array(box(4000, 3000, 200)));
     // The wall's four sides cut (two triangles each side: 8 short segments forming the outline).

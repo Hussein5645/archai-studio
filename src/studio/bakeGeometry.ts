@@ -36,7 +36,7 @@ export function prepareBakeGeometry(
   });
   if (originalTriangles > 1_000_000)
     throw new Error(
-      'This scene exceeds one million triangles. Reduce model detail before baking for VR.',
+      'This scene still exceeds one million triangles after safe reduction. Split the project into smaller VR areas or use a panorama tour.',
     );
   let remaining = Math.max(0, triangleBudget - outputTriangles);
   root.traverseVisible((object) => {

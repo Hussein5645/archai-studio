@@ -1,7 +1,7 @@
 /** Experimental, bounded decoder for the supplied D5 v11 mesh layout. No Python or D5 runtime. */
 import { unzipSync } from 'fflate';
 import { z } from 'zod';
-import type { D5FolderResult } from './ipc.js';
+import type { D5FolderResult, D5ResourceResult, OpenFileResult } from './ipc.js';
 
 const MAX_BYTES = 256 * 1024 * 1024;
 const vector = z.object({
@@ -140,7 +140,9 @@ export function parseD5Mesh(bytes: Uint8Array): {
   if (reader.uint() !== 11)
     throw new Error('This D5 mesh version is not supported yet (supported: version 11).');
   const header = record(JSON.parse(reader.string()));
-  if (header['upVector'] !== 2) throw new Error('This D5 mesh axis format is not supported yet.');
+  // Native D5/Revit meshes omit the source up-vector hint; their stored coordinates are Z-up.
+  if (header['upVector'] !== undefined && header['upVector'] !== 2)
+    throw new Error('This D5 mesh axis format is not supported yet.');
   const materials: Material[] = [];
   for (let i = 0, count = reader.count(); i < count; i++)
     materials.push({ name: reader.string(), properties: xmlProperties(reader.string()) });
@@ -241,7 +243,10 @@ class GlbWriter {
     });
     this.chunks.push(bytes);
     this.byteLength += bytes.byteLength;
-    if (this.byteLength > MAX_BYTES) throw new Error('Converted D5 scene exceeds 256 MB.');
+    if (this.byteLength > 0xffffffff)
+      throw new Error(
+        'The converted scene exceeds the GLB file format size. Split it into smaller scenes.',
+      );
     return this.views.length - 1;
   }
   accessor(values: number[], width: number, type: string, index = false, bounds = false): number {
@@ -290,6 +295,10 @@ class GlbWriter {
     const encoded = new TextEncoder().encode(JSON.stringify(doc));
     const jsonLength = encoded.length + (-encoded.length & 3),
       binaryLength = this.byteLength + (-this.byteLength & 3);
+    if (28 + jsonLength + binaryLength > 0xffffffff)
+      throw new Error(
+        'The converted scene exceeds the GLB file format size. Split it into smaller scenes.',
+      );
     const result = new Uint8Array(28 + jsonLength + binaryLength);
     const view = new DataView(result.buffer);
     view.setUint32(0, 0x46546c67, true);
@@ -321,16 +330,20 @@ function factor(value: string | undefined, fallback: number): number {
   return Math.max(0, Math.min(1, number));
 }
 
-export function convertD5Folder(folder: D5FolderResult): D5ConvertedScene {
-  if (folder.files.reduce((sum, file) => sum + file.bytes.length, 0) > MAX_BYTES)
-    throw new Error('D5 folder exceeds 256 MB.');
-  const files = new Map(folder.files.map((file) => [canonical(file.name), file.bytes]));
-  const save = files.get('asset/1.save');
-  if (!save) throw new Error('Choose the D5 project folder containing asset/1.save.');
+export interface D5Progress {
+  message: string;
+  completed: number;
+  total: number;
+}
+type D5Step = { kind: 'files'; names: string[] } | ({ kind: 'progress' } & D5Progress);
+function* convertD5Steps(
+  name: string,
+  save: Uint8Array,
+): Generator<D5Step, D5ConvertedScene, D5ResourceResult[]> {
   const scene = sceneSchema.parse(json(save));
   const writer = new GlbWriter();
   const report: D5Report = {
-    name: folder.name,
+    name,
     actors: 0,
     triangles: 0,
     textures: 0,
@@ -341,43 +354,80 @@ export function convertD5Folder(folder: D5FolderResult): D5ConvertedScene {
     ],
   };
   const cache = new Map<string, { children: Node[]; triangles: number }>();
-  for (const actor of scene.furnitureDatas) {
-    if (actor.isHide) continue;
+  const unsupported = new Map<string, string>();
+  const actors = scene.furnitureDatas.filter((actor) => !actor.isHide);
+  for (const [actorIndex, actor] of actors.entries()) {
+    yield {
+      kind: 'progress',
+      message: `Reading object ${actorIndex + 1} of ${actors.length}: ${actor.productData.title}`,
+      completed: actorIndex,
+      total: actors.length,
+    };
+    if (actor.groupActorId) {
+      report.omitted.push(`${actor.productData.title}: grouped placement is not supported yet.`);
+      continue;
+    }
     const sourceNames = [
       `resource/${actor.resourceId}.d5a`,
       `asset/${actor.furnitureModelPath}/1.d5mesh`,
       `asset/d5a/${actor.productData.id}/1.d5mesh`,
     ].map(canonical);
-    const source = sourceNames.find((name) => files.has(name));
+    const failed = sourceNames.find((name) => unsupported.has(name));
+    if (failed) {
+      report.omitted.push(`${actor.productData.title}: ${unsupported.get(failed)}`);
+      continue;
+    }
+    let source = sourceNames.find((name) => cache.has(name));
+    let resource: Uint8Array | undefined;
+    if (!source) {
+      const candidates = yield { kind: 'files', names: sourceNames };
+      const found = candidates.find((file) => sourceNames.includes(canonical(file.name)));
+      if (found?.unsupported) {
+        unsupported.set(canonical(found.name), found.unsupported);
+        report.omitted.push(`${actor.productData.title}: ${found.unsupported}`);
+        continue;
+      }
+      if (found) {
+        source = canonical(found.name);
+        resource = found.bytes;
+      }
+    }
     if (!source) {
       report.omitted.push(`${actor.productData.title}: mesh resource is missing.`);
       continue;
     }
-    if (actor.groupActorId) {
-      report.omitted.push(`${actor.productData.title}: grouped placement is not supported yet.`);
-      continue;
-    }
     if (!cache.has(source)) {
-      const resource = files.get(source)!;
-      let expandedBytes = 0;
+      if (!resource) throw new Error('D5 resource could not be loaded.');
       const archive = source.endsWith('.d5a')
         ? unzipSync(resource, {
             filter: (entry) => {
+              if (entry.name !== '1.d5mesh') return false;
               if (entry.originalSize > MAX_BYTES)
                 throw new Error('D5 archive entry exceeds 256 MB.');
-              const include = entry.name === '1.d5mesh' || /\.(png|jpe?g)$/i.test(entry.name);
-              if (include) expandedBytes += entry.originalSize;
-              if (expandedBytes > MAX_BYTES) throw new Error('Expanded D5 archive exceeds 256 MB.');
-              return include;
+              return true;
             },
           })
         : {};
-      if (Object.values(archive).reduce((sum, value) => sum + value.length, 0) > MAX_BYTES)
-        throw new Error('Expanded D5 archive exceeds 256 MB.');
       const meshBytes = source.endsWith('.d5a') ? archive['1.d5mesh'] : resource;
       if (!meshBytes) throw new Error(`${actor.productData.title}: archive contains no 1.d5mesh.`);
-      const asset = parseD5Mesh(meshBytes);
+      let asset: ReturnType<typeof parseD5Mesh>;
+      try {
+        asset = parseD5Mesh(meshBytes);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        unsupported.set(source, message);
+        report.omitted.push(`${actor.productData.title}: ${message}`);
+        continue;
+      }
       const materialIds = new Map<string, number>();
+      if (!asset.materials.length) {
+        report.omitted.push(
+          `${actor.productData.title}: material definitions are stored outside this mesh; placeholder materials are used.`,
+        );
+        for (const name of new Set(asset.instances.map((instance) => instance.material))) {
+          asset.materials.push({ name, properties: { DiffuseColor: '#CCCCCC' } });
+        }
+      }
       for (const material of asset.materials) {
         const p = material.properties;
         const alpha = factor(p['Opacity'], 1);
@@ -391,7 +441,25 @@ export function convertD5Folder(folder: D5FolderResult): D5ConvertedScene {
           p['DiffuseMap'] || p['DiffuseTexture'] || p['TextureFilename'] || p['ImageFile'];
         if (texturePath) {
           const key = canonical(texturePath);
-          const image = files.get(key) ?? files.get(`asset/${key}`) ?? archive[texturePath];
+          const names = [key, `asset/${key}`].filter(
+            (name) =>
+              /^(?:asset|resource)\//.test(name) &&
+              !name.includes(':') &&
+              !name.split('/').includes('..'),
+          );
+          const external = names.length ? yield { kind: 'files', names } : [];
+          let image = external[0]?.unsupported ? undefined : external[0]?.bytes;
+          if (!image && source.endsWith('.d5a')) {
+            const embedded = unzipSync(resource, {
+              filter: (entry) => {
+                if (canonical(entry.name) !== key) return false;
+                if (entry.originalSize > MAX_BYTES)
+                  throw new Error('D5 texture exceeds the individual decode budget.');
+                return true;
+              },
+            });
+            image = Object.values(embedded)[0];
+          }
           const mime = /\.png$/i.test(key)
             ? 'image/png'
             : /\.jpe?g$/i.test(key)
@@ -431,6 +499,12 @@ export function convertD5Folder(folder: D5FolderResult): D5ConvertedScene {
       }
       const meshIds = new Map<string, { attributes: Record<string, number>; indices: number }>();
       for (const mesh of asset.meshes) {
+        yield {
+          kind: 'progress',
+          message: `Converting ${actor.productData.title}: ${mesh.name}`,
+          completed: actorIndex,
+          total: actors.length,
+        };
         const attributes: Record<string, number> = {
           POSITION: writer.accessor(mesh.positions, 3, 'VEC3', false, true),
         };
@@ -519,5 +593,64 @@ export function convertD5Folder(folder: D5FolderResult): D5ConvertedScene {
   report.omitted = [...new Set(report.omitted)];
   if (!report.actors)
     throw new Error(`No supported visible mesh actors were found. ${report.omitted.join(' ')}`);
+  yield {
+    kind: 'progress',
+    message: 'Assembling the imported scene',
+    completed: actors.length,
+    total: actors.length,
+  };
   return { glb: writer.write(), report };
+}
+
+function stepsFor(folder: D5FolderResult) {
+  const save = folder.files.find((file) => canonical(file.name) === 'asset/1.save')?.bytes;
+  if (!save) throw new Error('Choose the D5 project folder containing asset/1.save.');
+  return convertD5Steps(folder.name, save);
+}
+
+/** In-memory entry point for small fixtures and existing callers. No aggregate folder limits. */
+export function convertD5Folder(folder: D5FolderResult): D5ConvertedScene {
+  const files = new Map(folder.files.map((file) => [canonical(file.name), file]));
+  const steps = stepsFor(folder);
+  let next = steps.next();
+  while (!next.done) {
+    const requested =
+      next.value.kind === 'files'
+        ? next.value.names
+            .map((name) => files.get(canonical(name)))
+            .filter((file): file is OpenFileResult => Boolean(file))
+            .slice(0, 1)
+        : [];
+    next = steps.next(requested);
+  }
+  return next.value;
+}
+
+/** Reads one asset/texture batch at a time and yields to the UI between conversion steps. */
+export async function convertD5FolderAsync(
+  folder: D5FolderResult,
+  readFiles: (names: string[]) => Promise<D5ResourceResult[]>,
+  progress: (value: D5Progress) => void,
+  signal?: AbortSignal,
+): Promise<D5ConvertedScene> {
+  const steps = stepsFor(folder);
+  try {
+    let next = steps.next();
+    while (!next.done) {
+      signal?.throwIfAborted();
+      if (next.value.kind === 'files') {
+        const files = await readFiles(next.value.names);
+        signal?.throwIfAborted();
+        next = steps.next(files);
+      } else {
+        progress(next.value);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        signal?.throwIfAborted();
+        next = steps.next([]);
+      }
+    }
+    return next.value;
+  } finally {
+    steps.return(undefined as never);
+  }
 }

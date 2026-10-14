@@ -84,15 +84,15 @@ export function glbTriangles(bytes: Uint8Array): Float32Array {
   }
   if (!json || !bin) return new Float32Array();
   const data = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
-  const read = (index: number): number[] => {
+  const read = (index: number): Float64Array => {
     const accessor = json!.accessors?.[index];
-    if (!accessor || accessor.bufferView === undefined) return [];
+    if (!accessor || accessor.bufferView === undefined) return new Float64Array();
     const bufferView = json!.bufferViews![accessor.bufferView]!;
     const components = accessor.type === 'VEC3' ? 3 : accessor.type === 'VEC2' ? 2 : accessor.type === 'VEC4' ? 4 : 1;
     const size = accessor.componentType === 5126 || accessor.componentType === 5125 ? 4 : accessor.componentType === 5123 || accessor.componentType === 5122 ? 2 : 1;
     const stride = bufferView.byteStride ?? size * components;
     const start = (bufferView.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
-    const out = new Array<number>(accessor.count * components);
+    const out = new Float64Array(accessor.count * components);
     for (let i = 0; i < accessor.count; i++) {
       for (let c = 0; c < components; c++) {
         const at = start + i * stride + c * size;
@@ -107,7 +107,10 @@ export function glbTriangles(bytes: Uint8Array): Float32Array {
     }
     return out;
   };
-  const triangles: number[] = [];
+  let counting = true;
+  let length = 0;
+  let offset = 0;
+  let triangles = new Float32Array();
   const visit = (index: number, parent: Mat4) => {
     const node = json!.nodes?.[index];
     if (!node) return;
@@ -115,11 +118,17 @@ export function glbTriangles(bytes: Uint8Array): Float32Array {
     if (node.mesh !== undefined) {
       for (const primitive of json!.meshes?.[node.mesh]?.primitives ?? []) {
         if ((primitive.mode ?? 4) !== 4 || primitive.attributes?.POSITION === undefined) continue;
+        if (counting) {
+          length += (json!.accessors?.[primitive.indices ?? primitive.attributes.POSITION]?.count ?? 0) * 3;
+          continue;
+        }
         const p = read(primitive.attributes.POSITION);
         const idx = primitive.indices !== undefined ? read(primitive.indices) : Array.from({ length: p.length / 3 }, (_, i) => i);
         for (const i of idx) {
           const x = p[i * 3]!, y = p[i * 3 + 1]!, z = p[i * 3 + 2]!;
-          triangles.push(world[0]! * x + world[4]! * y + world[8]! * z + world[12]!, world[1]! * x + world[5]! * y + world[9]! * z + world[13]!, world[2]! * x + world[6]! * y + world[10]! * z + world[14]!);
+          triangles[offset++] = world[0]! * x + world[4]! * y + world[8]! * z + world[12]!;
+          triangles[offset++] = world[1]! * x + world[5]! * y + world[9]! * z + world[13]!;
+          triangles[offset++] = world[2]! * x + world[6]! * y + world[10]! * z + world[14]!;
         }
       }
     }
@@ -127,7 +136,10 @@ export function glbTriangles(bytes: Uint8Array): Float32Array {
   };
   const roots = json.scenes?.[json.scene ?? 0]?.nodes ?? (json.nodes ?? []).map((_, i) => i);
   for (const root of roots) visit(root, IDENTITY);
-  return new Float32Array(triangles);
+  counting = false;
+  triangles = new Float32Array(length);
+  for (const root of roots) visit(root, IDENTITY);
+  return triangles;
 }
 
 // ---- the plan ----
@@ -167,7 +179,8 @@ export function planOfTriangles(t: Float32Array): MeshPlan {
   // Feature edges: welded by position (parts of a mesh do not share vertices), kept where faces
   // meet at a crease or an edge is open; flat-face diagonals drop out.
   const key = (i: number) => `${Math.round(t[i]! * 2)},${Math.round(t[i + 1]! * 2)},${Math.round(t[i + 2]! * 2)}`;
-  const edges = new Map<string, { a: number; b: number; normals: number[] }>();
+  const crease = Math.cos((CREASE_DEGREES * Math.PI) / 180);
+  const edges = new Map<string, { a: number; b: number; normal: number[]; count: number; smooth: boolean }>();
   for (let f = 0; f < count; f++) {
     const o = f * 9;
     const ux = t[o + 3]! - t[o]!, uy = t[o + 4]! - t[o + 1]!, uz = t[o + 5]! - t[o + 2]!;
@@ -179,20 +192,24 @@ export function planOfTriangles(t: Float32Array): MeshPlan {
     for (let e = 0; e < 3; e++) {
       const a = o + e * 3;
       const b = o + ((e + 1) % 3) * 3;
+      // These edges never appear in the plan; avoid storing them for large projects.
+      if (!whole && (t[a + 1]! > cut + 1 || t[b + 1]! > cut + 1)) continue;
+      if (Math.hypot(t[b]! - t[a]!, t[b + 2]! - t[a + 2]!) < 1) continue;
       const ka = key(a);
       const kb = key(b);
       if (ka === kb) continue;
       const k = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
       const entry = edges.get(k);
-      if (entry) entry.normals.push(nx, ny, nz);
-      else edges.set(k, { a, b, normals: [nx, ny, nz] });
+      if (entry) {
+        entry.count++;
+        entry.smooth = entry.normal[0]! * nx + entry.normal[1]! * ny + entry.normal[2]! * nz > crease;
+      } else edges.set(k, { a, b, normal: [nx, ny, nz], count: 1, smooth: false });
     }
   }
-  const crease = Math.cos((CREASE_DEGREES * Math.PI) / 180);
   const seen = new Set<string>();
-  for (const { a, b, normals } of edges.values()) {
+  for (const { a, b, count, smooth } of edges.values()) {
     if (plan.edges.length >= MAX_SEGMENTS * 4) break;
-    if (normals.length === 6 && normals[0]! * normals[3]! + normals[1]! * normals[4]! + normals[2]! * normals[5]! > crease) continue;
+    if (count === 2 && smooth) continue;
     // Above the cut: not seen in a plan.
     if (!whole && (t[a + 1]! > cut + 1 || t[b + 1]! > cut + 1)) continue;
     const x1 = t[a]!, y1 = t[a + 2]!, x2 = t[b]!, y2 = t[b + 2]!;
