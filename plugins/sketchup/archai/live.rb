@@ -42,21 +42,29 @@ module ArchAI
       reply = JSON.parse(result.body)
       if reply['cancelled']
         Sketchup.status_text = 'ArchAI Link to project: cancelled'
-        return
+        return false
       end
       document = reply['document'] || {}
       project = { 'id' => document['id'].to_s, 'name' => document['name'].to_s }
       entry = Core.bridge_entry(key)
       same = entry['project'].is_a?(Hash) && entry['project']['id'] == project['id']
-      known = same ? (entry['known'] || []).map(&:to_s) : []
+      known = reply['known'] || (same ? (entry['known'] || []).map(&:to_s) : [])
       Core.remember_bridge(key, { 'project' => project, 'known' => known })
       if running?
         @link[:project] = project
         @link[:known] = known
         @link[:have] = {}
-        @link[:last_pulled] = -1
+        @link[:last_pulled] = @link[:last_seen] = -1
+        @link[:pending_push] = nil
+        @link[:sent_meshes] = {}
+        @link[:tokens] = {}
+        @link[:resend] = []
+        @link[:received] = {}
+        @link[:sync_request] = -1
+        @link[:push_at] = 0.0
       end
       UI.messagebox("This model is linked to the ArchAI project #{project['name']}. The Live Bridge syncs with it from now on.")
+      true
     rescue StandardError => e
       UI.messagebox("Link to project: #{e.message}\n\nIs the ArchAI desktop app running?")
     end
@@ -203,12 +211,17 @@ module ArchAI
       @link[:next_poll] = now + POLL
       query = URI.encode_www_form('key' => @link[:key], 'name' => @link[:name], 'app' => 'SketchUp', 'protocol' => 2, 'project' => (@link[:project] || {})['id'].to_s)
       begin
-        response = request(Net::HTTP::Get, "/live/status?#{query}", nil, 5)
+        response = request(Net::HTTP::Get, "/live/status?#{query}", nil, 60)
       rescue StandardError
         status(launch(query) ? 'Starting ArchAI...' : 'Install and start the ArchAI desktop app to sync')
         return
       end
       info = JSON.parse(response.body) rescue {}
+      if info['protocol'].to_i >= 2 && info['needsLink']
+        status('Choose an ArchAI project before starting the Live Bridge')
+        stop unless choose_project
+        return
+      end
       project = info['document'] && info['document']['name']
       unless project
         # ArchAI opens a project for this model on its own (the one linked before, or a new one).
@@ -221,7 +234,20 @@ module ArchAI
           status("ArchAI shows #{project}; this model is linked to #{(@link[:project] || {})['name'] || 'another project'}. Open it in ArchAI, or link this model to the open project.")
           return
         end
-        bind(info['document']['id']) if @link[:project].nil? || @link[:project]['id'] != info['document']['id']
+        if @link[:project].nil? || @link[:project]['id'] != info['document']['id']
+          @link[:project] = info['document']
+          @link[:known] = info['known'] || []
+          @link[:pending_push] = nil
+          @link[:sent_meshes] = {}
+          @link[:have] = {}
+          @link[:tokens] = {}
+          @link[:resend] = []
+          @link[:received] = {}
+          @link[:last_pulled] = @link[:last_seen] = -1
+          @link[:sync_request] = -1
+          @link[:push_at] = 0.0
+          save_bridge
+        end
       end
       up_to_date = @link[:last_seen] == @link[:last_pulled] && @link[:last_pulled] >= 0
       mode = bridge ? (info['mode'] || 'two-way') : 'two-way'

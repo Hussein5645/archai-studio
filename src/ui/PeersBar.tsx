@@ -22,7 +22,7 @@ export function PeersBar() {
       openShareDialog(docId);
       return;
     }
-    if (!window.confirm(t('Sharing puts a copy of this project online, and you continue in the online copy. Put it online now?'))) return;
+    if (!window.confirm(t('Sharing moves this project online, keeping its links and data. Put it online now?'))) return;
     try {
       const id = await cloud.putOnline(docId);
       openShareDialog(id);

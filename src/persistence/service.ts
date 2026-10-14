@@ -180,7 +180,7 @@ export class PersistenceService {
   async storeDocument(document: ArchaiDocument, extra: Pick<RecentEntry, 'cloud'> = {}): Promise<void> {
     await this.workingCopies.save(document);
     const lastDocumentId = this.record.lastDocumentId;
-    const record = touchRecent(this.record, { id: document.id, name: document.meta.name, updatedAt: document.meta.updatedAt, filePath: null, ...extra });
+    const record = touchRecent(this.record, { id: document.id, name: document.meta.name, updatedAt: document.meta.updatedAt, filePath: extra.cloud ? null : (this.entry(document.id)?.filePath ?? null), ...extra });
     this.record = { ...record, lastDocumentId };
     await this.writeSession();
   }

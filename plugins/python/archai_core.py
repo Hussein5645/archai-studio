@@ -24,7 +24,7 @@ import urllib.request
 import webbrowser
 from array import array
 
-VERSION = "0.5.3"
+VERSION = "0.5.4"
 WEB_URL = "https://archai-studio-six.vercel.app/"
 DEFAULT_SHARE_URL = "https://archai-vr-share.mklkoklpp.workers.dev"
 MAX_MODEL_BYTES = 95 * 1024 * 1024
@@ -939,6 +939,7 @@ class LiveLink(object):
         self._sent_meshes = {}
         self._sync_request = 0
         self._pending_push = None
+        self._project_generation = 0
         # ArchAI elements the host reset (edited there though they are another app's): asked again.
         self._resend = set()
         self.paused = False
@@ -1161,8 +1162,9 @@ class LiveLink(object):
         else:
             body["newName"] = new_name or self.name
         _, _, data = self._request("POST", "/live/bind", json.dumps(body).encode("utf-8"), timeout=60)
-        document = json.loads(data.decode("utf-8")).get("document") or {}
-        self._remember_project(document)
+        reply = json.loads(data.decode("utf-8"))
+        document = reply.get("document") or {}
+        self._remember_project(document, reply.get("known"))
         return document
 
     def choose_project(self):
@@ -1175,18 +1177,25 @@ class LiveLink(object):
         if reply.get("cancelled"):
             return None
         document = reply.get("document") or {}
-        self._remember_project(document)
+        self._remember_project(document, reply.get("known"))
         return document
 
-    def _remember_project(self, document):
+    def _remember_project(self, document, known=None):
+        self._project_generation += 1
         self._pending_push = None
         self._sent_meshes = {}
         if self.project and document.get("id") != self.project.get("id"):
             # Another project: it has none of this model yet.
             self._known = set()
+        if known is not None:
+            self._known = set(known)
         self.project = {"id": document.get("id", ""), "name": document.get("name", "")}
         self._have = {}
-        self._last_pulled = -1
+        self._tokens.clear()
+        self._resend.clear()
+        self._last_pulled = self._last_seen = -1
+        self._sync_request = -1
+        self._push_at = 0.0
         self._save_state()
 
     def _save_state(self):
@@ -1202,12 +1211,18 @@ class LiveLink(object):
         if bridge:
             query += "&protocol=2&project=%s" % urllib.request.quote((self.project or {}).get("id", ""), safe="")
         try:
-            _, _, body = self._request("GET", "/live/status?" + query, timeout=5)
+            _, _, body = self._request("GET", "/live/status?" + query, timeout=60)
             status = json.loads(body.decode("utf-8"))
         except (urllib.error.URLError, ConnectionError, OSError):
             self._report("Starting ArchAI..." if self._launch(query) else "Install and start the ArchAI desktop app to sync")
             return
         document = status.get("document")
+        if bridge and status.get("protocol", 1) >= 2 and status.get("needsLink"):
+            self._report("Choose an ArchAI project before starting the Live Bridge")
+            if self.choose_project() is None:
+                self.stop()
+                self._report("Link to project cancelled")
+            return
         if not document:
             # ArchAI opens a project for this model on its own (the one linked before, or a new one).
             self._report("Opening a project in ArchAI...")
@@ -1218,12 +1233,12 @@ class LiveLink(object):
                 self._report("ArchAI shows %s; this model is linked to %s. Open it in ArchAI, or link this model to the open project." % (project, (self.project or {}).get("name") or "another project"))
                 return
             if not self.project or self.project.get("id") != document.get("id"):
-                # First connection: linked to the project ArchAI shows.
-                self.bind(document.get("id"))
+                self._remember_project(document, status.get("known"))
         elif bridge:
             # An older ArchAI: the Live Bridge as before.
             bridge = False
         mode = status.get("mode", "two-way") if bridge else "two-way"
+        generation = self._project_generation
         if self.paused or mode in ("paused", "disconnected"):
             self._report("Paused in ArchAI" if mode == "paused" else "Disconnected in ArchAI" if mode == "disconnected" else "Paused")
             # Still seen by ArchAI, but nothing is sent or received.
@@ -1243,6 +1258,8 @@ class LiveLink(object):
             def read():
                 return self._export(), (self._all_ids() if bridge and self._all_ids else None)
             exchange, everything = (None, None) if self._pending_push else self._main(read)
+            if generation != self._project_generation:
+                return
             if self._pending_push:
                 exchange = self._pending_push[0]["model"]
             if exchange is not None:
@@ -1281,6 +1298,8 @@ class LiveLink(object):
                 if code >= 400:
                     raise RuntimeError(json.loads(data.decode("utf-8") or "{}").get("error") or "ArchAI could not take the model (%d)" % code)
                 reply = json.loads(data.decode("utf-8"))
+                if generation != self._project_generation:
+                    return
                 if reply.get("refused"):
                     self._report(reply.get("message") or "ArchAI did not take the model")
                     return
@@ -1321,6 +1340,8 @@ class LiveLink(object):
             if reset_ids:
                 path += "&resend=" + urllib.request.quote(",".join(reset_ids), safe="")
         code, headers, data = self._pull(path)
+        if generation != self._project_generation:
+            return
         if code == 204 or not data:
             return
         lower = {k.lower(): v for k, v in headers.items()}
@@ -1340,6 +1361,8 @@ class LiveLink(object):
                 self._phase("Updating %d objects in %s" % (len(objects) + len(removed) + len(updates), self.app), 0.65)
 
                 def apply_delta():
+                    if generation != self._project_generation:
+                        return
                     self.importing = True
                     try:
                         self._apply(delta)
@@ -1347,6 +1370,8 @@ class LiveLink(object):
                         self.importing = False
                         self._quiet_until = time.time() + 2.0
                 self._main(apply_delta)
+            if generation != self._project_generation:
+                return
             if fresh:
                 self._have = {}
             for archai_id in removed:

@@ -77,6 +77,7 @@ export function inviteToken(text: string): string | null {
 }
 
 export class CloudProjects {
+  private readonly bridgeDocuments = new Map<string, { document: ArchaiDocument; stamp: string }>();
   private listState: CloudListState = { projects: [], loading: false, error: null };
   private readonly listeners = new Set<() => void>();
   private stopStore: (() => void) | null = null;
@@ -159,21 +160,77 @@ export class CloudProjects {
 
   // ---- projects ----------------------------------------------------------------------------
 
-  /** Uploads a copy of a local project as a new online project and opens it. Returns its id. */
+  /** Moves a local project online without changing its identity or leaving a second project. */
   async putOnline(localId: string): Promise<string> {
     const local = this.store.getState().doc.id === localId ? this.store.getState().doc : await this.persistence.loadStored(localId);
     if (!local) throw new Error('Could not read this project');
-    const { id } = await this.account.json<{ id: string }>('/projects', {
+    if (this.persistence.entry(localId)?.cloud) return localId;
+    const { id, version: baseVersion } = await this.account.json<{ id: string; version: number }>('/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: local.meta.name }),
+      body: JSON.stringify({ id: localId, name: local.meta.name }),
     });
-    const online: ArchaiDocument = { ...local, id };
-    const { version } = await withProgress(`Putting "${local.meta.name}" online`, (task) => this.upload(online, 0, task));
+    if (id !== localId) throw new Error('Update the cloud service before moving this project online');
+    const online = local;
+    const { version } = await withProgress(`Putting "${local.meta.name}" online`, (task) => this.upload(online, baseVersion, task));
     await this.persistence.storeDocument(online, { cloud: { version, role: 'owner' } });
     void this.refresh();
     await this.open(id);
     return id;
+  }
+
+  /** A plugin can sync its saved destination while a different project is displayed. */
+  async loadForBridge(id: string): Promise<ArchaiDocument | null> {
+    const entry = this.persistence.entry(id);
+    const loadCached = async () => {
+      const recent = this.persistence.entry(id);
+      const stamp = `${recent?.updatedAt}:${recent?.cloud?.version ?? ''}`;
+      const cached = this.bridgeDocuments.get(id);
+      if (recent && cached?.stamp === stamp) return cached.document;
+      const document = await this.persistence.loadStored(id);
+      if (document && recent) this.cacheBridge(document, stamp);
+      return document;
+    };
+    if (!entry?.cloud) return loadCached();
+    if (entry.cloud.pending) await this.pushPending(id, entry.cloud);
+    try {
+      const current = await this.account.json<{ version: number; role: Role }>(`/projects/${id}/version`);
+      const cached = this.persistence.entry(id)?.cloud;
+      if (cached?.version === current.version && !cached.pending) {
+        if (cached.role !== current.role) await this.persistence.setCloud(id, { ...cached, role: current.role });
+        return loadCached();
+      }
+      const { document, cloud } = await this.download(id);
+      await this.persistence.storeDocument(document, { cloud });
+      this.cacheBridge(document, `${document.meta.updatedAt}:${cloud.version}`);
+      return document;
+    } catch (error) {
+      if (error instanceof CloudError && (error.status === 404 || error.status === 403)) return null;
+      if (!(error instanceof CloudError && error.status === 0)) throw error;
+      return loadCached();
+    }
+  }
+
+  async saveForBridge(document: ArchaiDocument): Promise<void> {
+    const cloud = this.persistence.entry(document.id)?.cloud;
+    if (cloud?.role === 'viewer') throw new Error('This linked project is view only');
+    await this.persistence.storeDocument(document, { cloud: cloud ? { ...cloud, pending: true } : undefined });
+    this.cacheBridge(document, `${document.meta.updatedAt}:${cloud?.version ?? ''}`);
+    if (!cloud) return;
+    try {
+      const { version } = await this.upload(document, cloud.version);
+      await this.persistence.setCloud(document.id, { version, role: cloud.role });
+      this.cacheBridge(document, `${document.meta.updatedAt}:${version}`);
+    } catch (error) {
+      if (!(error instanceof CloudError && error.status === 0)) throw error;
+    }
+  }
+
+  private cacheBridge(document: ArchaiDocument, stamp: string): void {
+    this.bridgeDocuments.delete(document.id);
+    this.bridgeDocuments.set(document.id, { document, stamp });
+    // Large embedded models must not accumulate for every project visited in a session.
+    while (this.bridgeDocuments.size > 3) this.bridgeDocuments.delete(this.bridgeDocuments.keys().next().value!);
   }
 
   /** Opens an online project (the board's latest version, or this device's copy offline) and joins its board. */

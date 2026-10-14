@@ -1,6 +1,6 @@
 # ArchAI plugins
 
-Status: **implemented** (plugins 0.5.3, 2026-10-14). Revit, AutoCAD and Blender are run-tested
+Status: **implemented** (plugins 0.5.4, 2026-10-14). Revit, AutoCAD and Blender are run-tested
 (Send to ArchAI, Open .AIR); Rhino, SketchUp, 3ds Max and Unreal are built (or packaged) but not yet
 run in their apps. Live Bridge status and geometry quality per app:
 [docs/live-bridge.md](live-bridge.md#status-by-app-2026-10-11-archai-02219-plugins-052).
@@ -46,15 +46,17 @@ The ArchAI desktop app runs a small HTTP server on the loopback interface (`127.
 Everything about ownership, conflicts, safe deletions, fidelity and the protocol is in
 docs/live-bridge.md. Plugins 0.4.x (protocol 1: whole models both ways) keep working.
 
-**Projects.** A model is bound to one ArchAI project: the one open when it first connects, or the
-one chosen with **Link to project...** (ArchAI shows its project picker). The link is remembered
-per model (`%LOCALAPPDATA%\ArchAI\live-bridge.json`, shared by all plugins). While ArchAI shows
-another project, the plugin says so and sends nothing.
+**Projects.** Each model uses its explicitly chosen, saved ArchAI project. Starting an unlinked
+bridge shows ArchAI's project picker, including **New project** and available online projects.
+Cancel leaves geometry untouched. Missing or inaccessible destinations require choosing again.
+The destination need not be open: it syncs in the background while you work in another project.
+Changing the link clears pending batches, export caches, received hashes and update tokens.
+Relinking to a previous project reuses its binding graph and restores known source IDs, so
+existing geometry updates in place. ArchAI material assignments remain authoritative.
 
-**Starting ArchAI by itself.** When the desktop app is not running, the plugin starts it:
-`ArchAI.exe` in its install folder (`%LOCALAPPDATA%\Programs\ArchAI`, `%ProgramFiles%\ArchAI`, or
-`ARCHAI_EXE`), else the `archai://live?key=…` link the installer registers, at most once a minute.
-On its Home screen ArchAI opens the project the model is linked to, else creates one named after it.
+**Starting ArchAI by itself.** If the desktop app is closed, plugins start the installed ArchAI
+app or its registered `archai://live` link. Starting never silently creates or chooses a project.
+Saved links resume; unlinked models require the picker first.
 
 Requests need the `X-ArchAI-Live: 1` header and are refused when they carry an `Origin` (a web
 page cannot reach the model). Clients: `Archai.Plugins.LiveLink` (C#: Revit through an
@@ -112,7 +114,7 @@ their owners (noted on the page).
 
 ## Revit setup
 
-`ArchAI-Revit-Setup-0.5.3-beta.1.exe` (archai-revit bucket) installs the 0.5.3-beta.1 packages,
+`ArchAI-Revit-Setup-0.5.4-beta.1.exe` (archai-revit bucket) installs the 0.5.4-beta.1 packages,
 built with `revit/build-packages.ps1 -UseApiPackages -Dotnet revit/artifacts/tools/dotnet/dotnet.exe`
 (the local .NET 10 SDK, needed for Revit 2027) and `revit/build-setup.ps1`. Its `--self-test <dir>`
 must run in a short path (.NET Framework 260-character limit).

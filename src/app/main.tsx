@@ -111,7 +111,6 @@ async function boot(): Promise<void> {
   const toasts = createToastStore();
   startBoardLink(platform, store, { executor, toasts });
   const persistence = new PersistenceService(store, executor, platform);
-  startLiveLink(platform, store, executor, catalog, toasts, persistence);
   // An app's geometry is edited in that app: changes made here are put back (docs/live-bridge.md).
   startBridgeGuard(executor, store, (app) => toasts.push({ kind: 'info', message: `${app} decides this element, so your change was put back. Convert it to an ArchAI element (Inspector, Live Bridge) to edit it here.` }));
   const route = parseRoute(getCurrentRoute());
@@ -165,6 +164,11 @@ async function boot(): Promise<void> {
   const account = currentAccount();
   const cloud = new CloudProjects(account, persistence, store, executor, toasts);
   cloud.start();
+  startLiveLink(platform, store, executor, catalog, toasts, persistence, {
+    load: (id) => cloud.loadForBridge(id),
+    save: (doc) => cloud.saveForBridge(doc),
+    open: (id) => persistence.entry(id)?.cloud || cloud.list().projects.some((project) => project.id === id) ? cloud.open(id) : persistence.openStored(id),
+  });
   // A board link to an online project (reload, or a link opened on another device) gets the latest version.
   const openId = store.getState().doc.id;
   if (store.getState().ui.screen !== 'home' && persistence.entry(openId)?.cloud) void account.restore().then(() => cloud.open(openId));

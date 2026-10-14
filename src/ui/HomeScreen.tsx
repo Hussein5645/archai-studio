@@ -48,7 +48,7 @@ export function HomeScreen() {
 
   const handlePutOnline = (e: React.MouseEvent, entry: RecentEntry) => {
     e.stopPropagation();
-    void cloudTask(entry.id, () => cloud.putOnline(entry.id), 'The project is online: this is now the online copy');
+    void cloudTask(entry.id, () => cloud.putOnline(entry.id), 'The project is now online, with its links and data');
   };
 
   const handleDeleteOnline = (project: CloudProject) => {

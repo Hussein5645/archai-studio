@@ -68,7 +68,9 @@ Home has **Recent Projects** (this device; online ones are tagged *Online*), **O
 (from the server: yours and the ones shared with you) and **Join with a link**.
 
 - **Put online** (cloud button on a project card, the account menu, or **Share** in a project)
-  uploads a copy of the project as a new online project and opens it; the local project stays.
+  moves the project online using the same project ID. Its geometry, materials, bridge bindings,
+  view settings and local per-project bake cache stay attached. The cached working copy becomes
+  the online project; conversion does not leave a second local project in the project list.
 - **Save a copy on this device** (online card, or the account menu) makes a normal local project.
 - The owner can delete an online project; others can leave it (Share dialog).
 - Code: `src/cloud/projects.ts`; the session entry of an online project carries

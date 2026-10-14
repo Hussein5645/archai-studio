@@ -74,7 +74,7 @@
   },
   "build": {
     "appId": "app.archai.desktop",
-    "buildVersion": "0.2.2.22",
+    "buildVersion": "0.2.2.23",
     "productName": "ArchAI",
     "directories": {
       "output": "release"

@@ -3,6 +3,7 @@ import type { LiveRequestKind } from '@shared/ipc';
 import { createTestApp, run } from '@/test/harness';
 import { createToastStore } from '@/ui/toast-store';
 import { liveBridgeControls, startLiveLink, nameFromKey } from './board';
+import { PersistenceService } from '@/persistence/service';
 
 const exporter = vi.hoisted(() => vi.fn(async () => new ArrayBuffer(0)));
 vi.mock('@/view3d/vrExport', () => ({ exportSceneSnapshot: exporter }));
@@ -12,7 +13,7 @@ afterEach(() => {
   exporter.mockReset();
 });
 
-function setup() {
+function setup(stored = false) {
   vi.useFakeTimers();
   const app = createTestApp();
   run(app, 'new-document', { name: 'Bridge tests' });
@@ -23,9 +24,61 @@ function setup() {
       return () => {};
     },
   };
-  startLiveLink(app.platform, app.store, app.executor, app.catalog, createToastStore());
-  return { app, request };
+  const persistence = new PersistenceService(app.store, app.executor, app.platform);
+  startLiveLink(app.platform, app.store, app.executor, app.catalog, createToastStore(), stored ? persistence : null);
+  return { app, request, persistence };
 }
+
+it('requires an explicit destination even when another project is open, without creating a project', async () => {
+  const { app, request } = setup();
+  const doc = app.store.getState().doc;
+  expect(await request('status', { key: 'unlinked', protocol: 2 })).toMatchObject({ needsLink: true, document: null });
+  expect(app.store.getState().doc).toBe(doc);
+  expect(app.platform.storageMap.has('live:project:unlinked')).toBe(false);
+  await expect(request('push', { key: 'unlinked', protocol: 2 })).rejects.toThrow('Link this model');
+});
+
+it('updates the saved project in the background and reuses its bindings after reconnecting', async () => {
+  const { app, request, persistence } = setup(true);
+  const first = app.store.getState().doc.id;
+  const model = { archaiRevit: 1, walls: [{ id: 'wall', points: [[0, 0], [1000, 0]], base: 0, height: 3000, layers: [{ name: 'Core', role: 'core', thickness: 200 }] }] };
+  run(app, 'bridge-sync', { key: 'test-background', app: 'Revit', model });
+  const ids = Object.keys(app.store.getState().doc.bridge!.elements);
+  await persistence.storeDocument(app.store.getState().doc);
+  await app.platform.storage.set('live:project:test-background', first);
+  run(app, 'new-document', { name: 'Other project' });
+  const other = app.store.getState().doc;
+  expect(await request('status', { key: 'test-background', project: first, protocol: 2 })).toMatchObject({ document: { id: first }, needsLink: false });
+  expect(await request('push', { key: 'test-background', project: first, protocol: 2, model, changeId: 'reconnect' })).toMatchObject({ ack: 'reconnect', document: { id: first } });
+  expect(app.store.getState().doc).toBe(other);
+  expect(Object.keys((await persistence.loadStored(first))!.bridge!.elements)).toEqual(ids);
+  const binding = await request('bind', { key: 'test-background', project: first });
+  expect(binding).toMatchObject({ document: { id: first }, known: ['wall'] });
+});
+
+it('offers relinking for a missing destination and rejects a pending batch for the previous link', async () => {
+  const { app, request, persistence } = setup(true);
+  await app.platform.storage.set('live:project:test-missing', 'missing');
+  expect(await request('status', { key: 'test-missing', project: 'missing', protocol: 2 })).toMatchObject({ needsLink: true, document: null });
+  const old = app.store.getState().doc;
+  await persistence.storeDocument(old);
+  run(app, 'new-document', { name: 'New destination' });
+  const next = app.store.getState().doc;
+  await persistence.storeDocument(next);
+  await request('bind', { key: 'switch', project: next.id });
+  expect(await request('push', { key: 'switch', project: old.id, protocol: 2, model: { archaiRevit: 1, meshes: [] } })).toMatchObject({ refused: 'project-mismatch' });
+  expect(await request('status', { key: 'switch', project: old.id, protocol: 2 })).toMatchObject({ document: { id: next.id }, needsLink: false });
+  expect((await persistence.loadStored(old.id))!.bridge).toBeUndefined();
+});
+
+it('does not resurrect a removed destination from Home and can stop a missing link', async () => {
+  const { app, request } = setup(true);
+  const id = app.store.getState().doc.id;
+  await app.platform.storage.set('live:project:removed', id);
+  run(app, 'set-screen', { screen: 'home' });
+  expect(await request('status', { key: 'removed', project: id, protocol: 2 })).toMatchObject({ needsLink: true, document: null });
+  expect(await request('stop', { key: 'removed' })).toEqual({ ok: true });
+});
 
 it('names a project after the linked model', () => {
   expect(nameFromKey(String.raw`rhino:C:\Projects\House A.3dm`)).toBe('House A');

@@ -156,6 +156,29 @@ def bridge_pending_retry_and_pause():
     assert link._pending_push is None and link._push_at == 456 and link._known == {"box"}
 
 
+@test
+def bridge_requires_choice_and_discards_previous_pending_state():
+    from unittest.mock import patch
+    with patch.object(core, "bridge_entry", return_value={}):
+        link = core.LiveLink("picker-test", "Test", "Test", lambda: None, None, lambda fn: fn(), apply=lambda delta: None)
+    link._save_state = lambda: None
+    link._request = lambda *args, **kwargs: (200, {}, core.json.dumps({"protocol": 2, "needsLink": True, "document": None}).encode())
+    choices = []
+    def choose():
+        choices.append(True)
+        link._remember_project({"id": "chosen", "name": "Chosen"}, ["existing-object"])
+        return link.project
+    link.choose_project = choose
+    link._tick(True)
+    assert choices == [True] and link.project["id"] == "chosen" and link._known == {"existing-object"}
+    link._pending_push = ({"project": "chosen"}, {}, set(), [], False)
+    link._tokens.add("old-token")
+    link._resend.add("old-object")
+    link._sent_meshes["old-object"] = "old-hash"
+    link._remember_project({"id": "next", "name": "Next"}, ["reused"])
+    assert link._pending_push is None and not link._tokens and not link._resend and not link._sent_meshes
+    assert link._known == {"reused"} and link._last_pulled == link._last_seen == -1
+
 failed = 0
 for t in tests:
     try:

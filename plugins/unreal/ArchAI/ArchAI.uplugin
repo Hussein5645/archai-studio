@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 9,
-	"VersionName": "0.5.3",
+	"VersionName": "0.5.4",
 	"FriendlyName": "ArchAI",
 	"Description": "Send levels to ArchAI, open ArchAI .AIR files and walk through the level in VR (ArchAI menu in the main menu bar).",
 	"Category": "Import-Export",

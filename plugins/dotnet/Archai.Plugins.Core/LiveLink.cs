@@ -58,8 +58,8 @@ public sealed class BridgeDelta
 /// <see cref="AllIds"/> (every object id of the model, hidden ones too: pushes are then partial with
 /// explicit deletions, so hiding never deletes in ArchAI). The model is bound to one ArchAI project
 /// (remembered per model in %LOCALAPPDATA%\ArchAI\live-bridge.json, shared with the Python
-/// plugins): the one open when it first connects, or the one chosen with <see cref="BindAsync"/>;
-/// while ArchAI shows another project nothing is sent.
+/// plugins): explicitly chosen with the project picker. Missing destinations require choosing
+/// before syncing; saved destinations also sync while ArchAI displays another project.
 /// </summary>
 public sealed class LiveLink : IDisposable
 {
@@ -76,6 +76,8 @@ public sealed class LiveLink : IDisposable
         public long? Own;
         public int Protocol = 1;
         public bool Mismatch;
+        public bool NeedsLink;
+        public List<string>? Known;
         public string Mode = "two-way";
         public long SyncRequest;
     }
@@ -88,6 +90,8 @@ public sealed class LiveLink : IDisposable
     public Action<BridgeDelta>? Apply;
     /// <summary>Live Bridge: ids of every object of the host model, hidden ones too (runs through <see cref="OnHost"/>).</summary>
     public Func<IEnumerable<string>>? AllIds;
+    /// <summary>Invalidates host export caches when the destination changes.</summary>
+    public Action? ProjectChanged;
     /// <summary>Runs an action where the host API may be used.</summary>
     public Action<Action> OnHost = action => action();
     /// <summary>Short status for the UI ("Synced 2 s ago", "Start ArchAI…"); may come from any thread.</summary>
@@ -120,6 +124,8 @@ public sealed class LiveLink : IDisposable
     private long lastSeen = -1;
     private bool pushPending;
     private long syncRequest;
+    private int projectGeneration;
+    private bool resetExport;
     private readonly Dictionary<string, string> sentMeshes = new Dictionary<string, string>();
     private (JObject Body, Dictionary<string, string> Hashes, HashSet<string> Ids, List<string> Deleted, bool Complete)? pendingPush;
 
@@ -246,11 +252,7 @@ public sealed class LiveLink : IDisposable
         var result = await Post("/live/bind", body).ConfigureAwait(false);
         var id = (string?)result["document"]?["id"] ?? "";
         var name = (string?)result["document"]?["name"] ?? "";
-        if (Project?.Id != id) { known = new HashSet<string>(); pendingPush = null; sentMeshes.Clear(); }
-        Project = (id, name);
-        have = new Dictionary<string, string>();
-        lastPulled = -1;
-        SaveState();
+        RememberProject(id, name, result["known"] as JArray);
         return (id, name);
     }
 
@@ -269,12 +271,26 @@ public sealed class LiveLink : IDisposable
         if ((bool?)reply["cancelled"] == true) return null;
         var id = (string?)reply["document"]?["id"] ?? "";
         var name = (string?)reply["document"]?["name"] ?? "";
-        if (Project?.Id != id) { known = new HashSet<string>(); pendingPush = null; sentMeshes.Clear(); }
+        RememberProject(id, name, reply["known"] as JArray);
+        return (id, name);
+    }
+
+    private void RememberProject(string id, string name, IEnumerable<JToken>? existing = null)
+    {
+        if (Project?.Id != id) known = new HashSet<string>();
+        if (existing != null) known = new HashSet<string>(existing.Select(value => (string?)value ?? "").Where(value => value.Length > 0));
+        Interlocked.Increment(ref projectGeneration);
+        pendingPush = null;
+        sentMeshes.Clear();
+        tokens.Clear();
+        lock (resend) resend.Clear();
         Project = (id, name);
         have = new Dictionary<string, string>();
-        lastPulled = -1;
+        lastPulled = lastSeen = -1;
+        syncRequest = -1;
+        pushPending = true;
+        resetExport = true;
         SaveState();
-        return (id, name);
     }
 
     private void SaveState() => BridgeState.Save(Key, Project == null ? null : new JObject
@@ -302,6 +318,8 @@ public sealed class LiveLink : IDisposable
                 Own = (long?)body["own"],
                 Protocol = (int?)body["protocol"] ?? 1,
                 Mismatch = body["mismatch"] is JObject,
+                NeedsLink = (bool?)body["needsLink"] == true,
+                Known = (body["known"] as JArray)?.Select(value => (string)value!).ToList(),
                 Mode = (string?)body["mode"] ?? "two-way",
                 SyncRequest = (long?)body["syncRequest"] ?? 0,
             };
@@ -320,8 +338,13 @@ public sealed class LiveLink : IDisposable
                 Report(LaunchArchai() ? "Starting ArchAI…" : "Install and start the ArchAI desktop app to sync");
                 return;
             }
-            // ArchAI opens a project for this model on its own (the one linked before, or a new one).
-            if (status.Project == null) { Report("Opening a project in ArchAI…"); return; }
+            if (Bridge && status.Protocol >= 2 && status.NeedsLink)
+            {
+                Report("Choose an ArchAI project before starting the Live Bridge");
+                if (await ChooseProjectAsync().ConfigureAwait(false) == null) { Stop(); Report("Link to project cancelled"); }
+                return;
+            }
+            if (status.Project == null) { Report("Link this model to an ArchAI project first"); return; }
             var bridge = Bridge && status.Protocol >= 2;
             if (bridge)
             {
@@ -330,9 +353,10 @@ public sealed class LiveLink : IDisposable
                     Report($"ArchAI shows {status.Project}; this model is linked to {Project?.Name ?? "another project"}. Open it in ArchAI, or link this model to the open project.");
                     return;
                 }
-                // First connection: linked to the project ArchAI shows.
-                if (Project == null || Project.Value.Id != status.ProjectId) await BindAsync(status.ProjectId).ConfigureAwait(false);
+                // The saved destination is authoritative, including after a link is changed.
+                if (Project == null || Project.Value.Id != status.ProjectId) RememberProject(status.ProjectId!, status.Project, status.Known == null ? null : new JArray(status.Known));
             }
+            var generation = projectGeneration;
             // Paused: still seen by ArchAI (its panel shows the link), but nothing is sent or received.
             if (Paused || status.Mode == "paused" || status.Mode == "disconnected")
             {
@@ -352,7 +376,11 @@ public sealed class LiveLink : IDisposable
                 SyncProgress?.Invoke($"Reading the {App} model", null);
                 var read = pendingPush != null
                     ? (Model: (JObject?)pendingPush.Value.Body["model"], Ids: (List<string>?)null)
-                    : await OnHostAsync(() => (Model: Export?.Invoke(), Ids: bridge ? AllIds?.Invoke()?.ToList() : null)).ConfigureAwait(false);
+                    : await OnHostAsync(() => {
+                        if (resetExport) { ProjectChanged?.Invoke(); resetExport = false; }
+                        return (Model: Export?.Invoke(), Ids: bridge ? AllIds?.Invoke()?.ToList() : null);
+                    }).ConfigureAwait(false);
+                if (generation != projectGeneration) return;
                 var exchange = read.Model;
                 if (exchange != null)
                 {
@@ -397,6 +425,7 @@ public sealed class LiveLink : IDisposable
                     JObject result;
                     try { result = await Post("/live/push", body, Sent).ConfigureAwait(false); }
                     catch (HttpRequestException) { result = await Post("/live/push", body, Sent).ConfigureAwait(false); } // the reply was lost: the same change again
+                    if (generation != projectGeneration) return;
                     if ((string?)result["refused"] is { Length: > 0 })
                     {
                         Report((string?)result["message"] ?? "ArchAI did not take the model");
@@ -437,6 +466,7 @@ public sealed class LiveLink : IDisposable
             if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return;
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await ErrorOf(response).ConfigureAwait(false));
             var glb = await ReadWithProgress(response, (read, total) => SyncProgress?.Invoke($"Receiving {Progress.Megabytes(read)} of {Progress.Megabytes(total)}", 0.1 + 0.5 * read / total)).ConfigureAwait(false);
+            if (generation != projectGeneration) return;
             long.TryParse(HeaderOf(response, "X-ArchAI-Revision"), out var pulled);
             var name = Uri.UnescapeDataString(HeaderOf(response, "X-ArchAI-Name") ?? "ArchAI");
             if (bridge)
@@ -467,12 +497,14 @@ public sealed class LiveLink : IDisposable
                     SyncProgress?.Invoke($"Updating {delta.Nodes.Count + delta.Removed.Count + delta.Updates.Count} objects in {App}", 0.65);
                     await OnHostAsync<object?>(() =>
                     {
+                        if (generation != projectGeneration) return null;
                         Importing = true;
                         try { Apply!(delta); }
                         finally { Importing = false; quietUntil = DateTime.UtcNow.AddSeconds(2); }
                         return null;
                     }).ConfigureAwait(false);
                 }
+                if (generation != projectGeneration) return;
                 if (fresh) have = new Dictionary<string, string>();
                 foreach (var id in delta.Removed) have.Remove(id);
                 foreach (var o in objects) if (o.ArchaiId.Length > 0) have[o.ArchaiId] = (string?)o.Archai["hash"] ?? "";

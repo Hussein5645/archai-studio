@@ -5,7 +5,7 @@
  *
  *   GET  /live/status?key=K&name=N&app=A[&project=P&protocol=2]
  *                              { app, version, protocol, document, bound, mismatch?, revision, own }
- *                              (is ArchAI there? On its Home screen it opens a project for K)
+ *                              (saved destination or needsLink: true; never auto-selects)
  *   POST /live/push           { key, app, name, model[, protocol: 2, project, changeId, complete,
  *                              deleted] }  → { protocol, ack, revision, document, applied, created,
  *                              skipped } or { refused, message }: the plugin's model (the exchange

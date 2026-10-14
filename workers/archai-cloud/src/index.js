@@ -33,7 +33,7 @@ const LIBRARY_TOKEN_DAYS = 30;
 const MAX_PROJECT_BYTES = 90 * 1024 * 1024;
 const PBKDF2_ITERATIONS = 100000;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PROJECT_ID = /^p_[a-z0-9]{20}$/;
+const PROJECT_ID = /^[a-z][a-z0-9_-]{1,63}$/;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -264,7 +264,13 @@ async function listProjects(env, user) {
 async function createProject(request, env, user) {
   const body = await readJson(request);
   const name = String(body?.name ?? '').trim().slice(0, 200) || 'Untitled Project';
-  const id = `p_${randomId(20)}`;
+  const id = body?.id === undefined ? `p_${randomId(20)}` : String(body.id);
+  if (!PROJECT_ID.test(id)) throw new HttpError(400, 'Invalid project id');
+  const existing = await env.DB.prepare('SELECT owner_id, version FROM projects WHERE id = ?').bind(id).first();
+  if (existing) {
+    if (existing.owner_id !== user.id) throw new HttpError(409, 'This project identity is already online under another owner');
+    return json({ id, version: existing.version }, 200);
+  }
   const at = now();
   await env.DB.batch([
     env.DB.prepare('INSERT INTO projects (id, owner_id, name, version, bytes, created_at, updated_at, updated_by) VALUES (?, ?, ?, 0, 0, ?, ?, ?)').bind(id, user.id, name, at, at, user.id),
@@ -532,6 +538,10 @@ async function route(request, env) {
       if (method === 'DELETE') return deleteProject(env, user, id);
     }
     if (parts[2] === 'ops' && parts.length === 3) return ops(request, env, user, id);
+    if (parts[2] === 'version' && parts.length === 3 && method === 'GET') {
+      const role = await requireRole(env, id, user);
+      return relay(await board(env, id, user, role, '/version'), { 'Cache-Control': 'no-store' });
+    }
     if (parts[2] === 'members') {
       if (parts.length === 3 && method === 'GET') return members(env, user, id);
       if (parts.length === 3 && method === 'POST') return addMember(request, env, user, id);

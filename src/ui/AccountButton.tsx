@@ -46,7 +46,7 @@ export function AccountButton({ inProject = false }: { inProject?: boolean }) {
       id: 'put-online',
       label: t('Put this project online'),
       icon: <CloudUpload size={14} />,
-      onSelect: () => void run(() => cloud.putOnline(store.getState().doc.id), 'The project is online: this is now the online copy'),
+      onSelect: () => void run(() => cloud.putOnline(store.getState().doc.id), 'The project is now online, with its links and data'),
     });
   }
   if (inProject && isOnline) {

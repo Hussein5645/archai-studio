@@ -142,6 +142,7 @@ internal sealed class Live : IDisposable, IExternalEventHandler
             OnHost = action => { queue.Enqueue(action); wake.Raise(); },
             // Generic meshes, and after the first sync only what changed (fast, so Revit is not held up).
             Export = ExportChanges,
+            ProjectChanged = () => { wholeModelSent = false; exportedIds.Clear(); },
             Import = Replace,
             // Physical existence stays separate from view visibility, preserving paint on unhide.
             Apply = ApplyDelta,

@@ -314,6 +314,9 @@ export class Board extends DurableObject {
     const user = { id: request.headers.get('X-User-Id') ?? '', name: request.headers.get('X-User-Name') ?? '', role: request.headers.get('X-Role') ?? 'viewer' };
     try {
       switch (url.pathname) {
+        case '/version':
+          await this.ensureLoaded();
+          return json({ version: this.version, role: user.role });
         case '/live':
           return this.connect(request, user);
         case '/doc': {

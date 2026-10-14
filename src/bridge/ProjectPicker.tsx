@@ -4,7 +4,7 @@
  * (src/live/board.ts, request `bind` with `choose`). One picker for every app.
  */
 import { useState, useSyncExternalStore } from 'react';
-import { useApp } from '@/app/context';
+import { useApp, useCloudProjects } from '@/app/context';
 import styles from '@/ui/AccountDialog.module.css';
 import own from './LiveBridgePanel.module.css';
 
@@ -51,7 +51,9 @@ export function ProjectPicker() {
 function Picker({ request }: { request: Request }) {
   const { persistence } = useApp();
   const [newName, setNewName] = useState(request.name);
-  const projects = persistence.recent();
+  const online = useCloudProjects();
+  const recent = useSyncExternalStore((listener) => persistence.subscribe(listener), () => persistence.recent());
+  const projects = [...recent, ...online.projects.filter((project) => !recent.some((entry) => entry.id === project.id)).map((project) => ({ ...project, cloud: true }))];
   return (
     <div className={styles.backdrop} role="presentation">
       <div className={styles.dialog} role="dialog" aria-label="Link to an ArchAI project" data-testid="bridge-project-picker">
@@ -60,7 +62,7 @@ function Picker({ request }: { request: Request }) {
         </div>
         <div className={own.picker}>
           <p>
-            {request.app} ({request.name || 'model'}) will sync with the project you choose. It opens here, and the link is remembered.
+            {request.app} ({request.name || 'model'}) will sync with the project you choose. The link is remembered, and syncing continues when you open another project.
           </p>
           <ul>
             {projects.map((p) => (
