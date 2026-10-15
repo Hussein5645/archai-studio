@@ -83,7 +83,6 @@ export const publishVrTour = defineEffect({
     ]);
     const doc = ctx.getState().doc;
     const stops = vrStopsOf(doc);
-    if (stops.length === 0) throw new CommandError('rejected', 'Add at least one VR stop first (VR stop in the 3D workspace)');
     const config = vrShareConfig();
     if (!config) throw new CommandError('rejected', VR_SIGN_IN_MESSAGE);
     const previousId = input.newLink ? null : await ctx.platform.storage.get(tourKey(doc.id)).catch(() => null);

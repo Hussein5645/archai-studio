@@ -170,8 +170,7 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
               <summary><Glasses size={13} /> {t('VR')}</summary>
               <div role="group" aria-label={t('VR publishing')}>
                 <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); void publish(); }} disabled={vr?.kind === 'busy'}>{t('Export Raw VR Link')}</button>
-                <button type="button" disabled={platform.kind !== 'electron' || vr?.kind === 'busy'} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); void dispatch('import-d5-folder'); }} data-testid="vr-import-d5">{t('Import D5 project folder…')}</button>
-                <button type="button" disabled={!renderAvailable || vr?.kind === 'busy'} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); openRenderStudio(platform, view.current?.getCamera(), portal?.name); }} data-testid="open-render-studio" title={renderAvailable ? t('Prepare, bake and publish the project scene') : t('VR preparation requires the ArchAI desktop app')}>{t('Prepare Rendered VR Link')}</button>
+                <button type="button" disabled={!renderAvailable || vr?.kind === 'busy'} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); openRenderStudio(platform, view.current?.getCamera(), portal?.name); }} data-testid="open-render-studio" title={renderAvailable ? t('Prepare, bake and publish the project scene') : t('VR preparation requires the ArchAI desktop app')}>{t('Prepare VR Scene')}</button>
               </div>
             </details>
           </>

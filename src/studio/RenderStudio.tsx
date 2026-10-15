@@ -456,10 +456,6 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
 
   const publish = async () => {
     if (!scene || !result || !fresh || job || !ready) return;
-    if (output === 'baked' && !stops.length) {
-      setError('Add at least one VR stop in the 3D view, then bake again.');
-      return;
-    }
     const config = vrShareConfig();
     if (!config) {
       setError(VR_SIGN_IN_MESSAGE);
@@ -658,7 +654,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
             <button
               type="button"
               className={styles.primary}
-              disabled={!fresh || !ready || !!job || (output === 'baked' && !stops.length)}
+              disabled={!fresh || !ready || !!job}
               onClick={() => void publish()}
             >
               <Glasses size={15} />
@@ -722,8 +718,8 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
           <Section title={`VR stops · ${stops.length}`}>
             {!stops.length && (
               <p className={styles.note}>
-                Place VR stops on floors in the 3D view. A 360 image can use the current camera
-                without stops.
+                Stops are optional. VR opens as a tabletop model; aim at a floor to enter at
+                real scale. A 360 image can use the current camera.
               </p>
             )}
             {stops.map((stop) => (
@@ -787,7 +783,7 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
           <div className={styles.empty}>
             <CloudSun size={32} />
             <h2>Prepare your VR scene</h2>
-            <p>Open a project, then choose VR → Prepare Rendered VR Link in the 3D view.</p>
+            <p>Open a project, then choose VR → Prepare VR Scene in the 3D view.</p>
           </div>
         )}
         {!job && fresh && output === 'panorama' && result?.url && (

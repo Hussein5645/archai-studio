@@ -196,6 +196,35 @@ async function read(request, env, id, file) {
   return reply(request.method === 'HEAD' ? null : object.body, 200, headers);
 }
 
+// Three fixed slots avoid read/modify/write races and never overwrite tour.json.
+async function versions(request, env, id, slot) {
+  const original = await env.BUCKET.get(`tours/${id}/tour.json`);
+  if (!original) return json({ error: 'Unknown tour' }, 404);
+  if (request.method === 'GET' && slot === undefined) {
+    const versions = await Promise.all([1, 2, 3].map(async (slot) => {
+      const object = await env.BUCKET.get(`tours/${id}/versions/${slot}.json`);
+      return { slot, snapshot: object ? await object.json() : null };
+    }));
+    return json({ versions }, 200, { 'Cache-Control': 'no-store' });
+  }
+  if (request.method !== 'PUT' || !/^[123]$/.test(slot ?? '')) return json({ error: 'Choose version slot 1, 2 or 3' }, 400);
+  const userId = await sessionUser(request, env);
+  if (!userId) return json({ error: 'Sign in to save a VR version' }, 401);
+  const owner = await env.DB.prepare('SELECT user_id FROM vr_tours WHERE id = ?').bind(id).first();
+  if (!owner || owner.user_id !== userId) return json({ error: 'Only the tour owner can save versions' }, 403);
+  const text = await request.text();
+  if (text.length > MAX_TOUR_BYTES) return json({ error: 'Version too large' }, 413);
+  let snapshot;
+  try { snapshot = JSON.parse(text); } catch { return json({ error: 'Invalid version' }, 400); }
+  const tour = await original.json();
+  const vector = (v, n) => Array.isArray(v) && v.length === n && v.every((x) => Number.isFinite(x) && Math.abs(x) <= 1e9);
+  const transform = (v) => v && vector(v.position, 3) && vector(v.quaternion, 4) && Math.abs(Math.hypot(...v.quaternion) - 1) < 0.01 && vector(v.scale, 3) && v.scale.every((x) => x > 0 && x <= 1e6);
+  if (snapshot?.model !== tour.model || !transform(snapshot.table) || !Array.isArray(snapshot.elements) || snapshot.elements.length > 10000 || snapshot.elements.some((e) => typeof e.id !== 'string' || e.id.length > 200 || !transform(e)) || (tour.lighting === 'baked' && snapshot.elements.length)) return json({ error: 'Invalid version or scene has been republished; reload the original scene' }, 400);
+  const saved = { model: tour.model, table: snapshot.table, elements: snapshot.elements, savedAt: new Date().toISOString() };
+  await env.BUCKET.put(`tours/${id}/versions/${slot}.json`, JSON.stringify(saved), { httpMetadata: { contentType: 'application/json' } });
+  return json({ slot: Number(slot), snapshot: saved });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -224,6 +253,7 @@ export default {
         return userId ? deleteTour(env, parts[1], userId) : json({ error: 'Sign in to ArchAI to manage your VR links' }, 401);
       }
       const [, id, file] = parts;
+      if (ID.test(id ?? '') && file === 'versions' && (parts.length === 3 || parts.length === 4)) return versions(request, env, id, parts[3]);
       if (parts.length !== 3 || !ID.test(id ?? '') || !assetType(file ?? '')) return reply('Not found', 404);
       if (url.searchParams.has('multipart') || url.searchParams.has('uploadId')) {
         const auth = await authorised(request, env);

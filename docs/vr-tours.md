@@ -1,6 +1,6 @@
 # VR tours
 
-Status: **implemented** (2026-10-07).
+Status: **implemented** (2026-10-15). The share Worker and SJP-VR viewer are deployed together with this release.
 
 Place stops (points of interest) in the 3D workspace, then publish the model with its stops as a
 short link that opens in a VR headset (Meta Quest Browser → **Enter VR**) or any browser. The
@@ -10,7 +10,7 @@ https://archai-vr.vercel.app (see [hosting.md](hosting.md)).
 
 ## Use
 
-1. Open a 3D view full screen and press **VR stop**. Each click on a floor (a surface facing up,
+1. Open a 3D view full screen. Stops are optional for raw and baked 3D links. Press **VR stop** to add named destinations. Each click on a floor (a surface facing up,
    or the ground) adds a stop there; the stop faces the way the camera looks. Esc stops placing.
 2. Stops are reference points (`meta.point`) with `meta.vrStop = { heading }`: rename them, move
    them in plan and height, delete or undo them like any point. The Inspector's **VR facing**
@@ -24,7 +24,9 @@ Commands: `create-vr-stop`, `set-vr-stop-heading`, `publish-vr-tour`.
 
 ## Prepared VR and 360 links
 
-**VR → Prepare Rendered VR Link** opens **ArchAI VR Preparation**, replacing the separate
+**VR** has exactly two entries: **Export Raw VR Link** and **Prepare VR Scene**. D5 folder import remains under **File**.
+
+**VR → Prepare VR Scene** opens **ArchAI VR Preparation**, replacing the separate
 Render button. Add objects and assign materials on the board/3D view. Preparation follows those
 edits and supplies environment, sun, sky, exposure, saved cameras, stops, quality and publishing.
 
@@ -117,3 +119,34 @@ before 0.4 (see docs/accounts-and-cloud.md, release step). Legacy single-request
 request limit); the app uses multipart uploads up to 512 MB. Keep tours light for the Quest (well under ~1M triangles).
 
 Deploy from `workers/vr-share`: `npx wrangler deploy`.
+
+## Tabletop sessions and cloud versions
+
+Shared raw and baked 3D links open as a movable tabletop model. One controller grip pans the
+model; two grips scale and rotate it around the hands. Aim at a floor and pull the trigger to
+enter at 1:1 scale; **Tabletop** returns to the last table placement. Desktop users drag to move
+the table, use the wheel or scale buttons to resize, and click a floor to enter.
+
+Raw exports retain one group with extras.archai.id per element, rather than batching elements
+together by material. **Move elements** enables grip-and-drag (or desktop drag) of an individual
+element with a blue selection outline. Changes remain in the current browser session, including
+when entering at 1:1. Baked scenes expose table navigation and versions but no element editing.
+The original GLB and the ArchAI source document are unchanged by VR edits.
+
+**Original** restores the published elements and a fitted table. Three fixed cloud slots provide
+**Save 1–3**, **Load 1–3**, and **Replace 1–3** after saving. Saving asks the tour owner to sign in
+to ArchAI in the viewer; the session credential stays in memory. In-headset saving signs out of
+immersive VR for the browser sign-in form when needed. Viewing and loading versions are public
+for anyone holding the link. Other accounts cannot overwrite the owner's versions.
+
+The Worker serves GET /tours/<id>/versions and owner-authenticated PUT
+/tours/<id>/versions/<1|2|3>. Each slot is an independent R2 JSON object containing table and raw
+element transforms plus the exact model revision, so concurrent writes to different slots do
+not lose changes. A fourth slot is rejected. Slot replacement never writes tour.json or the
+original model; republishing invalidates old snapshots rather than applying them to new geometry.
+Deleting the tour removes its slots along with all assets. No database migration is required.
+
+Validation: npm --prefix ../SJP-VR install && npm --prefix ../SJP-VR test;
+node --test workers/vr-share/src/index.test.mjs; npx playwright test e2e/vr-tabletop.spec.ts
+(the browser integration test requires the sibling SJP-VR checkout). Controller math is tested
+with synthetic poses; final ergonomics and frame rate still require a headset check.

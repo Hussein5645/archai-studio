@@ -15,7 +15,6 @@ import { parentLevelOf } from '@/layers/hierarchy';
 import { buildScene, sceneCentre, type Built } from './geometry';
 import { prepareParametric } from './parametricModels';
 import { meshStore } from './meshes';
-import { optimiseVrSurfaces } from './vrOptimise';
 import { disposeReducedScene, reduceLargeScene } from './largeScene';
 
 /** The document's 3D scene at high detail, in metres, without board-only helpers. */
@@ -93,25 +92,32 @@ export async function exportSceneSnapshot(
 }
 
 export async function exportVrModel(doc: ArchaiDocument, catalog: AssetCatalog): Promise<ArrayBuffer> {
-  const root = await buildSurfaces(doc, catalog);
+  const root = await buildSurfaces(doc, catalog, (item) => {
+    const node = new THREE.Group();
+    node.name = doc.elements[item.id]?.name || item.id;
+    node.userData.archai = { id: item.id };
+    node.add(item.object);
+    return node;
+  });
 
   const { centre, radius } = sceneCentre(doc);
   const ground = new THREE.Mesh(new THREE.CircleGeometry(Math.max(radius * 4, 60_000), 64), new THREE.MeshStandardMaterial({ name: 'Ground', color: 0xd9dbd5, roughness: 1 }));
   ground.name = 'Ground';
+  ground.userData.vrGround = true;
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(centre.x, -25, centre.z);
   root.add(ground);
   root.updateMatrixWorld(true);
 
   const reduced = await reduceLargeScene(root, 350_000, 0.02, undefined, false);
-  const optimized = optimiseVrSurfaces(reduced);
   try {
-    const exported = await new GLTFExporter().parseAsync(optimized, { binary: true, onlyVisible: true, maxTextureSize: 2048 });
+    // Preserve element boundaries so the headset can move one element independently.
+    const exported = await new GLTFExporter().parseAsync(reduced, { binary: true, onlyVisible: true, maxTextureSize: 2048 });
     if (!(exported instanceof ArrayBuffer)) throw new Error('The model could not be exported');
     return exported;
   } finally {
-    // Batched geometry is owned by the export, the cloned source geometry is shared.
-    for (const child of optimized.children) if (child instanceof THREE.Mesh) child.geometry.dispose();
     disposeReducedScene(reduced, root);
+    ground.geometry.dispose();
+    ground.material.dispose();
   }
 }

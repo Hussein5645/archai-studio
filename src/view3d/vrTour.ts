@@ -76,6 +76,7 @@ export function vrTourJson(doc: ArchaiDocument, stops: readonly VrStopPlacement[
     name: doc.meta.name.trim() || 'ArchAI project',
     model,
     lighting: 'live',
+    mode: 'raw',
     exposure: 1.1,
     credit: 'ArchAI',
     start: spaces[0]?.id ?? '',

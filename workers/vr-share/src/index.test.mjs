@@ -40,6 +40,34 @@ function service() {
   const request = (file, method = 'PUT', body = 'asset') => worker.fetch(new Request(`https://share.example/tours/abcd/${file}`, { method, ...(method === 'PUT' ? { body, headers: { 'X-Upload-Key': 'test', 'Content-Length': String(body.length) } } : {}) }), env);
   return { files, request, env };
 }
+
+test('three version slots preserve the original, enforce ownership, and replace a chosen slot', async () => {
+  const { files, env } = service();
+  const tour = JSON.stringify({ format: 'archai-vr', model: 'model.glb?v=one', lighting: 'live', spaces: [] });
+  files.set('tours/abcd/tour.json', tour);
+  let owner = 'owner';
+  env.DB = { prepare(sql) { return { bind() { return this; }, async first() { return sql.includes('FROM sessions') ? { user_id: 'owner', expires_at: '2099-01-01T00:00:00Z' } : { user_id: owner }; } }; } };
+  const pose = { position: [0, 0.8, -1.5], quaternion: [0, 0, 0, 1], scale: [0.01, 0.01, 0.01] };
+  const snapshot = { model: 'model.glb?v=one', table: pose, elements: [{ id: 'wall', ...pose }] };
+  const save = (slot, body = snapshot, signedIn = true) => worker.fetch(new Request(`https://share.example/tours/abcd/versions/${slot}`, { method: 'PUT', body: JSON.stringify(body), headers: signedIn ? { Authorization: 'Bearer test' } : {} }), env);
+  assert.equal((await save(1, snapshot, false)).status, 401);
+  owner = 'other'; assert.equal((await save(1)).status, 403); owner = 'owner';
+  for (const slot of [1, 2, 3]) assert.equal((await save(slot)).status, 200);
+  assert.equal((await save(4)).status, 400);
+  const changed = { ...snapshot, elements: [] };
+  assert.equal((await save(2, changed)).status, 200);
+  const response = await worker.fetch(new Request('https://share.example/tours/abcd/versions'), env);
+  const data = await response.json();
+  assert.equal(data.versions.length, 3);
+  assert.equal(data.versions[0].snapshot.elements.length, 1);
+  assert.equal(data.versions[1].snapshot.elements.length, 0);
+  assert.equal(files.get('tours/abcd/tour.json'), tour);
+  assert.equal((await save(1, { ...snapshot, model: 'stale.glb' })).status, 400);
+  assert.equal((await save(1, { ...snapshot, table: { ...pose, scale: [0, 0, 0] } })).status, 400);
+  files.set('tours/abcd/tour.json', JSON.stringify({ model: snapshot.model, lighting: 'baked' }));
+  assert.equal((await save(1)).status, 400);
+  assert.equal((await save(1, changed)).status, 200);
+});
 test('new assets and manifests commit separately, preserving the previous published revision on failure', async () => {
   const { files, request } = service();
   files.set('tours/abcd/model.glb', 'old asset');
