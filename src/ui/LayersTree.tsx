@@ -8,6 +8,7 @@ import { locationOf } from '@/analysis/model';
 import { siteArea } from '@/analysis/mapGeometry';
 import styles from './LeftPanel.module.css';
 import { useI18n } from './i18n';
+import { activeGroup, editableGroup } from '@/selection/groupScope';
 
 const LAYER_DRAG_TYPE = 'application/x-archai-layer';
 
@@ -125,7 +126,7 @@ const LayerRow = memo(function LayerRow({ id, depth, parentId }: { id: string; d
         tabIndex={0}
         draggable
         data-layer-id={id}
-        title={element.meta?.['parametricGraph'] ? 'Parametric component folder · drag elements inside' : element.meta?.['parametricMarker'] ? 'Graph origin · double-click to open graph' : undefined}
+        title={element.meta?.['parametricGraph'] ? 'Parametric component folder · drag elements inside' : element.meta?.['parametricMarker'] ? 'Graph origin · double-click to open graph' : editableGroup(element) ? 'Double-click to edit group · F2 to rename' : undefined}
         data-selected={selected || undefined}
         data-graph={!!graphComponent || undefined}
         data-hidden={!element.visible || undefined}
@@ -159,12 +160,15 @@ const LayerRow = memo(function LayerRow({ id, depth, parentId }: { id: string; d
           else void dispatch('reparent-element', { id: dragged, parentId: parentId ?? element.parentId, targetId: id, placement: position === 'below' ? 'behind' : 'front' });
         }}
         onClick={(e) => onRowSelect(id, e)}
-        onDoubleClick={() => {
+        onDoubleClick={(event) => {
+          if ((event.target as HTMLElement).closest('button, input')) return;
           if (element.meta?.['parametricMarker'] && element.parentId) { void dispatch('open-parametric-editor', { id: element.parentId }); return; }
+          if (editableGroup(element)) { void dispatch('enter-group', { id }); return; }
           setDraft(element.name ?? '');
           setRenaming(true);
         }}
         onKeyDown={(e) => {
+          if (e.key === 'F2') { e.preventDefault(); setDraft(element.name ?? ''); setRenaming(true); }
           if (e.key === 'Enter') void dispatch('select', { ids: [id] });
           if (e.key === 'F2') {
             setDraft(element.name ?? '');
@@ -263,7 +267,9 @@ function LayerChildren({ parentId, depth }: { parentId: string | null; depth: nu
 }
 
 /** `rootId` shows one element's layers only (sheet mode: the open paper). */
-export function LayersTree({ rootId = null }: { rootId?: string | null } = {}) {
+export function LayersTree({ rootId: requestedRootId = null }: { rootId?: string | null } = {}) {
+  const groupId = useAppState((s) => activeGroup(s.doc.elements, s.ui));
+  const rootId = groupId ?? requestedRootId;
   const { t } = useI18n();
   const dispatch = useDispatch();
   const { store } = useApp();
@@ -349,7 +355,7 @@ export function LayersTree({ rootId = null }: { rootId?: string | null } = {}) {
           }}
           data-testid="layers-root-drop"
         >
-          {t(rootId ? 'Move to sheet' : 'Move to board root')}
+          {t(groupId ? 'Move into this group' : rootId ? 'Move to sheet' : 'Move to board root')}
         </div>
       </div>
     </TreeContext.Provider>

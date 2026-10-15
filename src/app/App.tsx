@@ -15,6 +15,7 @@ import { ShareDialog } from '@/ui/ShareDialog';
 import { JoinDialog } from '@/ui/JoinDialog';
 import { ProgressCenter } from '@/ui/ProgressCenter';
 import { LiveLog } from '@/ui/LiveLog';
+import { GroupEditBar } from '@/ui/GroupEditBar';
 import { installDiagnostics } from '@/diagnostics';
 import { ProjectPicker } from '@/bridge/ProjectPicker';
 import { Inspector } from '@/ui/Inspector';
@@ -164,6 +165,7 @@ export function App() {
         {sheetOpen ? <SheetToolbar /> : <Toolbar />}
         {sheetOpen && <SheetBar />}
         <StatusBar />
+        <GroupEditBar />
         {contextMenu && <ContextMenu position={contextMenu} onClose={closeContextMenu} />}
       </main>
       <CommandPalette />

@@ -21,6 +21,7 @@ import {
 import type { CommandRegistry } from './registry';
 import { applyBoardElevation } from './boardLevel';
 import { addLog } from '@/diagnostics';
+import { reconcileGroupScope } from '@/selection/groupScope';
 
 enablePatches();
 
@@ -151,7 +152,7 @@ export class CommandExecutor {
     } catch {
       return false;
     }
-    this.store.setState({ doc, ui: { ...state.ui, selection: pruneSelection(state.ui.selection, doc) } });
+    this.store.setState({ doc, ui: reconcileGroupScope({ ...state.ui, selection: pruneSelection(state.ui.selection, doc) }, doc.elements) });
     return true;
   }
 
@@ -163,7 +164,7 @@ export class CommandExecutor {
     const state = this.store.getState();
     this.store.setState({
       doc,
-      ui: { ...state.ui, selection: pruneSelection(state.ui.selection, doc) },
+      ui: reconcileGroupScope({ ...state.ui, groupEditId: state.doc.id === doc.id ? state.ui.groupEditId : null, selection: pruneSelection(state.ui.selection, doc) }, doc.elements),
       ...(resetHistory ? { history: { past: [], future: [] } } : {}),
     });
   }
@@ -279,6 +280,8 @@ export class CommandExecutor {
     if (docChanged && this.readOnly && !command.resetsHistory) {
       return { ok: false, commandId: command.id, error: { code: 'rejected', message: READ_ONLY_MESSAGE } };
     }
+    if (command.resetsHistory || state.doc.id !== nextDoc.id) nextUi = { ...nextUi, groupEditId: null };
+    nextUi = reconcileGroupScope(nextUi, nextDoc.elements);
     const selectionAfter = pruneSelection(nextUi.selection, nextDoc);
     if (selectionAfter !== nextUi.selection) nextUi = { ...nextUi, selection: selectionAfter };
 
@@ -441,7 +444,7 @@ export class CommandExecutor {
     }
     this.store.setState({
       doc,
-      ui: { ...state.ui, selection: pruneSelection(entry.selectionBefore, doc), editingTextId: null },
+      ui: reconcileGroupScope({ ...state.ui, selection: pruneSelection(entry.selectionBefore, doc), editingTextId: null }, doc.elements),
       history: { past: state.history.past.slice(0, -1), future: [entry, ...state.history.future] },
       session: { ...state.session, dirty: true },
     });
@@ -462,7 +465,7 @@ export class CommandExecutor {
     }
     this.store.setState({
       doc,
-      ui: { ...state.ui, selection: pruneSelection(entry.selectionAfter, doc), editingTextId: null },
+      ui: reconcileGroupScope({ ...state.ui, selection: pruneSelection(entry.selectionAfter, doc), editingTextId: null }, doc.elements),
       history: { past: [...state.history.past, entry], future: state.history.future.slice(1) },
       session: { ...state.session, dirty: true },
     });

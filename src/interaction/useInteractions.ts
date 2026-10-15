@@ -50,6 +50,7 @@ import {
   type Vec2,
 } from '@/geometry';
 import { selectableTarget } from '@/selection';
+import { editableGroup, selectionScope } from '@/selection/groupScope';
 import { cycleCandidates, type CycleCandidate } from '@/selection/cycle';
 import type { AppStore, ToolId, Viewport } from '@/store';
 import { computeSelectionFrame, hitHandle, type CursorKind, type Handle, type SelectionFrame } from './handles';
@@ -365,9 +366,9 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
   const [drafting] = useState(() => {
     const pickAt = (world: Vec2, leaf: boolean) => {
       const state = store.getState();
-      const hit = hitTest(state.doc, world, { tolerance: 8 / state.ui.viewport.zoom, scopeId: state.ui.sheet?.paperId });
+      const hit = hitTest(state.doc, world, { tolerance: 8 / state.ui.viewport.zoom, scopeId: selectionScope(state.ui) });
       if (!hit) return null;
-      return leaf ? hit : selectableTarget(state.doc.elements, hit, false, state.ui.sheet?.paperId);
+      return leaf ? hit : selectableTarget(state.doc.elements, hit, false, selectionScope(state.ui));
     };
     return new DraftingController({
       store,
@@ -915,9 +916,9 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
           cancelSession();
           if (navigator.vibrate) navigator.vibrate(40);
           const worldPoint = toWorld(touchStartScreen);
-          const hit = hitTest(store.getState().doc, worldPoint, { tolerance: hitTolerance, includeLocked: true, scopeId: store.getState().ui.sheet?.paperId });
+          const hit = hitTest(store.getState().doc, worldPoint, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(store.getState().ui) });
           if (hit) {
-            const target = selectableTarget(store.getState().doc.elements, hit, false, store.getState().ui.sheet?.paperId);
+            const target = selectableTarget(store.getState().doc.elements, hit, false, selectionScope(store.getState().ui));
             if (!store.getState().ui.selection.includes(target.id)) {
               dispatch('select', { ids: [target.id] });
             }
@@ -1014,7 +1015,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
         }
         if (!polyline.current) {
           const hit = tool === 'measure'
-            ? hitTest(state.doc, point, { tolerance: hitTolerance, includeLocked: true, scopeId: state.ui.sheet?.paperId })
+            ? hitTest(state.doc, point, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) })
             : null;
           polyline.current = {
             toolId: tool,
@@ -1225,10 +1226,10 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
       }
 
       // A camera/section origin handle sits over its marker: it wins, so the rig can be grabbed.
-      const rigHit = state.ui.sheet ? null : rigHandleAt(state.doc.elements, state.ui.viewport, screen, (isTouchPointer ? RIG_HANDLE_RADIUS_TOUCH : RIG_HANDLE_RADIUS) + 3);
-      const hit = rigHit ?? hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: state.ui.sheet?.paperId });
+      const rigHit = state.ui.sheet || state.ui.groupEditId ? null : rigHandleAt(state.doc.elements, state.ui.viewport, screen, (isTouchPointer ? RIG_HANDLE_RADIUS_TOUCH : RIG_HANDLE_RADIUS) + 3);
+      const hit = rigHit ?? hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
       if (hit) {
-        const target = selectableTarget(state.doc.elements, hit, false, state.ui.sheet?.paperId);
+        const target = selectableTarget(state.doc.elements, hit, false, selectionScope(state.ui));
         const selected = state.ui.selection.includes(target.id);
         let ids: string[];
         if (mods.additive) {
@@ -1481,8 +1482,8 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
           setOverlay({ cursor: handle.cursor, hoverId: null });
           return;
         }
-        const hit = hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: state.ui.sheet?.paperId });
-        const target = hit ? selectableTarget(state.doc.elements, hit, false, state.ui.sheet?.paperId) : null;
+        const hit = hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
+        const target = hit ? selectableTarget(state.doc.elements, hit, false, selectionScope(state.ui)) : null;
         setOverlay({
           hoverId: target?.id ?? null,
           cursor: target && state.ui.selection.includes(target.id) && !isEffectivelyLocked(state.doc.elements, target.id) ? 'move' : null,
@@ -1550,7 +1551,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
           const area = rectFromPoints(s.startWorld, world);
           // Left to right selects what is fully inside (window); right to left what it touches (crossing).
           const windowMode = world.x >= s.startWorld.x;
-          const found = elementsInArea(state.doc, area, windowMode ? 'contain' : 'intersect', { scopeId: state.ui.sheet?.paperId }).map((el) => el.id);
+          const found = elementsInArea(state.doc, area, windowMode ? 'contain' : 'intersect', { scopeId: selectionScope(state.ui) }).map((el) => el.id);
           const ids = s.additive ? [...s.baseSelection, ...found] : found;
           dispatch('select', { ids });
           const viewport = state.ui.viewport;
@@ -1807,13 +1808,16 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
       const isTouch = typeof document !== 'undefined' && document.documentElement.getAttribute('data-touch') === 'true';
       const hitTolerance = (isTouch ? 14 : 6) / state.ui.viewport.zoom;
       const world = toWorld(screenPoint(e));
-      const hit = hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: state.ui.sheet?.paperId });
-      if (!hit) return;
+      const hit = hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
+      if (!hit) {
+        if (state.ui.groupEditId) dispatch('exit-group');
+        return;
+      }
       if (hit.meta?.['parametricMarker'] && hit.parentId && state.doc.elements[hit.parentId]?.meta?.['parametricGraph']) {
         dispatch('open-parametric-editor', { id: hit.parentId });
         return;
       }
-      const initiallyTargeted = selectableTarget(state.doc.elements, hit, false, state.ui.sheet?.paperId);
+      const initiallyTargeted = selectableTarget(state.doc.elements, hit, false, selectionScope(state.ui));
       if (initiallyTargeted.meta?.['parametricGraph']) {
         dispatch('open-parametric-editor', { id: initiallyTargeted.id });
         return;
@@ -1832,6 +1836,10 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
         if (initiallyTargeted.id !== state.ui.selection[0]) dispatch('select', { ids: [initiallyTargeted.id] });
         return;
       }
+      if (editableGroup(initiallyTargeted)) {
+        dispatch('enter-group', { id: initiallyTargeted.id });
+        return;
+      }
       if (hit.kind === 'text' || stickyOf(hit)) {
         dispatch('begin-text-edit', { id: hit.id });
         return;
@@ -1841,7 +1849,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
         return;
       }
       // Double-clicking into a group selects the element underneath.
-      const target = selectableTarget(state.doc.elements, hit, true, state.ui.sheet?.paperId);
+      const target = selectableTarget(state.doc.elements, hit, true, selectionScope(state.ui));
       if (target.id !== state.ui.selection[0]) dispatch('select', { ids: [target.id] });
     },
     [dispatch, drafting, finishPolyline, finishStair, screenPoint, store, toWorld],
@@ -1865,9 +1873,9 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
       const hitTolerance = (isTouch ? 14 : 6) / state.ui.viewport.zoom;
       const screen = screenPoint(e);
       const world = toWorld(screen);
-      const hit = hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: state.ui.sheet?.paperId });
+      const hit = hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
       if (hit) {
-        const target = selectableTarget(state.doc.elements, hit, false, state.ui.sheet?.paperId);
+        const target = selectableTarget(state.doc.elements, hit, false, selectionScope(state.ui));
         if (!state.ui.selection.includes(target.id)) dispatch('select', { ids: [target.id] });
       }
       options.onContextMenu({ x: e.clientX, y: e.clientY });
@@ -2014,7 +2022,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
         let cycle = tabCycle.current;
         if (!cycle || distance(cycle.screen, screen) > 6) {
           const tolerance = (document.documentElement.getAttribute('data-touch') === 'true' ? 14 : 6) / state.ui.viewport.zoom;
-          const candidates = cycleCandidates(state.doc, toWorld(screen), tolerance, state.ui.sheet?.paperId ?? null);
+          const candidates = cycleCandidates(state.doc, toWorld(screen), tolerance, selectionScope(state.ui) ?? null);
           if (!candidates.length) return;
           // Index 0 is what the hover already shows: the first Tab moves on from it.
           cycle = { screen, candidates, index: 0 };

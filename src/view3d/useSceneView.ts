@@ -11,6 +11,7 @@ import type { ArchaiDocument } from '@/document';
 import { boardDoc, type AppState } from '@/store';
 import { applyToPoint, worldMatrix } from '@/geometry';
 import { selectableTarget } from '@/selection';
+import { editableGroup, selectionScope } from '@/selection/groupScope';
 import { levelOfPlanRegion, planRegionOf } from '@/layers/viewRig';
 import { modelStore } from './assets';
 import { viewAnalysis } from '@/analysis/model';
@@ -119,12 +120,12 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
         onSelect: (id, additive) => {
           const state = store.getState();
           if (!id) {
-            if (!additive) void executor.dispatch('clear-selection');
+            if (!additive) void executor.dispatch('select', { ids: [] });
             return;
           }
           const element = state.doc.elements[id];
           if (!element) return;
-          const target = noiseEmitterOf(element) || isPoint(element) ? element : selectableTarget(state.doc.elements, element);
+          const target = noiseEmitterOf(element) || isPoint(element) ? element : selectableTarget(state.doc.elements, element, false, selectionScope(state.ui));
           void executor.dispatch('select', { ids: [target.id], mode: additive ? 'toggle' : 'replace' });
         },
         onTransform: ({ ids, dx, dy, dz, degrees, pivot }, commit) => {
@@ -163,6 +164,14 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
           if (portalId) void executor.dispatch('set-view3d-camera', { id: portalId, camera });
         },
         onOpen,
+        onEnterGroup: (id) => {
+          const state = store.getState();
+          if (!id) { if (state.ui.groupEditId) void executor.dispatch('exit-group'); return; }
+          const element = state.doc.elements[id];
+          if (!element) return;
+          const target = selectableTarget(state.doc.elements, element, false, selectionScope(state.ui));
+          if (editableGroup(target)) void executor.dispatch('enter-group', { id: target.id });
+        },
         onPlaceStop: (stop) => {
           void executor.dispatch('create-vr-stop', stop).then((result) => {
             if (!result.ok) toasts.push({ kind: 'error', message: result.error.message });
@@ -195,6 +204,7 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
     };
     applySettings(store.getState().doc);
     view.setSelection(store.getState().ui.selection);
+    view.setGroupScope(store.getState().ui.groupEditId);
     // Rebuilding the scene costs O(document), and a drag streams a new document every
     // pointermove, so documents are never applied per store update. The full-screen view (no
     // onOpen) catches up once per frame; board thumbnails wait until edits settle and skip
@@ -245,6 +255,7 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
         schedule();
       }
       if (state.ui.selection !== previous.ui.selection) view.setSelection(state.ui.selection);
+      if (state.ui.groupEditId !== previous.ui.groupEditId) view.setGroupScope(state.ui.groupEditId);
     });
     return () => {
       unsubscribe();

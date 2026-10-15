@@ -67,6 +67,7 @@ export const openSheet = defineMutation({
     const paper = requirePaper(ctx, input.id);
     const returnViewport = ctx.ui.sheet?.returnViewport ?? { ...ctx.ui.viewport };
     ctx.ui.sheet = { paperId: paper.id, returnViewport };
+    ctx.ui.groupEditId = null;
     ctx.ui.tool = 'select';
     setSelection(ctx, []);
     fitSheet(ctx, worldBounds(ctx.doc.elements as ElementTable, paper));
@@ -87,6 +88,7 @@ export const closeSheet = defineMutation({
     const sheet = ctx.ui.sheet;
     if (!sheet) return;
     ctx.ui.sheet = null;
+    ctx.ui.groupEditId = null;
     ctx.ui.viewport = { ...sheet.returnViewport };
     ctx.ui.tool = 'select';
     if (ctx.doc.elements[sheet.paperId]) setSelection(ctx, [sheet.paperId]);

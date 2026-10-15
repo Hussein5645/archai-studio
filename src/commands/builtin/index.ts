@@ -18,6 +18,7 @@ import { documentCommands } from './document';
 import { editCommands } from './edit';
 import { historyCommands } from './history';
 import { selectCommands } from './select';
+import { groupCommands } from './groups';
 import { shellCommands } from './shell';
 import { transformCommands } from './transform';
 import { viewCommands } from './view';
@@ -47,6 +48,7 @@ export const builtinCommands: AnyCommand[] = [
   createAssetInstance,
   createImageDefinition,
   ...selectCommands,
+  ...groupCommands,
   ...transformCommands,
   ...editCommands,
   ...arrangeCommands,

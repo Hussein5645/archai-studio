@@ -5,6 +5,8 @@ import type { ToolId } from '@/store';
 import { CommandError, defineMutation } from '../contract';
 import { enterProfileModeForTool } from '../profileMode';
 import { stickyOf } from '@/annotations/model';
+import { activeGroup, inGroup, selectionScope } from '@/selection/groupScope';
+import { leaveGroup } from './groups';
 
 const ToolIdSchema = z.union([
   z.enum(['select', 'hand', 'rect', 'line', 'point', 'text', 'image', 'measure', 'catalog', 'view3d', 'section', 'camera', 'paper', 'ai-portal', 'parametric', 'analysis-sun', 'analysis-wind', 'analysis-noise', 'analysis-location', 'noise-emitter']),
@@ -44,7 +46,7 @@ export const select = defineMutation({
         next = [...current.filter((id) => !input.ids.includes(id)), ...input.ids.filter((id) => !current.includes(id))];
         break;
     }
-    ctx.ui.selection = normalizeSelection(elements, next);
+    ctx.ui.selection = normalizeSelection(elements, next.filter((id) => inGroup(elements, activeGroup(elements, ctx.ui), id)));
     ctx.ui.editingTextId = null;
     return ctx.ui.selection;
   },
@@ -59,7 +61,7 @@ export const selectAll = defineMutation({
   input: z.void(),
   when: (ctx) => Object.keys(ctx.doc.elements).length > 0,
   run: (ctx) => {
-    const roots = childrenOf(ctx.doc.elements as ElementTable, null).filter((e) => e.visible && !e.locked);
+    const roots = childrenOf(ctx.doc.elements as ElementTable, selectionScope(ctx.ui)).filter((e) => e.visible && !e.locked);
     ctx.ui.selection = roots.map((e) => e.id);
     ctx.ui.editingTextId = null;
     return ctx.ui.selection;
@@ -74,8 +76,9 @@ export const clearSelection = defineMutation({
   shortcuts: ['Escape'],
   history: 'none',
   input: z.void(),
-  when: (ctx) => ctx.hasSelection || ctx.ui.tool !== 'select',
+  when: (ctx) => ctx.hasSelection || ctx.ui.tool !== 'select' || Boolean(ctx.ui.groupEditId),
   run: (ctx) => {
+    if (ctx.ui.groupEditId && ctx.ui.tool === 'select' && !ctx.ui.editingTextId) { leaveGroup(ctx); return; }
     ctx.ui.selection = [];
     ctx.ui.editingTextId = null;
     ctx.ui.tool = 'select';

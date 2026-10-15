@@ -50,7 +50,7 @@ function base(doc: DocDraft, id: string, parentId: string | null) {
  * place on screen, now in the paper's frame), so drawing on a sheet draws on the paper.
  */
 function add(ctx: MutationContext, element: Element): void {
-  const paperId = ctx.ui.sheet?.paperId;
+  const paperId = ctx.ui.groupEditId ?? ctx.ui.sheet?.paperId;
   const paper = paperId ? ctx.doc.elements[paperId] : undefined;
   if (paper && element.parentId === null && !element.meta?.['paper']) {
     const toLocal = invert(worldMatrix(ctx.doc.elements as ElementTable, paper));

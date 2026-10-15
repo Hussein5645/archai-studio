@@ -53,6 +53,7 @@ export function Workboard({ onContextMenu }: { onContextMenu: (position: Vec2) =
   const elements = useAppState((s) => boardDoc(s).elements);
   const view3dOpen = useAppState((s) => s.ui.view3d.open);
   const sheetId = useAppState((s) => s.ui.sheet?.paperId ?? null);
+  const groupId = useAppState((s) => s.ui.groupEditId);
   const isEmpty = useAppState((s) => Object.keys(boardDoc(s).elements).length === 0);
   const { overlay, handlers, drawingActions } = useInteractions(containerRef, { onContextMenu });
   const { isTouch } = useTouchMode();
@@ -97,6 +98,7 @@ export function Workboard({ onContextMenu }: { onContextMenu: (position: Vec2) =
       data-testid="workboard"
       data-tool={tool}
       data-sheet-mode={sheetId ? 'true' : undefined}
+      data-group-edit={groupId ?? undefined}
       data-panning={overlay.panning || undefined}
       data-cursor={overlay.cursor ?? undefined}
       {...handlers}

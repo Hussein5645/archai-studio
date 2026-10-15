@@ -10,7 +10,7 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import type { ArchaiDocument } from '@/document';
+import { isAncestor, type ArchaiDocument } from '@/document';
 import { materialById } from '@/materials/slots';
 import { onMaterialTextures } from '@/materials/three';
 import { drawHatchTile, graphicsResolver, hatchKey, type GraphicsOverrides, type GraphicsResolver, type HatchSpec } from '@/graphics';
@@ -22,6 +22,7 @@ import { prepareParametric } from './parametricModels';
 import { modelStore, textureStore } from './assets';
 import { edgesOf } from './edges';
 import { meshStore } from './meshes';
+import { inGroup } from '@/selection/groupScope';
 import { AnalysisLayer, type AnalysisSample } from '@/analysis/layer3d';
 import { isAnalysisElement, type AnalysisSpec } from '@/analysis/model';
 
@@ -242,6 +243,7 @@ export interface SceneViewEvents {
   onTransform: (change: { ids: string[]; dx: number; dy: number; dz: number; degrees: number; pivot: { x: number; y: number } }, commit: boolean) => void;
   onCameraChange: (camera: CameraState) => void;
   onOpen?: () => void;
+  onEnterGroup?: (id: string | null) => void;
   /** VR stop placement (see setPlacingStop): a click landed on a floor, or on nothing usable. */
   onPlaceStop?: (stop: { x: number; y: number; elevation: number; heading: number }) => void;
   onPlaceMiss?: () => void;
@@ -1101,6 +1103,7 @@ export class SceneView {
     this.selectionOutlines.clear();
     for (const item of this.built) {
       const selected = this.selection.includes(item.id);
+      const memberBounds = new THREE.Box3();
       if (selected) {
         const outline = new THREE.BoxHelper(item.object, 0x2f6fed);
         (outline.material as THREE.LineBasicMaterial).depthTest = false;
@@ -1111,18 +1114,27 @@ export class SceneView {
       }
       item.object.traverse((child) => {
         if (child instanceof THREE.Mesh && !child.userData['capHelper']) {
+          const owner = (child.userData['ownerId'] ?? child.userData['elementId']) as string;
+          const memberSelected = selected || this.selection.some((id) => id === owner || isAncestor(this.doc!.elements, id, owner));
+          if (memberSelected && !selected) memberBounds.union(new THREE.Box3().setFromObject(child));
           const material = child.material as THREE.Material | THREE.Material[];
-          if (selected && !child.userData['selectedMaterial']) {
+          if (memberSelected && !child.userData['selectedMaterial']) {
             child.userData['originalMaterial'] = material;
             child.material = highlightMaterial(material);
             child.userData['selectedMaterial'] = true;
-          } else if (!selected && child.userData['selectedMaterial']) {
+          } else if (!memberSelected && child.userData['selectedMaterial']) {
             disposeMaterials(child.material as THREE.Material | THREE.Material[]);
             child.material = child.userData['originalMaterial'] as THREE.Material | THREE.Material[];
             child.userData['selectedMaterial'] = false;
           }
         }
       });
+      if (!memberBounds.isEmpty()) {
+        const outline = new THREE.Box3Helper(memberBounds, 0x2f6fed);
+        (outline.material as THREE.LineBasicMaterial).depthTest = false;
+        outline.renderOrder = 30;
+        this.selectionOutlines.add(outline);
+      }
     }
     if (!bounds) {
       this.gizmoHelper.visible = false;
@@ -1167,6 +1179,7 @@ export class SceneView {
       if (!(mesh instanceof THREE.Mesh) || !hit.face || mesh.userData['capHelper'] || !mesh.visible || this.paintHover.includes(mesh)) continue;
       const elementId = (mesh.userData['ownerId'] ?? mesh.userData['elementId']) as string | undefined;
       if (typeof elementId !== 'string') continue;
+      if (this.doc && !inGroup(this.doc.elements, this.groupScopeId, elementId)) continue;
       const group = hit.face.materialIndex ?? 0;
       const slots = mesh.userData['slots'] as string[] | undefined;
       const surfaces = mesh.userData['surfaces'] as (string | null)[] | null | undefined;
@@ -1369,27 +1382,33 @@ export class SceneView {
     return marker ? (marker as THREE.Object3D).getWorldPosition(new THREE.Vector3()) : null;
   }
 
+  private groupScopeId: string | null = null;
+
+  setGroupScope(id: string | null): void { this.groupScopeId = id; }
+
   private pick(clientX: number, clientY: number): string | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
     const emitterId = this.analysis?.pickEmitter(this.raycaster);
-    if (emitterId) return emitterId;
+    if (emitterId && (!this.doc || inGroup(this.doc.elements, this.groupScopeId, emitterId))) return emitterId;
     // Reference points have no real size: they are hit within a few pixels of their marker.
     let nearest: { id: string; distance: number } | null = null;
     const projected = new THREE.Vector3();
     this.content.traverse((child) => {
       if (!child.userData['pointMarker'] || typeof child.userData['elementId'] !== 'string') return;
+      const id = (child.userData['ownerId'] ?? child.userData['elementId']) as string;
+      if (this.doc && !inGroup(this.doc.elements, this.groupScopeId, id)) return;
       projected.copy(child.getWorldPosition(new THREE.Vector3())).project(this.camera);
       if (projected.z > 1) return;
       const distance = Math.hypot(rect.left + ((projected.x + 1) / 2) * rect.width - clientX, rect.top + ((1 - projected.y) / 2) * rect.height - clientY);
-      if (distance <= 12 && (!nearest || distance < nearest.distance)) nearest = { id: child.userData['elementId'] as string, distance };
+      if (distance <= 12 && (!nearest || distance < nearest.distance)) nearest = { id, distance };
     });
     if (nearest) return (nearest as { id: string }).id;
     const hits = this.raycaster.intersectObjects(this.content.children, true);
     for (const hit of hits) {
-      const id = hit.object.userData['elementId'];
-      if (typeof id === 'string') return id;
+      const id = hit.object.userData['ownerId'] ?? hit.object.userData['elementId'];
+      if (typeof id === 'string' && (!this.doc || inGroup(this.doc.elements, this.groupScopeId, id))) return id;
     }
     return null;
   }
@@ -1425,6 +1444,7 @@ export class SceneView {
   private readonly onDoubleClick = (event: MouseEvent) => {
     if (this.placingStop || this.painting || this.picking) return;
     const id = this.pick(event.clientX, event.clientY);
+    if (id || this.groupScopeId) this.events.onEnterGroup?.(id);
     if (!id) this.events.onOpen?.();
   };
 

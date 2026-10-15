@@ -441,10 +441,16 @@ export const insertElements = defineMutation({
       clone.id = idMap.get(original.id)!;
       const isRoot = original.parentId === null || !incoming.has(original.parentId);
       if (isRoot) {
-        clone.parentId = null;
-        clone.index = topIndex(ctx.doc.elements as ElementTable, null);
+        clone.parentId = ctx.ui.groupEditId ?? ctx.ui.sheet?.paperId ?? null;
+        clone.index = topIndex(ctx.doc.elements as ElementTable, clone.parentId);
         clone.x += input.offset.x;
         clone.y += input.offset.y;
+        if (clone.parentId) {
+          const toLocal = invert(worldMatrix(ctx.doc.elements as ElementTable, ctx.doc.elements[clone.parentId]!));
+          const local = applyToPoint(toLocal, clone);
+          clone.x = local.x; clone.y = local.y;
+          clone.rotation += Math.atan2(toLocal[1], toLocal[0]) * 180 / Math.PI;
+        }
         roots.push(clone.id);
       } else {
         clone.parentId = idMap.get(original.parentId!)!;
@@ -490,7 +496,16 @@ export function collectPayload(doc: ArchaiDocument, ids: readonly string[]): Ele
     if (element.kind === 'image') blobIds.add(element.blobId);
   }
   return {
-    elements: elements.map((e) => structuredClone(e)),
+    elements: elements.map((e) => {
+      const clone = structuredClone(e);
+      if (ids.includes(e.id)) {
+        const matrix = worldMatrix(doc.elements, e);
+        clone.x = matrix[4]; clone.y = matrix[5];
+        clone.rotation = Math.atan2(matrix[1], matrix[0]) * 180 / Math.PI;
+        clone.parentId = null;
+      }
+      return clone;
+    }),
     definitions: [...definitionIds].map((id) => structuredClone(doc.definitions[id]!)),
     blobs: [...blobIds].map((id) => structuredClone(doc.blobs[id]!)),
   };

@@ -166,7 +166,7 @@ export const Overlay = memo(function Overlay({ state }: { state: OverlayState })
   const doc: ArchaiDocument = { schemaVersion: SCHEMA_VERSION, id: docId, meta, workspace, elements, definitions, blobs, materials: {} };
   const viewport = useAppState((s) => s.ui.viewport);
   // Cached per element table, so this re-renders only when the document changes.
-  const rigs = useAppState((s) => (s.ui.sheet ? NO_RIGS : rigHandles(boardDoc(s).elements)));
+  const rigs = useAppState((s) => (s.ui.sheet || s.ui.groupEditId ? NO_RIGS : rigHandles(boardDoc(s).elements)));
   const editingTextId = useAppState((s) => s.ui.editingTextId);
   // Sheet mode: the open paper, for its margin and centre guides.
   const sheetPaper = useAppState((s) => (s.ui.sheet ? boardDoc(s).elements[s.ui.sheet.paperId] : undefined));

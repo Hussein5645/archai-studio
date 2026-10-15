@@ -6,6 +6,7 @@ import { worldMatrix } from '@/geometry';
 import { isWall } from '@/interaction/wallSnap';
 import { layerPaintOrder } from '@/layers/hierarchy';
 import { boardDoc } from '@/store';
+import { inGroup } from '@/selection/groupScope';
 import { Shape } from './shapes';
 import { wallPathDependencies } from './wallBody';
 
@@ -72,6 +73,7 @@ export const ElementNode = memo(function ElementNode({ id }: { id: string }) {
   const { store } = useApp();
   const dependencies = useAppStateShallow((s) => cachedDependencies(boardDoc(s).elements, id));
   const editing = useAppState((s) => s.ui.editingTextId === id);
+  const outsideGroup = useAppState((s) => Boolean(s.ui.groupEditId) && !inGroup(boardDoc(s).elements, s.ui.groupEditId, id));
   const definitions = useAppState((s) => boardDoc(s).definitions);
   const blobs = useAppState((s) => boardDoc(s).blobs);
   const workspace = useAppState((s) => boardDoc(s).workspace);
@@ -81,7 +83,7 @@ export const ElementNode = memo(function ElementNode({ id }: { id: string }) {
   if (!element || editing || !isEffectivelyVisible(elements, id)) return null;
   const matrix = worldMatrix(elements, element);
   return (
-    <g transform={`matrix(${matrix.join(' ')})`} data-element-id={id}>
+    <g transform={`matrix(${matrix.join(' ')})`} data-element-id={id} opacity={outsideGroup ? 0.2 : undefined} data-outside-group={outsideGroup || undefined}>
       {element.kind !== 'group' && <Shape element={element} context={{ definitions, blobs, elements, workspace }} />}
     </g>
   );

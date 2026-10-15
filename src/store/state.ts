@@ -71,6 +71,8 @@ export interface UiState {
   /** Size of the workboard in CSS pixels; kept current by the renderer. */
   canvasSize: { width: number; height: number };
   selection: string[];
+  /** Transient group isolation context; nested paths follow document parents. */
+  groupEditId: string | null;
   tool: ToolId;
   editingTextId: string | null;
   panels: { left: boolean; inspector: boolean; leftTab: 'layers' | 'assets' | 'materials' };
@@ -213,6 +215,7 @@ export function createInitialUi(): UiState {
     viewport: { ...DEFAULT_VIEWPORT },
     canvasSize: { width: 1200, height: 800 },
     selection: [],
+    groupEditId: null,
     tool: 'select',
     editingTextId: null,
     panels: { left: true, inspector: true, leftTab: 'layers' },
