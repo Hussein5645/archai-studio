@@ -32,7 +32,7 @@ const buffer = (file: SourceFile): ArrayBuffer => file.bytes.buffer.slice(file.b
 const text = (file: SourceFile) => new TextDecoder().decode(file.bytes);
 const asGroup = (object: THREE.Object3D | THREE.BufferGeometry, material?: THREE.Material): THREE.Object3D => {
   if (object instanceof THREE.BufferGeometry) {
-    if (!object.getAttribute('normal') && object.index !== null) object.computeVertexNormals();
+    if (!object.getAttribute('normal')) object.computeVertexNormals();
     return new THREE.Mesh(object, material ?? new THREE.MeshStandardMaterial({ color: 0xc9ccd3, roughness: 0.8, vertexColors: Boolean(object.getAttribute('color')) }));
   }
   return object;

@@ -14,6 +14,8 @@ import { AccountDialog } from '@/ui/AccountDialog';
 import { ShareDialog } from '@/ui/ShareDialog';
 import { JoinDialog } from '@/ui/JoinDialog';
 import { ProgressCenter } from '@/ui/ProgressCenter';
+import { LiveLog } from '@/ui/LiveLog';
+import { installDiagnostics } from '@/diagnostics';
 import { ProjectPicker } from '@/bridge/ProjectPicker';
 import { Inspector } from '@/ui/Inspector';
 import { LeftPanel } from '@/ui/LeftPanel';
@@ -33,6 +35,7 @@ import { useAppRouter } from './router';
 import { getProjectSyncChannel, type ProjectSyncMessage } from '@/modeling/projectSync';
 
 export function App() {
+  installDiagnostics();
   const { t } = useI18n();
   const { platform, registry, persistence, catalog, toasts } = useApp();
   const dispatch = useDispatch();
@@ -144,6 +147,7 @@ export function App() {
         <JoinDialog />
         <ProjectPicker />
         <ProgressCenter />
+        <LiveLog />
         <Toasts />
       </div>
     );
@@ -176,6 +180,7 @@ export function App() {
       <JoinDialog />
       <ProjectPicker />
       <ProgressCenter />
+      <LiveLog />
       <Toasts />
       <div className={styles.narrowGuard} role="alert">
         <strong>{t('Window too narrow')}</strong>

@@ -1,4 +1,6 @@
 import { StrictMode } from 'react';
+import { LiveLog } from '@/ui/LiveLog';
+import { installDiagnostics } from '@/diagnostics';
 import { createRoot } from 'react-dom/client';
 import { CaiCatalog, createLocalCaiStore, HybridCaiCatalog } from '@/catalog';
 import { account as currentAccount, initAccount, type AccountState } from '@/cloud/account';
@@ -83,12 +85,14 @@ function isRenderRoute(): boolean {
 }
 
 async function bootRender(): Promise<void> {
+  installDiagnostics();
   const platform = createPlatform();
   const { RenderStudio } = await import('@/studio/RenderStudio');
   document.title = 'ArchAI Render';
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <RenderStudio platform={platform} catalog={createCatalog(platform)} />
+      <LiveLog />
     </StrictMode>,
   );
 }

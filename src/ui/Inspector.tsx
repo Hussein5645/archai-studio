@@ -26,6 +26,7 @@ import { isPoint } from '@/document/point';
 import { vrStopOf } from '@/document/vrStop';
 import { takesMaterials } from '@/materials/slots';
 import { meshOf } from '@/view3d/meshes';
+import { MeshNormals } from './MeshNormals';
 import { MaterialSlots } from './MaterialSlots';
 import { CaiParameters } from './CaiParameters';
 import { naturalSize } from '@/catalog/parametric';
@@ -461,6 +462,7 @@ function SelectionInspector({ ids }: { ids: string[] }) {
           <Divider />
           <div className={styles.section} data-testid="model-settings">
             <h3 className="u-section-title">{t('3D model')}</h3>
+            <MeshNormals key={single.id} id={single.id} />
             <FieldRow>
               <Field label="Units">
                 <SelectField

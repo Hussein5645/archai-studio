@@ -43,7 +43,7 @@ edits and supplies environment, sun, sky, exposure, saved cameras, stops, qualit
 Fast/Balanced/High Quality change bake samples, diffuse bounce depth, subdivision budget,
 texture cap and panorama resolution/sample count. They do not decimate source geometry or
 provide KTX2 compression. Scenes above one million source triangles are rejected by the baker;
-the service's 95 MB upload limit still applies. Headset frame rate requires device validation.
+assets up to 512 MB upload in 8 MB parts. Headset frame rate requires device validation.
 
 Settings remain at `render:<document id>` for compatibility. Output/quality preferences use
 `vr-preparation:<document id>`. Raw IDs keep `vr-tour:<document id>`; baked and panorama IDs use
@@ -113,7 +113,7 @@ board x / y are the scene's x / z.
 redirects to the viewer. Writes need an ArchAI account session (`Authorization: Bearer`, checked
 in the `archai` D1 database); tours are recorded under the account and only it may republish
 them. Until the `UPLOAD_KEY` secret is deleted, the old `X-Upload-Key` still works for plugins
-before 0.4 (see docs/accounts-and-cloud.md, release step). Models are limited to 95 MB (Workers
-request limit); keep tours light for the Quest (well under ~1M triangles).
+before 0.4 (see docs/accounts-and-cloud.md, release step). Legacy single-request models are limited to 95 MB (Workers
+request limit); the app uses multipart uploads up to 512 MB. Keep tours light for the Quest (well under ~1M triangles).
 
 Deploy from `workers/vr-share`: `npx wrangler deploy`.

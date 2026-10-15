@@ -187,4 +187,15 @@ export const setModelUnits = defineEffect({
   },
 });
 
-export const modelCommands = [createMeshElement, replaceMeshModel, importModel, setModelUnits];
+export const setModelNormals = defineMutation({
+  id: 'set-model-normals', label: 'Repair model normals', group: 'edit', palette: false, history: 'record',
+  input: z.object({ id: IdSchema, mode: z.enum(['source', 'recompute', 'flip', 'recompute-flip']) }),
+  run: (ctx, input) => {
+    const element = ctx.doc.elements[input.id];
+    if (!element?.meta?.['mesh']) throw new CommandError('rejected', 'Select an imported model');
+    if (element.locked) throw new CommandError('rejected', 'The model is locked');
+    element.meta = { ...snapshot(element.meta), normalMode: input.mode };
+  },
+});
+
+export const modelCommands = [createMeshElement, replaceMeshModel, importModel, setModelUnits, setModelNormals];

@@ -9,6 +9,7 @@ import type { PaintScope } from './uiStore';
 /** Where the model material slots of an element come from (the 3D view's meshes). */
 export interface AssetSlotSource {
   assetSlotsOf(elementId: string): string[];
+  elementIdsWithAssetSlot?(slot: string): string[];
 }
 
 /**
@@ -47,8 +48,15 @@ export function paintTarget(app: Pick<AppServices, 'executor' | 'toasts' | 'stor
     // A model's own material has no id: paint that part on every copy of the asset.
     const doc = app.store.getState().doc;
     const clicked = doc.elements[target.elementId];
-    if (target.slot && clicked?.kind === 'instance') {
-      const ids = Object.values(doc.elements).filter((element) => element.kind === 'instance' && element.definitionId === clicked.definitionId && !element.locked).map((element) => element.id);
+    if (target.slot && clicked && view) {
+      const candidates = view.elementIdsWithAssetSlot ? new Set(view.elementIdsWithAssetSlot(target.slot)) : null;
+      const ids = Object.values(doc.elements).filter((element) => {
+        if (element.locked || !(element.kind === 'instance' || element.meta?.['mesh'])) return false;
+        if (candidates ? !candidates.has(element.id) : !view.assetSlotsOf(element.id).includes(target.slot!)) return false;
+        const own = element.meta?.['materials'] as Record<string, unknown> | undefined;
+        return !own?.[target.slot!] && !own?.['body'];
+      }).map((element) => element.id);
+      if (!ids.length) return;
       void app.executor.dispatch('assign-material', { ids, materialId, slot: target.slot }).then((result) => report(result, () => `Painted ${ids.length} cop${ids.length === 1 ? 'y' : 'ies'} of the asset`));
       return;
     }

@@ -1,0 +1,11 @@
+.launch { position: fixed; top: 52px; right: 16px; z-index: 70; border: 1px solid var(--border, #ddd); background: var(--bg-panel, white); color: var(--text, #222); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.backdrop { position: fixed; inset: 0; z-index: 5000; background: #0005; display: grid; place-items: center; }
+.window { width: min(960px, 94vw); height: min(640px, 85vh); background: var(--bg-panel, white); color: var(--text, #222); border-radius: 14px; display: flex; flex-direction: column; box-shadow: 0 12px 60px #0004; }
+.window header { display: flex; align-items: center; gap: 10px; padding: 16px; border-bottom: 1px solid #8884; }
+.window strong { margin-right: auto; }
+.window button { padding: 6px 10px; cursor: pointer; }
+.entries { overflow: auto; flex: 1; padding: 16px; font: 12px/1.6 monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.entries time { color: #888; }
+.entries [data-level=error] { color: #d23737; }
+.entries [data-level=warn] { color: #ab7500; }
+.window footer { padding: 10px 16px; font-size: 12px; border-top: 1px solid #8884; }

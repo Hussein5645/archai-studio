@@ -1,4 +1,5 @@
 import { Camera, CloudSun, Glasses, Maximize } from 'lucide-react';
+import { addLog } from '@/diagnostics';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AssetCatalog } from '@/catalog';
 import type { ArchaiDocument } from '@/document';
@@ -67,6 +68,10 @@ export function RenderStudio({ platform, catalog }: { platform: Platform; catalo
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
+  useEffect(() => { if (error) addLog('error', `VR Preparation: ${error}`); }, [error]);
+  useEffect(() => { if (status) addLog('info', `VR Preparation: ${status}`); }, [status]);
+  const jobLabel = job?.label;
+  useEffect(() => { if (jobLabel) addLog('info', `VR Preparation: ${jobLabel}`); }, [jobLabel]);
   const [result, setResult] = useState<Result | null>(null);
   const resultRef = useRef<Result | null>(null);
   const controller = useRef<AbortController | null>(null);

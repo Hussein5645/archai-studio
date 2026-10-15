@@ -20,6 +20,7 @@ import {
 } from './contract';
 import type { CommandRegistry } from './registry';
 import { applyBoardElevation } from './boardLevel';
+import { addLog } from '@/diagnostics';
 
 enablePatches();
 
@@ -201,6 +202,7 @@ export class CommandExecutor {
   }
 
   private emit(result: CommandResult, command: AnyCommand): void {
+    addLog(result.ok ? 'info' : 'error', `${command.label}: ${result.ok ? 'done' : result.error.message}`);
     for (const listener of this.listeners) listener(result, command);
   }
 

@@ -1215,6 +1215,15 @@ export class SceneView {
   }
 
   /** The material id a mesh group shows, as built. */
+  elementIdsWithAssetSlot(slot: string): string[] {
+    const ids = new Set<string>();
+    this.content.traverse((child) => {
+      const id = child.userData['ownerId'] ?? child.userData['elementId'];
+      if (child instanceof THREE.Mesh && !child.userData['capHelper'] && typeof id === 'string' && (child.userData['slots'] as string[] | undefined)?.includes(slot)) ids.add(id);
+    });
+    return [...ids];
+  }
+
   private shownMaterialId(mesh: THREE.Mesh, group: number): string | null {
     const id = this.builtMaterial(mesh, group).userData['materialId'];
     return typeof id === 'string' ? id : null;
@@ -1255,20 +1264,12 @@ export class SceneView {
         }
         const count = Math.max(1, child.geometry.groups.length);
         const matches = Array.from({ length: count }, (_, index) =>
-          target.materialId ? this.shownMaterialId(child, index) === target.materialId : (child.userData['slots'] as string[] | undefined)?.[index] === target.slot && this.sameDefinition(owner(child), target.elementId),
+          target.materialId ? this.shownMaterialId(child, index) === target.materialId : (child.userData['slots'] as string[] | undefined)?.[index] === target.slot && !this.shownMaterialId(child, index),
         );
         if (matches.some(Boolean)) overlay(child, (index) => matches[index] ?? false);
       }
     }
     this.requestRender();
-  }
-
-  /** Whether two elements are copies of the same asset (for model materials, which have no id). */
-  private sameDefinition(a: string | undefined, b: string): boolean {
-    if (!a || !this.doc) return false;
-    const x = this.doc.elements[a];
-    const y = this.doc.elements[b];
-    return a === b || (x?.kind === 'instance' && y?.kind === 'instance' && x.definitionId === y.definitionId);
   }
 
   private readonly onPointerMove = (event: PointerEvent) => {

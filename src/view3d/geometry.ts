@@ -26,6 +26,7 @@ import { instanceMaterialsOf, materialById, paintedMaterialId, surfacePaintOf, t
 import { threeMaterial } from '@/materials/three';
 import { applyWorldUvs, groupByNormal } from './surfaceUv';
 import { meshOf, meshStore, type MeshMeta } from './meshes';
+import { repairNormals, type NormalMode } from './meshNormals';
 import { footprintOfBounds, instanceOverrides, parametricInstanceOf, recipeOf } from '@/catalog/parametric';
 import { composeRebuilt, rebuiltModel } from './parametricModels';
 
@@ -817,7 +818,7 @@ export function assetMaterialName(material: THREE.Material): string {
  * materials. Geometry stays the cached model's, except where a material was replaced (it gets its
  * own copy so world-mm UVs can be written).
  */
-function modelSlots(clone: THREE.Object3D, look: Look): void {
+function modelSlots(clone: THREE.Object3D, look: Look, normalMode: NormalMode = 'source'): void {
   clone.traverse((child) => {
     child.userData['shared'] = true; // geometry belongs to the cached model
     if (!(child instanceof THREE.Mesh)) return;
@@ -827,9 +828,13 @@ function modelSlots(clone: THREE.Object3D, look: Look): void {
     child.userData['assetMesh'] = true;
     child.userData['slots'] = slots;
     child.userData['slot'] = slots[0];
+    if (normalMode !== 'source') {
+      child.geometry = repairNormals(child.geometry, normalMode);
+      child.userData['shared'] = false;
+    }
     if (replaced.some((material, index) => material !== list[index])) {
       child.material = Array.isArray(child.material) ? replaced : replaced[0]!;
-      child.geometry = child.geometry.clone();
+      if (normalMode === 'source') child.geometry = child.geometry.clone();
       child.userData['shared'] = false;
       child.userData['assetMesh'] = false;
     }
@@ -843,7 +848,7 @@ function buildMeshElement(doc: ArchaiDocument, element: Element & { kind: 'rect'
   const model = (lod === 'low' ? meshStore.lowModels.get(mesh.blobId) : undefined) ?? meshStore.models.get(mesh.blobId);
   if (model) {
     const clone = model.clone(true);
-    modelSlots(clone, look);
+    modelSlots(clone, look, element.meta?.['normalMode'] as NormalMode | undefined);
     group.add(clone);
   } else {
     const box = new THREE.Mesh(new THREE.BoxGeometry(element.width, Math.max(1, mesh.height), element.height), look.slot('body', 'default:asset'));

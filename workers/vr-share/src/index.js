@@ -112,6 +112,39 @@ async function upload(request, env, id, file, auth) {
   return json({ ok: true });
 }
 
+async function multipart(request, env, id, file, auth, url) {
+  if (file === 'tour.json') return json({ error: 'Manifest cannot be multipart' }, 400);
+  if (!(await env.BUCKET.head(created(id)))) return json({ error: 'Unknown tour' }, 404);
+  if (await ownedByOther(env, id, auth.userId)) return json({ error: 'This tour belongs to another account' }, 403);
+  const key = `tours/${id}/${file}`;
+  try {
+    if (request.method === 'POST' && url.searchParams.get('multipart') === 'start') {
+      const upload = await env.BUCKET.createMultipartUpload(key, { httpMetadata: { contentType: assetType(file) } });
+      return json({ uploadId: upload.uploadId });
+    }
+    const uploadId = url.searchParams.get('uploadId');
+    if (!uploadId || uploadId.length > 1024) return json({ error: 'Invalid upload id' }, 400);
+    const upload = env.BUCKET.resumeMultipartUpload(key, uploadId);
+    if (request.method === 'DELETE') { await upload.abort(); return json({ ok: true }); }
+    if (request.method === 'PUT') {
+      const number = Number(url.searchParams.get('partNumber'));
+      const length = Number(request.headers.get('Content-Length'));
+      if (!Number.isInteger(number) || number < 1 || number > 64 || !length || length > 8 * 1024 * 1024) return json({ error: 'Invalid upload part (maximum 8 MB, 64 parts)' }, 400);
+      return json(await upload.uploadPart(number, request.body));
+    }
+    if (request.method === 'POST') {
+      if (Number(request.headers.get('Content-Length')) > MAX_TOUR_BYTES) return json({ error: 'Part receipts too large' }, 413);
+      const { parts } = await request.json();
+      if (!Array.isArray(parts) || !parts.length || parts.length > 64 || parts.some((p, i) => p.partNumber !== i + 1 || typeof p.etag !== 'string' || !p.etag || p.etag.length > 200)) return json({ error: 'Invalid part receipts' }, 400);
+      await upload.complete(parts);
+      return json({ ok: true });
+    }
+    return reply('Method not allowed', 405);
+  } catch {
+    return json({ error: 'Upload part failed or expired. Please retry publishing.' }, 503);
+  }
+}
+
 /** The account's tours, newest first, with the model size and number of stops. */
 async function listTours(request, env, userId) {
   const { results } = await env.DB.prepare('SELECT id, name, created_at, updated_at FROM vr_tours WHERE user_id = ? ORDER BY updated_at DESC').bind(userId).all();
@@ -192,6 +225,10 @@ export default {
       }
       const [, id, file] = parts;
       if (parts.length !== 3 || !ID.test(id ?? '') || !assetType(file ?? '')) return reply('Not found', 404);
+      if (url.searchParams.has('multipart') || url.searchParams.has('uploadId')) {
+        const auth = await authorised(request, env);
+        return auth ? multipart(request, env, id, file, auth, url) : json({ error: 'Sign in to ArchAI to publish VR tours' }, 401);
+      }
       if (request.method === 'GET' || request.method === 'HEAD') return read(request, env, id, file);
       if (request.method === 'PUT') {
         const auth = await authorised(request, env);

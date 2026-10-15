@@ -102,7 +102,15 @@ async function applyPaint(message: PaintMessage, store: AppStore, services: Pick
       if (!entry) throw new Error('This material is no longer in the library');
       materialId = await libraryMaterialToProject((command, input) => services.executor.dispatch(command, input), store.getState().doc, entry);
     } else materialId = message.material.id;
-    paintTarget(app, message.target, message.scope, materialId, { assetSlotsOf: () => message.assetSlots });
+    const [{ assetMaterialNames }, { meshStore, meshOf }, { modelStore }] = await Promise.all([
+      import('@/view3d/geometry'), import('@/view3d/meshes'), import('@/view3d/assets'),
+    ]);
+    paintTarget(app, message.target, message.scope, materialId, { assetSlotsOf: (id) => {
+      if (id === message.target.elementId) return message.assetSlots;
+      const element = store.getState().doc.elements[id];
+      const mesh = meshOf(element);
+      return assetMaterialNames(mesh ? meshStore.models.get(mesh.blobId) : element?.kind === 'instance' ? modelStore.models.get(element.definitionId) : undefined).map((name) => `asset:${name}`);
+    } });
   } catch (error) {
     services.toasts.push({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
   }

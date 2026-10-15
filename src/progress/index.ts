@@ -11,6 +11,8 @@
  * not React, so it works from command code, the Live Bridge and services alike.
  */
 
+import { addLog } from '@/diagnostics';
+
 export interface ProgressTask {
   id: number;
   title: string;
@@ -64,6 +66,7 @@ const LINGER_MS = { done: 1200, failed: 0 };
 function finish(id: number, state: 'done' | 'failed'): void {
   const task = tasks.find((item) => item.id === id);
   if (!task || task.state !== 'running') return;
+  addLog(state === 'failed' ? 'error' : 'info', `${task.title}: ${state}${state === 'failed' ? ` — ${task.detail}` : ''}`);
   patch(id, { state, endedAt: Date.now(), ...(state === 'done' ? { fraction: 1 } : {}) });
   setTimeout(() => {
     tasks = tasks.filter((item) => item.id !== id);
@@ -77,6 +80,8 @@ export function paint(): Promise<void> {
 }
 
 export function startProgress(title: string, detail = '', fraction: number | null = null): ProgressHandle {
+  addLog('info', `${title}: ${detail}`);
+  let lastLogged = Date.now();
   const id = nextId++;
   tasks = [...tasks, { id, title, detail, fraction, state: 'running', startedAt: Date.now() }];
   emit();
@@ -91,7 +96,13 @@ export function startProgress(title: string, detail = '', fraction: number | nul
         // Fractions only move forward (several phases report into one bar).
         if (clamped === null ? task.fraction !== null : task.fraction === null || clamped > task.fraction) change.fraction = clamped;
       }
-      if (Object.keys(change).length) patch(id, change);
+      if (Object.keys(change).length) {
+        patch(id, change);
+        if (Date.now() - lastLogged > 2000 || nextFraction === null) {
+          addLog('info', `${title}: ${nextDetail ?? task.detail}`);
+          lastLogged = Date.now();
+        }
+      }
     },
     step(index, count, nextDetail, from = 0, to = 1) {
       this.update(nextDetail, count > 0 ? from + (to - from) * (index / count) : null);
@@ -110,6 +121,7 @@ export async function withProgress<T>(title: string, work: (task: ProgressHandle
     task.done();
     return result;
   } catch (error) {
+    addLog('error', `${title}: ${error instanceof Error ? error.message : String(error)}`);
     task.failed();
     throw error;
   }
@@ -147,13 +159,23 @@ export function uploadWithProgress(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(init.method ?? 'PUT', url);
+    xhr.timeout = 5 * 60_000;
+    let stalled: ReturnType<typeof setTimeout>;
+    const touch = () => {
+      clearTimeout(stalled);
+      stalled = setTimeout(() => xhr.abort(), 60_000);
+    };
+    xhr.onloadend = () => clearTimeout(stalled);
+    xhr.ontimeout = () => reject(new Error('Upload timed out. Please try again.'));
     for (const [name, value] of Object.entries(init.headers ?? {})) xhr.setRequestHeader(name, value);
     xhr.upload.onprogress = (event) => {
+      touch();
       if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total, event.loaded, event.total);
     };
     xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText, headers: (name) => xhr.getResponseHeader(name) });
     xhr.onerror = () => reject(new Error('Network error: check the internet connection'));
-    xhr.onabort = () => reject(new Error('Upload cancelled'));
+    xhr.onabort = () => reject(new Error('Upload stopped or stalled. Check the connection and try again.'));
+    touch();
     xhr.send(body instanceof Uint8Array ? new Blob([body as BlobPart]) : body);
   });
 }

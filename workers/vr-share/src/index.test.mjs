@@ -2,6 +2,34 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import worker from './index.js';
 
+test('multipart upload authenticates parts, validates receipts, and completes only after all parts', async () => {
+  const { env, files } = service();
+  const file = `model-${'d'.repeat(32)}.glb`;
+  let completed = false, aborted = false;
+  const received = [];
+  env.BUCKET.createMultipartUpload = async () => ({ uploadId: 'session' });
+  env.BUCKET.resumeMultipartUpload = (key, id) => {
+    assert.equal(key, `tours/abcd/${file}`); assert.equal(id, 'session');
+    return {
+      async uploadPart(number) { received.push(number); return { partNumber: number, etag: `etag-${number}` }; },
+      async complete(parts) { assert.deepEqual(parts, [{ partNumber: 1, etag: 'etag-1' }]); completed = true; files.set(key, 'assembled'); },
+      async abort() { aborted = true; },
+    };
+  };
+  const call = (query, method, body, auth = true, extra = {}) => worker.fetch(new Request(`https://share.example/tours/abcd/${file}?${query}`, { method, ...(body ? { body } : {}), headers: { ...(auth ? { 'X-Upload-Key': 'test' } : {}), ...(body ? { 'Content-Length': String(body.length) } : {}), ...extra } }), env);
+  assert.equal((await call('multipart=start', 'POST', null, false)).status, 401);
+  assert.equal((await (await call('multipart=start', 'POST')).json()).uploadId, 'session');
+  assert.equal((await call('uploadId=session&partNumber=65', 'PUT', 'data')).status, 400);
+  assert.equal((await call('uploadId=session&partNumber=1', 'PUT', 'data', true, { 'Content-Length': String(9 * 1024 * 1024) })).status, 400);
+  assert.equal((await call('uploadId=session&partNumber=1', 'PUT', 'data')).status, 200);
+  assert.deepEqual(received, [1]); assert.equal(completed, false);
+  assert.equal((await call('uploadId=session', 'POST', JSON.stringify({ parts: [{ partNumber: 2, etag: 'wrong' }] }))).status, 400);
+  assert.equal(completed, false);
+  assert.equal((await call('uploadId=session', 'POST', JSON.stringify({ parts: [{ partNumber: 1, etag: 'etag-1' }] }))).status, 200);
+  assert.equal(completed, true);
+  assert.equal((await call('uploadId=session', 'DELETE')).status, 200); assert.equal(aborted, true);
+});
+
 function service() {
   const files = new Map([['tours/abcd/created', 'created']]);
   const env = { UPLOAD_KEY: 'test', VIEWER_URL: 'https://viewer.example/', BUCKET: {
