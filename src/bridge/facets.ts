@@ -34,6 +34,8 @@ const META: Record<string, BridgeFacet | null> = {
   levelConstraint: 'transform',
   materials: 'material',
   surfaces: 'material',
+  // Local display correction on ArchAI's decoded mesh; never a source-app edit.
+  normalMode: null,
   // The Live Bridge's old tag, replaced by the binding graph.
   liveLink: null,
 };
@@ -48,7 +50,9 @@ type Facets = Record<BridgeFacet, Record<string, JsonValue>>;
 /** The element's content without identity, for comparing an element with another one's. */
 function content(children: ChildLookup, element: Element): JsonValue {
   const out: Record<string, JsonValue> = {};
-  for (const [key, value] of Object.entries(element)) if (key !== 'id' && key !== 'parentId' && key !== 'index' && value !== undefined) out[key] = value as JsonValue;
+  for (const [key, value] of Object.entries(element)) if (key !== 'id' && key !== 'parentId' && key !== 'index' && value !== undefined) {
+    out[key] = key === 'meta' ? Object.fromEntries(Object.entries(element.meta ?? {}).filter(([k]) => k !== 'normalMode')) : value as JsonValue;
+  }
   const kids = children(element.id);
   if (kids.length) out['children'] = kids.map((child) => content(children, child));
   return out;
@@ -121,6 +125,7 @@ export function mergeFacets(target: Element, source: Element, apply: ReadonlySet
   const metaKeys = new Set([...Object.keys(target.meta ?? {}), ...Object.keys(source.meta ?? {})]);
   for (const key of metaKeys) {
     const facet = metaFacet(key);
+    if (key === 'normalMode') { if (target.meta?.[key] !== undefined) meta[key] = target.meta[key]; continue; }
     if (!facet) continue;
     const from = apply.has(facet) ? source.meta : target.meta;
     if (from && from[key] !== undefined) meta[key] = from[key];

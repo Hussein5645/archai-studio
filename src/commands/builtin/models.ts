@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { IPC, type OpenFileResult, type OpenFilesInput } from '@shared/ipc';
 import { getElectronBridge } from '@/platform/electron';
-import { IdSchema, type JsonValue } from '@/document';
+import { descendantsOf, IdSchema, isEffectivelyLocked, type JsonValue } from '@/document';
 import { base64ToBytes, bytesToBase64 } from '@/persistence/base64';
 import { CommandError, defineEffect, defineMutation } from '../contract';
 import { megabytes, withProgress } from '@/progress';
@@ -68,7 +68,7 @@ export const replaceMeshModel = defineMutation({
     const element = ctx.doc.elements[input.id];
     const mesh = element?.meta?.['mesh'];
     if (!element || element.kind !== 'rect' || !mesh || typeof mesh !== 'object' || Array.isArray(mesh)) throw new CommandError('rejected', 'Not a 3D model');
-    if (element.locked) throw new CommandError('rejected', 'The model is locked');
+    if (isEffectivelyLocked(ctx.doc.elements, input.id)) throw new CommandError('rejected', 'The model is locked');
     const blobId = ensureBlob(ctx.doc, { mime: 'model/gltf-binary', data: input.glb, width: 0, height: 0 });
     const [width, depth, height] = input.size;
     const cx = element.x + element.width / 2;
@@ -189,7 +189,7 @@ export const setModelUnits = defineEffect({
 
 export const setModelNormals = defineMutation({
   id: 'set-model-normals', label: 'Repair model normals', group: 'edit', palette: false, history: 'record',
-  input: z.object({ id: IdSchema, mode: z.enum(['source', 'recompute', 'flip', 'recompute-flip']) }),
+  input: z.object({ id: IdSchema, mode: z.enum(['source', 'auto', 'recompute', 'flip', 'recompute-flip']) }),
   run: (ctx, input) => {
     const element = ctx.doc.elements[input.id];
     if (!element?.meta?.['mesh']) throw new CommandError('rejected', 'Select an imported model');
@@ -198,4 +198,27 @@ export const setModelNormals = defineMutation({
   },
 });
 
-export const modelCommands = [createMeshElement, replaceMeshModel, importModel, setModelUnits, setModelNormals];
+export const autoRepairGroupNormals = defineMutation({
+  id: 'auto-repair-group-normals', label: 'Auto repair group normals', group: 'edit', history: 'record',
+  description: 'Reorients connected faces, turns closed shells outward and recalculates normals for all imported meshes in the selected groups, including nested groups. Open surfaces retain their majority orientation. One undo restores the group.',
+  input: z.object({ ids: z.array(IdSchema).optional() }).prefault({}),
+  run: (ctx, input) => {
+    const roots = input.ids ?? ctx.ui.selection;
+    const targets = new Set<string>();
+    for (const id of roots) {
+      const root = ctx.doc.elements[id];
+      if (!root) throw new CommandError('rejected', 'Select a group or imported model');
+      for (const element of [root, ...descendantsOf(ctx.doc.elements, id)]) if (element.meta?.['mesh']) targets.add(element.id);
+    }
+    if (!targets.size) throw new CommandError('rejected', 'No imported meshes in the selection');
+    // Preflight the entire batch so locked descendants cannot leave a partially repaired group.
+    for (const id of targets) if (isEffectivelyLocked(ctx.doc.elements, id)) throw new CommandError('rejected', 'Unlock all meshes and their groups before repairing normals');
+    for (const id of targets) {
+      const element = ctx.doc.elements[id]!;
+      element.meta = { ...snapshot(element.meta ?? {}), normalMode: 'auto' };
+    }
+    return { models: targets.size };
+  },
+});
+
+export const modelCommands = [createMeshElement, replaceMeshModel, importModel, setModelUnits, setModelNormals, autoRepairGroupNormals];

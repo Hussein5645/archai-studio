@@ -5,6 +5,7 @@ import { withoutLink } from '@/live/sync';
 import type { BridgeSyncReport } from './engine';
 import { flattenSourceGroups, pullPlan, type PullPlan } from './pull';
 import { needsRevert, startBridgeGuard } from './guard';
+import { childLookup, facetHashes } from './facets';
 
 type Mesh = { id: string; name?: string; category?: string; origin: [number, number, number]; size: [number, number, number]; glb: string; archai?: string; was?: string };
 type Wall = { id: string; points: [number, number][]; base: number; height: number; layers: { name: string; role: 'core'; thickness: number; material?: string }[]; level?: string };
@@ -64,6 +65,35 @@ it('refuses to replace a model from another app', () => {
 });
 
 describe('Live Bridge sync', () => {
+  it('keeps local group normal repairs on source-controlled geometry without permission changes or outgoing edits', async () => {
+    const app = createTestApp();
+    sync(app, 'revit:normals', model({ app: 'Revit', meshes: [mesh('a'), mesh('b', 1000)] }));
+    const a = bound(app, 'revit:normals', 'a')!, b = bound(app, 'revit:normals', 'b')!;
+    const group = bridge(app).sources['revit:normals']!.groupId!;
+    const before = doc(app);
+    const hashes = facetHashes(childLookup(before.elements), before.elements[group]!);
+    const authority = structuredClone(bridge(app).sources['revit:normals']!.authority);
+    const originalBlob = a.meta?.['mesh'];
+    const stop = startBridgeGuard(app.executor, app.store);
+    try {
+      run(app, 'auto-repair-group-normals', { ids: [group] });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(needsRevert(doc(app), a.id)).toBe(false);
+      expect(needsRevert(doc(app), b.id)).toBe(false);
+      expect(facetHashes(childLookup(doc(app).elements), doc(app).elements[group]!)).toEqual(hashes);
+      expect(doc(app).elements[a.id]!.meta?.['normalMode']).toBe('auto');
+      expect(doc(app).elements[a.id]!.meta?.['mesh']).toEqual(originalBlob);
+      expect(pullPlan(doc(app), 'revit:normals', null).updates).toEqual([]);
+      expect(pullPlan(doc(app), 'revit:normals', null).nodes.has(a.id)).toBe(false);
+      sync(app, 'revit:normals', model({ app: 'Revit', meshes: [{ ...mesh('a', 2000, 'Updated source'), glb: 'BBBB' }, mesh('b', 1000)] }));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(doc(app).elements[a.id]).toMatchObject({ x: 2000, name: 'Updated source', meta: { normalMode: 'auto' } });
+      expect(doc(app).elements[b.id]!.meta?.['normalMode']).toBe('auto');
+      expect(bridge(app).sources['revit:normals']!.authority).toEqual(authority);
+      expect(needsRevert(doc(app), a.id)).toBe(false);
+      expect(bridge(app).conflicts).toEqual([]);
+    } finally { stop(); }
+  });
   it('keeps ArchAI whole-object paint while the source updates geometry, names and embedded material slots', () => {
     const app = createTestApp();
     sync(app, 'revit:paint', model({ meshes: [mesh('a')] }));

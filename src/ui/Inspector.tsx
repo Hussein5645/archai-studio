@@ -26,7 +26,7 @@ import { isPoint } from '@/document/point';
 import { vrStopOf } from '@/document/vrStop';
 import { takesMaterials } from '@/materials/slots';
 import { meshOf } from '@/view3d/meshes';
-import { MeshNormals } from './MeshNormals';
+import { GroupMeshNormals, MeshNormals } from './MeshNormals';
 import { MaterialSlots } from './MaterialSlots';
 import { CaiParameters } from './CaiParameters';
 import { naturalSize } from '@/catalog/parametric';
@@ -456,6 +456,8 @@ function SelectionInspector({ ids }: { ids: string[] }) {
           {configurationOpen && <SystemConfigDialog element={single} type={archType} applyTo="type" onClose={() => setConfigurationOpen(false)} />}
         </>
       )}
+
+      {single?.kind === 'group' && <GroupMeshNormals key={single.id} id={single.id} />}
 
       {single && meshOf(single) && (
         <>

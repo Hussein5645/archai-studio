@@ -91,6 +91,27 @@ VTK), are guessed from the size (≤ 30 → m, ≤ 600 → cm, else mm). CAD-sty
 3DS, AMF, VTK) are taken as Z up. The toast after an import says what was assumed; the Inspector's
 **3D model → Units / Up axis** (`set-model-units`) re-bakes it, keeping its centre.
 
+## Automatic group normal repair
+
+Select a group and choose **Mesh normals → Auto repair all mesh normals** in the Inspector.
+The action includes imported models inside nested groups and creates one undo step. Individual
+models also offer **Normals → Auto orient faces + recalculate**. Pin locks must be released first.
+
+Repair makes connected triangle winding consistent, matches topology across UV seams, orients
+closed shells outward by signed volume, and recalculates shading normals. UVs, material groups,
+positions and the cached source geometry are preserved. Open surfaces retain the orientation
+requiring the fewest source-face reversals because geometry alone cannot identify their intended
+outside. Non-manifold or contradictory topology may still need source mesh repair; enclosed
+cavity shells cannot be distinguished from separate solid shells automatically.
+
+This correction belongs to ArchAI's decoded copy, including models controlled by a linked app.
+It needs no native-app permission or conversion to an ArchAI element, changes no link authority,
+and creates no outgoing source edits. The setting persists when a linked model receives new
+geometry. It applies to the 3D view, rendering and VR exports; source GLB bytes remain untouched.
+
+Command: `auto-repair-group-normals { ids?: string[] }` (defaults to the current selection).
+Restore **Original** on an individual model or use **Undo** to remove a repair.
+
 ## Code
 
 `src/view3d/modelImport.ts` (loaders, conversion, re-bake), `src/view3d/modelFiles.ts` (UI
