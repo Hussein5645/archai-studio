@@ -42,11 +42,13 @@ test('raw scene keeps element IDs and shared VR supports tabletop, live edits an
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const address = server.address() as { port: number };
   const versions = [1, 2, 3].map((slot) => ({ slot, snapshot: null as unknown }));
+  let malformedScene = false;
+  let missingModel = false;
   await context.route('https://archai-vr-share.mklkoklpp.workers.dev/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     const headers = { 'Access-Control-Allow-Origin': '*' };
-    if (path.endsWith('tour.json')) await route.fulfill({ json: { format: 'archai-vr', model: 'model.glb', mode: 'raw', lighting: 'live', spaces: [], name: 'Tabletop test' }, headers });
-    else if (path.endsWith('model.glb')) await route.fulfill({ body: model, contentType: 'model/gltf-binary', headers });
+    if (path.endsWith('tour.json')) await route.fulfill({ json: { format: 'archai-vr', model: 'model.glb', mode: 'raw', lighting: 'live', spaces: malformedScene ? 'invalid' : [], name: 'Tabletop test' }, headers });
+    else if (path.endsWith('model.glb')) await route.fulfill({ status: missingModel ? 404 : 200, body: missingModel ? Buffer.from('Missing asset') : model, contentType: 'model/gltf-binary', headers });
     else if (/versions\/[123]$/.test(path)) {
       const slot = Number(path.slice(-1)); versions[slot - 1]!.snapshot = route.request().postDataJSON();
       await route.fulfill({ json: versions[slot - 1], headers });
@@ -68,12 +70,15 @@ test('raw scene keeps element IDs and shared VR supports tabletop, live edits an
     await expect(viewer.getByRole('button', { name: 'Move elements', exact: true })).toBeVisible();
     expect(await viewer.evaluate('window.tour.tabletop.active')).toBe(true);
     await viewer.getByRole('button', { name: '+ Scale', exact: true }).click();
+    expect(await viewer.evaluate('window.tour.renderer.getContext().getContextAttributes().alpha')).toBe(true);
+    expect(await viewer.evaluate('window.tour.stopMenu.map(b => b.kind)')).toEqual(['space']);
     await viewer.evaluate(`{
       const t = window.tour.tabletop;
       t.token = 'test-session';
       const node = [...t.nodes.values()][0];
       node.position.x += 1000;
     }`);
+    await viewer.getByRole('button', { name: 'Versions', exact: true }).click();
     await viewer.getByRole('button', { name: 'Save 1', exact: true }).click();
     await expect(viewer.getByRole('button', { name: 'Replace 1', exact: true })).toBeVisible();
     await viewer.getByRole('button', { name: 'Original', exact: true }).click();
@@ -86,8 +91,63 @@ test('raw scene keeps element IDs and shared VR supports tabletop, live edits an
     }`);
     await expect.poll(() => viewer.evaluate('window.tour.tabletop.active')).toBe(false);
     await expect.poll(() => viewer.evaluate('window.tour.busy')).toBe(false);
+    await viewer.getByRole('button', { name: 'Model', exact: true }).click();
     await viewer.getByRole('button', { name: 'Tabletop', exact: true }).click();
+    await viewer.getByRole('button', { name: 'Move elements', exact: true }).click();
+    await viewer.evaluate(`{
+      const t = window.tour.tabletop;
+      t.selected = [...t.nodes.values()][0];
+      t.describe(t.selected);
+    }`);
+    await expect(viewer.locator('#precision-readout')).toContainText('ΔX 0.000 m');
+    await viewer.getByRole('button', { name: 'Move', exact: true }).click();
+    await expect(viewer.getByRole('button', { name: 'Snap: 50 mm', exact: true })).toBeVisible();
+    await viewer.getByRole('button', { name: 'X +', exact: true }).click();
+    await expect(viewer.locator('#precision-readout')).toContainText('ΔX 0.050 m');
+    expect(await viewer.evaluate('window.tour.tabletop.annotations.dimensionLine.geometry.getAttribute("position").count')).toBe(5);
+    await viewer.getByRole('button', { name: 'Measure', exact: true }).click();
+    await viewer.getByRole('button', { name: 'Start measuring', exact: true }).click();
+    await viewer.evaluate(`{
+      const t = window.tour.tabletop;
+      t.measurePoint({ point: t.root.localToWorld(new t.T.Vector3()) });
+      t.measurePoint({ point: t.root.localToWorld(new t.T.Vector3(3, 4, 0)) });
+    }`);
+    await expect(viewer.locator('#precision-readout')).toHaveText('Measured 5.000 m');
+    await viewer.getByRole('button', { name: 'Clear measures', exact: true }).click();
+    expect(await viewer.evaluate('window.tour.tabletop.annotations.items.length')).toBe(0);
+    await viewer.getByRole('button', { name: 'Model', exact: true }).click();
+    const toolbar = await viewer.evaluate(`(() => {
+      const { tabletop:t, controllerTools:tools, camera, renderer, scene } = window.tour;
+      renderer.setAnimationLoop(null);
+      const left = new t.T.Group(); left.userData.source = { handedness:'left' }; left.position.set(-0.28,1.25,-0.9); scene.add(left);
+      tools.open = true; tools.update([left],true);
+      const origin = camera.getWorldPosition(new t.T.Vector3());
+      const direction = tools.panel.position.clone().sub(origin).normalize();
+      if (!tools.pick(origin,direction,new t.T.Group())) throw new Error('Controller panel was not ray-targetable');
+      const tab = tools.layout.find(b=>b.id==='tab:move');
+      tools.activate({uv:new t.T.Vector2((tab.x+tab.w/2)/960,1-(tab.y+tab.h/2)/640)});
+      tools.update([left],true); renderer.render(scene,camera);
+      return {tab:tools.tab, hasGrid:tools.layout.some(b=>b.id==='grid'), stopMenu:window.tour.stopMenu};
+    })()`);
+    expect(toolbar.tab).toBe('move'); expect(toolbar.hasGrid).toBe(true);
     await viewer.screenshot({ path: testInfo.outputPath('tabletop.png') });
     expect(errors).toEqual([]);
+    await viewer.addInitScript(`Object.defineProperty(navigator,'xr',{configurable:true,value:{
+      isSessionSupported:async(mode)=>mode==='immersive-ar',
+      requestSession:async(mode)=>{window.__requestedXRMode=mode;throw new Error('Synthetic headset request intercepted');}
+    }});`);
+    await viewer.reload();
+    await expect(viewer.locator('#go')).toHaveText('Enter mixed reality');
+    await viewer.locator('#go').click();
+    expect(await viewer.evaluate('window.__requestedXRMode')).toBe('immersive-ar');
+    await expect(viewer.locator('#msg')).toContainText('Synthetic headset request intercepted');
+    missingModel = true; await viewer.reload();
+    await expect(viewer.locator('#go')).toHaveText('Could not load scene');
+    await expect(viewer.locator('#go')).toBeDisabled();
+    missingModel = false;
+    malformedScene = true; await viewer.reload();
+    await expect(viewer.locator('#go')).toBeDisabled();
+    await expect(viewer.locator('#msg')).toContainText('Could not open the shared scene');
+    await expect(viewer.locator('#switch-start button')).toHaveCount(0);
   } finally { await viewer.close(); server.close(); }
 });

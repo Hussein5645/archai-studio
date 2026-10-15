@@ -122,6 +122,35 @@ Deploy from `workers/vr-share`: `npx wrangler deploy`.
 
 ## Tabletop sessions and cloud versions
 
+### Passthrough, controller tools and precision (2026-10-15 viewer update)
+
+On headsets that report immersive AR support, **Enter mixed reality** opens shared 3D tours in
+passthrough: the real room surrounds the opaque tabletop model. Headsets without AR support
+continue using immersive VR. Entering at 1:1 fills the view with the scene; returning to the
+table restores passthrough. Passthrough is supplied by the headset browser; the viewer does not read camera pixels.
+
+Editing controls are on a panel above the left controller (right if only that controller is
+tracked); point with the opposite controller and pull the trigger. **B / Y** folds or opens the
+tools. The original gaze-down stop menu and the in-model stop positions stay in place.
+
+- **Model:** move, scale, 15° table rotation, height steps, lock/unlock, and raw element selection.
+- **Move:** Free / X / Y / Z / XZ constraints; snap off, 1 mm, 10 mm, 50 mm or 100 mm;
+  axis nudges; 15° element rotation; restore the selected element. The default grid is 50 mm.
+  Snapping applies increments from the gesture's starting placement. Two-grip rotation snaps to
+  15° when snapping is enabled. Releasing one grip preserves the current table placement.
+- Selected elements show width × height × depth and ΔX / ΔY / ΔZ in actual model metres,
+  both beside the element and on the controller panel. Moving a table uses room metres.
+- **Measure → Start measuring:** trigger two surface points to place a distance label and line.
+  Nearby triangle vertices snap within the chosen tolerance. Distances stay in original model
+  metres at every tabletop scale and at 1:1. Up to 20 rulers remain for the browser session;
+  **Clear measures** removes them. Rulers are not part of saved cloud versions.
+- **Versions:** the original and the existing three save/load/replace slots.
+
+The desktop toolbar has the same four tabs. Failed or malformed shared links show an error
+instead of loading an unrelated sample scene. Changes are hosted in SJP-VR, so existing shared
+links receive the viewer update without a new desktop installer. Physical headset validation
+remains necessary for passthrough appearance and controller ergonomics.
+
 Shared raw and baked 3D links open as a movable tabletop model. One controller grip pans the
 model; two grips scale and rotate it around the hands. Aim at a floor and pull the trigger to
 enter at 1:1 scale; **Tabletop** returns to the last table placement. Desktop users drag to move
