@@ -23,7 +23,6 @@ import { useTouchMode } from '@/ui/touch';
 import { useParametricAssets } from './useParametricAssets';
 import styles from './Workboard.module.css';
 import { projectLoading } from '@/persistence/projectLoading';
-import { bytesToBase64 } from '@/persistence/base64';
 
 function gridStyle(visible: boolean, gridSize: number, viewport: { x: number; y: number; zoom: number }): CSSProperties {
   if (!visible) return {};
@@ -106,16 +105,7 @@ export function Workboard({ onContextMenu }: { onContextMenu: (position: Vec2) =
       data-panning={overlay.panning || undefined}
       data-cursor={overlay.cursor ?? undefined}
       {...handlers}
-      onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } }}
-      onDrop={(event) => {
-        const image = Array.from(event.dataTransfer.files).find(file => file.type.startsWith('image/'));
-        if (!image || projectLoading.getSnapshot()) return;
-        event.preventDefault();
-        const rect = event.currentTarget.getBoundingClientRect();
-        const x = (event.clientX - rect.left - viewport.x) / viewport.zoom;
-        const y = (event.clientY - rect.top - viewport.y) / viewport.zoom;
-        void image.arrayBuffer().then(data => { if (store.getState().doc.id === documentId) return dispatch('paste-image', {data:bytesToBase64(new Uint8Array(data)), mime:image.type, name:image.name, x, y}); });
-      }}
+
     >
       <BoardLayers elements={elements} transform={transform} viewStyle={viewStyle} hidePortals={view3dOpen} sheetId={sheetId} />
       <Overlay state={overlay} />
