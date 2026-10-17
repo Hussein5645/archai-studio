@@ -53,6 +53,7 @@ const AR: Record<string, string> = {
   Width: 'العرض', Height: 'الارتفاع', Name: 'الاسم', Title: 'العنوان', Orientation: 'الاتجاه', Landscape: 'أفقي', Portrait: 'عمودي', Custom: 'مخصص',
   'Export PDF': 'تصدير PDF', 'Scale 1:': 'المقياس 1:', Configuration: 'الإعدادات', Configure: 'تهيئة',
   'Open section full screen': 'فتح المقطع بملء الشاشة', 'Open 3D workspace': 'فتح مساحة العمل ثلاثية الأبعاد', 'Flip direction': 'عكس الاتجاه',
+  'Edit board': 'تحرير اللوحة', 'Hide board editor': 'إخفاء محرر اللوحة',
   'Lock view as image': 'تثبيت العرض كصورة', 'Flip section direction': 'عكس اتجاه المقطع', 'Open full screen': 'فتح بملء الشاشة',
   touch: 'لمس', mouse: 'فأرة',
   'New file': 'ملف جديد', 'Open file': 'فتح ملف', 'e.g. Ground floor plan': 'مثال: مسقط الطابق الأرضي', Untitled: 'بلا عنوان',

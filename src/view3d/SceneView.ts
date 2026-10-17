@@ -1189,7 +1189,7 @@ export class SceneView {
 
   private draw(): void {
     this.updateClipping();
-    if (this.analysis?.active) this.analysis.render(this.camera);
+    if (this.analysis?.active) this.analysis.render(this.camera, this.viewStyle);
     else this.renderer.render(this.scene, this.camera);
   }
 

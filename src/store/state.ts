@@ -92,7 +92,7 @@ export interface UiState {
   /** Create project with template prompt dialog state. */
   templateCreatePrompt: boolean;
   /** Full-screen 3D workspace, opened from a 3D view portal on the board. */
-  view3d: { open: boolean; portalId: string | null };
+  view3d: { open: boolean; portalId: string | null; editingBoard?: boolean };
   /** Element graphics dialog; `type` is the graphic type it opens on. */
   graphicsDialog: { open: boolean; type: string | null; elementId: string | null };
   parametricEditor: { open: boolean; elementId: string | null };

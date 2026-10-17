@@ -54,6 +54,7 @@ export function Workboard({ onContextMenu }: { onContextMenu: (position: Vec2) =
   const elements = useAppState((s) => boardDoc(s).elements);
   const documentId = useAppState((s) => s.doc.id);
   useEffect(() => { projectLoading.boardReady(documentId); }, [documentId, elements]);
+  const editingView = useAppState((s) => Boolean(s.ui.view3d.open && s.ui.view3d.editingBoard));
   const view3dOpen = useAppState((s) => s.ui.view3d.open);
   const sheetId = useAppState((s) => s.ui.sheet?.paperId ?? null);
   const groupId = useAppState((s) => s.ui.groupEditId);
@@ -94,6 +95,7 @@ export function Workboard({ onContextMenu }: { onContextMenu: (position: Vec2) =
     <div
       ref={containerRef}
       className={styles.board}
+      data-editing-view={editingView || undefined}
       style={style}
       tabIndex={0}
       role="application"
@@ -111,10 +113,10 @@ export function Workboard({ onContextMenu }: { onContextMenu: (position: Vec2) =
       <Overlay state={overlay} />
       <BridgeOverlay />
       <PeersOverlay />
-      <ToolPrompt onDone={drawingActions.doneSelecting} />
+      {(!view3dOpen || editingView) && <ToolPrompt onDone={drawingActions.doneSelecting} />}
       <ProfileEditBar />
       {/* The full-screen 3D workspace covers the board: its own bar (and close button) wins. */}
-      {isTouch && !view3dOpen && (
+      {isTouch && (!view3dOpen || editingView) && (
         <TouchActionBar
           drawing={overlay.drawing !== null}
           onDone={drawingActions.finish}

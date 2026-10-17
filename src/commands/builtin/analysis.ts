@@ -41,18 +41,19 @@ export const createAnalysisOrigin = defineMutation({
   group: 'create',
   palette: false,
   history: 'record',
-  input: z.object({ kind: z.enum(['sun', 'wind', 'noise']), x: z.number().finite().optional(), y: z.number().finite().optional() }),
+  input: z.object({ kind: z.enum(['sun', 'wind', 'noise']), x: z.number().finite().optional(), y: z.number().finite().optional(), width: z.number().positive().optional(), height: z.number().positive().optional() }),
   run: (ctx, input) => {
-    const width = 8000;
-    const height = 5000;
-    const at = input.x !== undefined && input.y !== undefined ? { x: input.x - width / 2, y: input.y - height / 2 } : viewportCentre(ctx, width, height);
+    const width = input.width ?? 8000;
+    const height = input.height ?? 5000;
+    const drawn = input.width !== undefined && input.height !== undefined;
+    const at = input.x !== undefined && input.y !== undefined ? { x: input.x - (drawn ? 0 : width / 2), y: input.y - (drawn ? 0 : height / 2) } : viewportCentre(ctx, width, height);
     const location = projectLocation(ctx.doc as never);
     const analysis = { ...defaultAnalysis(input.kind), locationId: location?.id ?? null };
     return createRect.run(ctx, {
       ...at,
       width,
       height,
-      radius: 300,
+      radius: Math.min(300, width / 2, height / 2),
       rotation: 0,
       style: { fill: '#ffffff', stroke: KIND_STYLE[input.kind].stroke, strokeWidth: 30, opacity: 1 },
       name: KIND_STYLE[input.kind].name,

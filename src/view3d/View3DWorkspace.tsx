@@ -44,6 +44,7 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
   const [loading, setLoading] = useState<SceneLoading>({ detail: 'Preparing 3D view' });
   const view = useSceneView(containerRef, portalId, undefined, setLoading);
   const doc = useAppState((s) => s.doc);
+  const editingBoard = useAppState((s) => Boolean(s.ui.view3d.editingBoard));
   const portal = portalId ? doc.elements[portalId] : null;
   const pinned = cameraNavigationLocked(doc, portalId);
   const cut = sectionOf(doc, portalId);
@@ -111,6 +112,8 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
       if (adjusting) materialUi.set({ adjusting: null });
       else if (painting || picking) materialUi.set({ painting: false, picking: false });
       else if (placing) setPlacing(false);
+      else if (editingBoard && store.getState().ui.tool !== 'select') void dispatch('set-tool', { tool: 'select' });
+      else if (editingBoard) void dispatch('toggle-view-board');
       else if (vr && vr.kind !== 'busy') setVr(null);
       else onClose();
     };
@@ -141,7 +144,7 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
   };
 
   return (
-    <div className={styles.workspace} data-testid="view3d-workspace" aria-busy={loading !== null}>
+    <div className={styles.workspace} data-editing-board={editingBoard || undefined} data-testid="view3d-workspace" aria-busy={loading !== null}>
       <div
         ref={containerRef}
         className={styles.workspaceCanvas}
@@ -179,6 +182,7 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
       {!isSection && (!loading || loading.updating) && <SceneMaterialTools view={view.current} onTogglePaint={togglePaint} />}
       <div ref={toolbarRef} className={styles.workspaceBar} data-testid="view3d-toolbar">
         <strong>{t(cut?.plan ? 'Plan (Level)' : isSection ? 'Section' : isCamera ? 'Camera (Perspective)' : '3D (Orthographic)')}</strong>
+        <button type="button" data-active={editingBoard} onClick={() => void dispatch('toggle-view-board')}>{t(editingBoard ? 'Hide board editor' : 'Edit board')}</button>
         {pinned && <span className={styles.hint}>{t('Camera pinned')}</span>}
         <button type="button" disabled={pinned || (loading !== null && !loading.updating)} onClick={() => view.current?.frameAll()}>{t('Frame all')}</button>
         {!isSection && (!loading || loading.updating) && (

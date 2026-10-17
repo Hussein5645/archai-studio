@@ -46,6 +46,7 @@ export function App() {
   const loading = useSyncExternalStore(projectLoading.subscribe, projectLoading.getSnapshot, projectLoading.getSnapshot);
   const doc = useAppState((s) => s.doc);
   const sheetOpen = useAppState((s) => s.ui.sheet !== null);
+  const editingViewBoard = useAppState((s) => Boolean(s.ui.view3d.open && s.ui.view3d.editingBoard));
   const view3dOpen = useAppState((s) => s.ui.view3d.open);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   useGlobalShortcuts();
@@ -161,12 +162,12 @@ export function App() {
   return (
     <><div className={styles.app} inert={loading !== null} aria-busy={loading !== null}>
       <TopBar />
-      <main className={styles.main}>
+      <main className={styles.main} data-view-board={editingViewBoard || undefined}>
         <Workboard onContextMenu={openContextMenu} />
         <View3DWorkspace />
         {sheetOpen ? <SheetPanel /> : <LeftPanel />}
         <Inspector />
-        {!view3dOpen && (sheetOpen ? <SheetToolbar /> : <Toolbar />)}
+        {(!view3dOpen || editingViewBoard) && (sheetOpen ? <SheetToolbar /> : <Toolbar />)}
         {sheetOpen && <SheetBar />}
         {!view3dOpen && <StatusBar />}
         <GroupEditBar />

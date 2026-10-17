@@ -329,3 +329,5 @@
   width: 34px;
   height: 34px;
 }
+
+:global(main[data-view-board='true']) .toolbarContainer { left: 27.5%; max-width: calc(55% - 32px); }

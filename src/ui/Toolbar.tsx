@@ -271,9 +271,9 @@ function ToolHint() {
   else if (tool === 'paper') text = 'Click for an A4 sheet at 1:50 · drag for a custom sheet · select it and export as PDF from the Inspector';
   else if (tool === 'ai-portal') text = 'Drag to draw an AI portal · click for a default size';
   else if (tool === 'parametric') text = 'Drag a rectangle for the graph origin; move or resize it on the board, and double-click to open its graph';
-  else if (tool === 'analysis-sun') text = 'Click to place a sun analysis origin · set date, time and north in the Inspector, then link 3D views and Run';
-  else if (tool === 'analysis-wind') text = 'Click to place a wind analysis origin · fetch real wind data or type speed and direction, link 3D views and Run';
-  else if (tool === 'analysis-noise') text = 'Click to place a noise analysis origin · then add emitters, link 3D views and Run';
+  else if (tool === 'analysis-sun') text = 'Draw a rectangle for a sun analysis origin · set date, time and north in the Inspector, then link 3D views and Run';
+  else if (tool === 'analysis-wind') text = 'Draw a rectangle for a wind analysis origin · fetch real wind data or type speed and direction, link 3D views and Run';
+  else if (tool === 'analysis-noise') text = 'Draw a rectangle for a noise analysis origin · then add emitters, link 3D views and Run';
   else if (tool === 'analysis-location') text = 'Drag to draw the project location map · one per project · search an address in the Inspector';
   else if (tool === 'noise-emitter') text = 'Click to add noise emitters to the selected noise origin · Esc when done';
   else if (tool.startsWith('diagram:')) text = diagramToolHint(tool);

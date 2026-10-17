@@ -170,6 +170,23 @@ export const openView3d = defineMutation({
   },
 });
 
+export const toggleViewBoard = defineMutation({
+  id: 'toggle-view-board',
+  label: 'Edit board inside view',
+  group: 'view',
+  history: 'none',
+  input: z.void(),
+  when: (ctx) => ctx.ui.view3d.open,
+  run: (ctx) => {
+    ctx.ui.view3d.editingBoard = !ctx.ui.view3d.editingBoard;
+    if (!ctx.ui.view3d.editingBoard) {
+      ctx.ui.tool = 'select';
+      ctx.ui.toolPrompt = null;
+      ctx.ui.editingTextId = null;
+    }
+  },
+});
+
 export const closeView3d = defineMutation({
   id: 'close-view3d',
   label: 'Close 3D workspace',
@@ -244,4 +261,4 @@ export const setInstanceElevation = defineMutation({
   },
 });
 
-export const view3dCommands = [createView3d, setView3dCamera, openView3d, closeView3d, setSolid, setInstanceElevation, setView3dSettings, setElementLod];
+export const view3dCommands = [toggleViewBoard, createView3d, setView3dCamera, openView3d, closeView3d, setSolid, setInstanceElevation, setView3dSettings, setElementLod];

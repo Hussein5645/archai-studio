@@ -218,11 +218,16 @@ export function Inspector() {
   const { t } = useI18n();
   const open = useAppState((s) => s.ui.panels.inspector);
   const selection = useAppStateShallow((s) => s.ui.selection);
+  const inView = useAppState((s) => s.ui.view3d.open);
   const openView = useAppState((s) => (s.ui.view3d.open ? s.ui.view3d.portalId : null));
+  const [viewTab, setViewTab] = useState<'view' | 'properties' | 'board'>('properties');
   if (!open) return null;
   return (
     <aside className={`${styles.panel} u-panel`} aria-label={t('Inspector')} data-ui-scale data-testid="inspector">
-      <div className={styles.scroll}>{openView ? <OpenViewInspector portalId={openView} /> : selection.length === 0 ? <WorkspaceInspector /> : <SelectionInspector ids={selection} />}</div>
+      <div className={styles.scroll}>
+        {inView && <div className={styles.section}><Segmented value={viewTab} onChange={setViewTab} ariaLabel="Inspector tabs" options={[{ value: 'view', label: 'View' }, { value: 'properties', label: 'Properties' }, { value: 'board', label: 'Board' }]} /></div>}
+        {openView && viewTab === 'view' ? <OpenViewInspector portalId={openView} /> : inView && viewTab === 'board' ? <WorkspaceInspector /> : selection.length === 0 ? <WorkspaceInspector /> : <SelectionInspector ids={selection} />}
+      </div>
     </aside>
   );
 }

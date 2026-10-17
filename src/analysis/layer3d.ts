@@ -6,6 +6,7 @@
  * noise occlusion and wind obstacles come from a top-down height map of the model.
  */
 import * as THREE from 'three';
+import type { ViewStyle } from '@/view3d/SceneView';
 import type { AnalysisSpec } from './model';
 import { WindSolver } from './windSolver';
 
@@ -69,6 +70,8 @@ varying vec3 vWorld;
 varying vec3 vNormal;
 uniform vec3 uLight;
 uniform float uGround;
+uniform float uShading;
+uniform float uOpacity;
 ${RAMP_GLSL}
 
 #if defined(SUN)
@@ -172,7 +175,7 @@ void main() {
   #if defined(OUTPUT_VALUE)
     gl_FragColor = vec4(value, vWorld.y, 1.0, 1.0);
   #else
-    gl_FragColor = vec4(colour * shade, 1.0);
+    gl_FragColor = vec4(colour * mix(1.0, shade, uShading), uOpacity);
   #endif
 }`;
 
@@ -294,6 +297,9 @@ export class AnalysisLayer {
       // Share the live uniforms (atlas, emitters, maps) rather than copies.
       for (const [name, uniform] of Object.entries(base.uniforms)) material.uniforms[name] = uniform;
       material.polygonOffset = false;
+      material.wireframe = false;
+      material.transparent = false;
+      material.depthWrite = true;
       material.needsUpdate = true;
       return material;
     };
@@ -369,7 +375,7 @@ export class AnalysisLayer {
     this.dirty = true;
   }
 
-  render(camera: THREE.Camera): void {
+  render(camera: THREE.Camera, style: ViewStyle = 'shaded'): void {
     const { renderer, scene } = this.host;
     if (!this.spec) {
       renderer.render(scene, camera);
@@ -387,7 +393,14 @@ export class AnalysisLayer {
     }
     renderer.render(scene, camera);
     if (!this.contentMaterial) return;
-    // Second pass: the building again, in analysis colours.
+    // Keep the portal's graphic style while presenting the same computed values.
+    this.contentMaterial.polygonOffsetFactor = style === 'hidden-line' ? 1 : -1;
+    this.contentMaterial.polygonOffsetUnits = style === 'hidden-line' ? 1 : -1;
+    this.contentMaterial.wireframe = style === 'wireframe';
+    this.contentMaterial.transparent = style === 'realistic';
+    this.contentMaterial.depthWrite = style !== 'realistic';
+    this.contentMaterial.uniforms['uShading']!.value = style === 'consistent' || style === 'hidden-line' || style === 'wireframe' ? 0 : 1;
+    this.contentMaterial.uniforms['uOpacity']!.value = style === 'realistic' ? 0.6 : 1;
     const hidden = this.hideFor([...this.host.helpers(), this.extras, ...this.lines]);
     const background = scene.background;
     const autoClear = renderer.autoClear;
@@ -395,10 +408,13 @@ export class AnalysisLayer {
     scene.overrideMaterial = this.contentMaterial;
     renderer.autoClear = false;
     renderer.render(scene, camera);
-    renderer.autoClear = autoClear;
     scene.overrideMaterial = null;
-    scene.background = background;
     this.restore(hidden);
+    if (style === 'hidden-line' || style === 'wireframe') {
+      for (const line of this.lines) if (line.visible && line.parent?.visible) renderer.render(line, camera);
+    }
+    renderer.autoClear = autoClear;
+    scene.background = background;
   }
 
   dispose(): void {
@@ -483,6 +499,8 @@ export class AnalysisLayer {
       const uniforms: Record<string, THREE.IUniform> = {
         uLight: { value: light },
         uGround: { value: 0 },
+        uShading: { value: 1 },
+        uOpacity: { value: 1 },
         uAtlas: { value: null },
         uLightMatrices: { value: Array.from({ length: MAX_SUN }, () => new THREE.Matrix4()) },
         uSunDirs: { value: Array.from({ length: MAX_SUN }, () => new THREE.Vector3(0, 1, 0)) },

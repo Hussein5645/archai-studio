@@ -1,5 +1,7 @@
 # ArchAI 0.2.2.31
 
+- Draw sun, wind and noise analysis origins as rectangles with mouse, pen or touch. Analysis display follows each view’s style: hidden line, wireframe, colors, shaded or realistic.
+- Access View, Properties and Board Inspector tabs inside an open view. Use Edit board to add, draw and modify project content beside the live view, with shared selection and undo.
 - Copy images from the board into other apps, paste screenshots/images onto the board, drag image files onto it, and save the original image through the context menu.
 - Normal Copy keeps editable ArchAI element data alongside the image representation. Browser, Windows, Android and iOS use their respective clipboard APIs; tablet image saving uses the native file picker.
 - Show the app version in the board header and Home screen.

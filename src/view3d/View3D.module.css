@@ -41,3 +41,6 @@
 .vrActions button:hover { filter: brightness(0.97); }
 
 .sceneUpdating { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; padding: 10px 16px; border-radius: 10px; background: var(--panel, white); box-shadow: 0 2px 14px #0002; z-index: 5; pointer-events: none; font-size: 12px; }
+
+.workspace[data-editing-board='true'] { left: 55%; }
+.workspace[data-editing-board='true'] .workspaceBar { left: 12px; right: 12px; max-width: none; transform: none; justify-content: flex-start; }

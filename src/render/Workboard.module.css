@@ -170,3 +170,6 @@
   pointer-events: none;
 }
 .board[data-group-edit] { box-shadow: inset 0 0 0 2px var(--accent, #2f6fed); }
+
+.board[data-editing-view='true'] { right: 45%; border-right: 1px solid var(--border-strong); }
+.board[data-tool^='analysis-'] { cursor: crosshair; }

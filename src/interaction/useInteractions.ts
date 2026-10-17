@@ -79,7 +79,7 @@ const TOUCH_TAP_SLOP_PX = 10;
 const PEN_TAP_SLOP_PX = 6;
 
 /** Tools that draw by dragging a rectangle; every other drawing tool places by tapping. */
-const RECT_DRAG_TOOLS: ReadonlySet<string> = new Set(['rect', 'view3d', 'paper', 'ai-portal', 'arch:level', 'parametric', 'diagram:zone']);
+const RECT_DRAG_TOOLS: ReadonlySet<string> = new Set(['rect', 'view3d', 'paper', 'ai-portal', 'arch:level', 'parametric', 'diagram:zone', 'analysis-location', 'analysis-sun', 'analysis-wind', 'analysis-noise']);
 
 /** Diagram tools drawn click by click (see src/diagrams); the rest finish after two points. */
 const DIAGRAM_LINE_TOOLS: ReadonlySet<string> = new Set(['diagram:arrow', 'diagram:connector', 'diagram:callout', 'diagram:dimension', 'diagram:adjacency']);
@@ -1030,13 +1030,6 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
         return;
       }
 
-      if (tool === 'analysis-sun' || tool === 'analysis-wind' || tool === 'analysis-noise') {
-        const p = maybeSnap(world, mods.alt);
-        dispatch('create-analysis-origin', { kind: tool.slice('analysis-'.length), x: p.x, y: p.y });
-        dispatch('set-tool', { tool: 'select' });
-        return;
-      }
-
       if (tool === 'point') {
         const p = maybeSnap(world, mods.alt);
         dispatch('create-point', { x: p.x, y: p.y });
@@ -1057,7 +1050,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
         return;
       }
 
-      if (tool === 'rect' || tool === 'view3d' || tool === 'paper' || tool === 'ai-portal' || tool === 'arch:level' || tool === 'parametric' || tool === 'analysis-location' || tool === 'diagram:zone') {
+      if (tool === 'rect' || tool === 'view3d' || tool === 'paper' || tool === 'ai-portal' || tool === 'arch:level' || tool === 'parametric' || tool === 'analysis-location' || tool === 'analysis-sun' || tool === 'analysis-wind' || tool === 'analysis-noise' || tool === 'diagram:zone') {
         container.setPointerCapture(e.pointerId);
         session.current = { type: 'draw-rect', startWorld: drafting.snap(world, pointerInfo(mods)).point };
         return;
@@ -1722,6 +1715,15 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
           if (store.getState().ui.tool === 'view3d') {
             const rect = dragged > DRAG_THRESHOLD_PX ? rectFromPoints(s.startWorld, end) : { ...s.startWorld, width: 6000, height: 4000 };
             if (rect.width >= 100 && rect.height >= 100) dispatch('create-view3d', rect);
+            dispatch('set-tool', { tool: 'select' });
+            return;
+          }
+          const analysisTool = store.getState().ui.tool;
+          if (analysisTool === 'analysis-sun' || analysisTool === 'analysis-wind' || analysisTool === 'analysis-noise') {
+            if (dragged > DRAG_THRESHOLD_PX) {
+              const rect = rectFromPoints(s.startWorld, end);
+              if (rect.width >= 1 && rect.height >= 1) dispatch('create-analysis-origin', { kind: analysisTool.slice('analysis-'.length), ...rect });
+            }
             dispatch('set-tool', { tool: 'select' });
             return;
           }
