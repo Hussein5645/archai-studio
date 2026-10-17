@@ -213,4 +213,18 @@ async function boot(): Promise<void> {
   );
 }
 
+// Load independently of project startup, and only where the analytics endpoints exist.
+if (import.meta.env.PROD && __VERCEL_ANALYTICS_ENABLED__) {
+  void import('@vercel/analytics').then(({ inject }) => inject({
+    mode: 'production',
+    beforeSend: (event) => {
+      const url = new URL(event.url);
+      // Invitations and asset links can contain private tokens in query parameters.
+      url.search = '';
+      url.hash = '';
+      return { ...event, url: url.toString() };
+    },
+  })).catch((error: unknown) => console.warn('Web Analytics could not load', error));
+}
+
 void boot();

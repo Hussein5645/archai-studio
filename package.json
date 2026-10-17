@@ -39,6 +39,7 @@
   "dependencies": {
     "@tarikjabiri/dxf": "^2.9.0",
     "@types/three": "^0.186.0",
+    "@vercel/analytics": "^2.0.1",
     "fflate": "^0.8.3",
     "fractional-indexing": "^4.0.0",
     "immer": "^11.1.18",

@@ -7,7 +7,10 @@ import { defineConfig } from 'vitest/config';
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string; build?: { buildVersion?: string } };
 
 export default defineConfig({
-  define: { __APP_VERSION__: JSON.stringify(pkg.build?.buildVersion ?? pkg.version) },
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.build?.buildVersion ?? pkg.version),
+    __VERCEL_ANALYTICS_ENABLED__: process.env['VERCEL'] === '1',
+  },
   plugins: [react()],
   // Relative base so the production bundle also loads from file:// inside Electron.
   base: './',

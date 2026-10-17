@@ -4,7 +4,7 @@
   "installCommand": "npm ci --ignore-scripts",
   "buildCommand": "npm run build:web",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
+  "rewrites": [{ "source": "/((?!api/|_vercel/).*)", "destination": "/index.html" }],
   "headers": [
     {
       "source": "/assets/(.*)",
