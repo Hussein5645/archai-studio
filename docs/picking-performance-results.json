@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-17",
+  "fixture": "Filled root rectangles on a grid; half hits, half empty-space misses; median of five 500-query batches.",
+  "rows": [
+    {
+      "count": 1000,
+      "coldMs": 10.714600000000019,
+      "linearMsPerPick": 0.14777440000000003,
+      "indexedMsPerPick": 0.0024273999999998067
+    },
+    {
+      "count": 5000,
+      "coldMs": 41.34349999999995,
+      "linearMsPerPick": 0.6181098000000002,
+      "indexedMsPerPick": 0.0023134000000000015
+    },
+    {
+      "count": 10000,
+      "coldMs": 46.096500000000106,
+      "linearMsPerPick": 1.0392268000000005,
+      "indexedMsPerPick": 0.002120999999999185
+    }
+  ]
+}

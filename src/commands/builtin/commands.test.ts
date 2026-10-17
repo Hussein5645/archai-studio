@@ -524,6 +524,17 @@ describe('assets', () => {
 });
 
 describe('document commands', () => {
+  it('clears views and editors belonging to the previous project when loading', () => {
+    const app = createTestApp();
+    const doc = app.store.getState().doc;
+    app.store.setState((state) => ({ ui: { ...state.ui,
+      sheet: { paperId: 'old-paper', returnViewport: state.ui.viewport },
+      view3d: { open: true, portalId: 'old-view' },
+      parametricEditor: { open: true, elementId: 'old-component' },
+    } }));
+    run(app, 'load-document', { document: doc });
+    expect(app.store.getState().ui).toMatchObject({ sheet: null, view3d: { open: false, portalId: null }, parametricEditor: { open: false, elementId: null } });
+  });
   it('opens a document from the platform and resets history', async () => {
     const app = createTestApp();
     run(app, 'create-rect', { x: 0, y: 0 });

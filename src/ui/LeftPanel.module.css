@@ -1,6 +1,6 @@
 .panel {
   position: absolute;
-  top: var(--panel-gap);
+  top: var(--scene-toolbar-offset, var(--panel-gap));
   left: var(--panel-gap);
   bottom: 72px;
   width: var(--left-w);

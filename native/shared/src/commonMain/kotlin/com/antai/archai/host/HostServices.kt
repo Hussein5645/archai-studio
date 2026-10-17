@@ -32,9 +32,12 @@ interface HostFiles {
     /** Writes to a handle from an earlier open/save; asks again (save as) if that is no longer possible. */
     suspend fun saveDocumentTo(path: String, text: String): String?
     suspend fun openImage(): PickedImage?
+    suspend fun saveBinary(data: String, suggestedName: String, mime: String): String? = throw UnsupportedOperationException("Binary saving unavailable")
 }
 
 interface HostClipboard {
     suspend fun readText(): String?
     suspend fun writeText(text: String)
+    suspend fun readImage(): PickedImage? = null
+    suspend fun writeImage(data: String, text: String?) { throw UnsupportedOperationException("Image clipboard unavailable") }
 }

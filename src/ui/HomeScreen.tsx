@@ -80,13 +80,17 @@ export function HomeScreen() {
   }, [platform]);
 
   const handleOpenRecent = async (entry: RecentEntry) => {
-    if (entry.cloud && signedIn) {
-      await cloud.open(entry.id);
-      return;
-    }
-    const ok = await persistence.openStored(entry.id);
-    if (!ok) {
-      toasts.push({ kind: 'error', message: t(`Could not open project "${entry.name}"`) });
+    try {
+      if (entry.cloud && signedIn) {
+        await cloud.open(entry.id);
+        return;
+      }
+      const ok = await persistence.openStored(entry.id);
+      if (!ok) {
+        toasts.push({ kind: 'error', message: t(`Could not open project "${entry.name}"`) });
+      }
+    } catch (error) {
+      toasts.push({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
     }
   };
 
@@ -194,6 +198,7 @@ export function HomeScreen() {
         <div className={styles.brand}>
           <img className={styles.logoMark} src={BRAND_MARK} alt="" aria-hidden="true" />
           <span className={styles.brandName}>ArchAI</span>
+          <small data-testid="home-app-version">v{__APP_VERSION__}</small>
         </div>
 
         <div className={styles.headerRight}>
@@ -371,7 +376,7 @@ export function HomeScreen() {
                   </div>
 
                   <div className={styles.cardActions}>
-                    <TextButton type="button" onClick={() => void handleOpenRecent(item)}>
+                    <TextButton type="button" onClick={(e) => { e.stopPropagation(); void handleOpenRecent(item); }}>
                       {t('Open')}
                     </TextButton>
 

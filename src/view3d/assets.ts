@@ -28,7 +28,9 @@ class TextureStore {
     let changed = false;
     const jobs: Promise<void>[] = [];
     for (const blob of Object.values(doc.blobs)) {
-      if (!blob.mime.startsWith('image/') || this.textures.has(blob.id) || this.pending.has(blob.id) || this.failed.has(blob.id)) continue;
+      if (!blob.mime.startsWith('image/') || this.textures.has(blob.id) || this.failed.has(blob.id)) continue;
+      const pending = this.pending.get(blob.id);
+      if (pending) { jobs.push(pending.then(() => { changed = true; })); continue; }
       const job = this.loader
         .loadAsync(dataUrl(blob.mime, blob.data))
         .then((texture) => {
@@ -65,7 +67,9 @@ class ModelStore {
     const jobs: Promise<void>[] = [];
     for (const definition of Object.values(doc.definitions)) {
       if (definition.kind !== 'image' || !definition.catalog) continue;
-      if (this.models.has(definition.id) || this.pending.has(definition.id) || this.failed.has(definition.id)) continue;
+      if (this.models.has(definition.id) || this.failed.has(definition.id)) continue;
+      const pending = this.pending.get(definition.id);
+      if (pending) { jobs.push(pending.then(() => { changed = true; })); continue; }
       const job = this.load(definition)
         .then((loaded) => {
           if (loaded?.high) {
@@ -112,7 +116,7 @@ class ModelStore {
       return this.catalog?.localPackageBytes ? this.catalog.localPackageBytes(id) : null;
     }
     if (!pkg.url) return null;
-    const response = await fetch(libraryUrl(pkg.url));
+    const response = await fetch(libraryUrl(pkg.url), { signal: AbortSignal.timeout(90_000) });
     if (!response.ok) return null;
     return new Uint8Array(await response.arrayBuffer());
   }
@@ -145,7 +149,7 @@ class ModelStore {
       }
       if (low) lowBytes = slice(low);
     } else if (catalog.modelUrl) {
-      const response = await fetch(libraryUrl(catalog.modelUrl));
+      const response = await fetch(libraryUrl(catalog.modelUrl), { signal: AbortSignal.timeout(90_000) });
       if (!response.ok) return null;
       bytes = await response.arrayBuffer();
       format = catalog.modelUrl.toLowerCase().endsWith('.fbx') ? 'fbx' : 'glb';

@@ -18,6 +18,8 @@ import { viewAnalysis } from '@/analysis/model';
 import { mountedViews, SceneView, type CameraState, type SectionCut, type ViewStyle } from './SceneView';
 import { materialUi } from '@/materials/uiStore';
 import { paintTarget } from '@/materials/paint';
+import { cameraNavigationLocked } from '@/document/viewCamera';
+import { paint } from '@/progress';
 
 export interface ResolvedSectionCut extends SectionCut {
   length: number;
@@ -99,15 +101,24 @@ function sameCamera(a: CameraState, b: CameraState): boolean {
   return a.position.every((v, i) => close(v, b.position[i]!)) && a.target.every((v, i) => close(v, b.target[i]!)) && (a.fov === undefined || b.fov === undefined || close(a.fov, b.fov));
 }
 
-export function useSceneView(containerRef: RefObject<HTMLElement | null>, portalId: string | null, onOpen?: () => void) {
+export type SceneLoading = { detail: string; error?: boolean; updating?: boolean } | null;
+
+export function useSceneView(containerRef: RefObject<HTMLElement | null>, portalId: string | null, onOpen?: () => void, onLoading?: (state: SceneLoading) => void) {
   const { store, executor, catalog, toasts } = useApp();
   const viewRef = useRef<SceneView | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    let stopped = false;
+    let cleanup = () => {};
+    onLoading?.({ detail: 'Preparing 3D view' });
+    void (async () => {
+    await paint();
+    if (stopped) return;
     modelStore.configure(catalog);
     let base: ArchaiDocument | null = null;
+    let initialising = true;
 
     const portal = portalId ? store.getState().doc.elements[portalId] : undefined;
     const view3dMeta = portal?.meta?.['view3d'] as { camera?: CameraState | null; cameraMode?: boolean; cameraId?: string } | undefined;
@@ -163,6 +174,7 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
         onCameraChange: (camera) => {
           if (portalId) void executor.dispatch('set-view3d-camera', { id: portalId, camera });
         },
+        onUpdate: (state) => { if (!stopped) onLoading?.(state ? { ...state, updating: true } : null); },
         onOpen,
         onEnterGroup: (id) => {
           const state = store.getState();
@@ -194,9 +206,9 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
     );
     viewRef.current = view;
     if (portalId) mountedViews.set(portalId, view);
-    view.setDocument(store.getState().doc);
     // Each portal remembers its own style and level of detail; the document's are the fallback.
     const applySettings = (doc: ArchaiDocument) => {
+      view.setNavigationLocked(cameraNavigationLocked(doc, portalId));
       const settings = viewSettingsOf(doc, portalId);
       view.setViewStyle(settings.style ?? (section ? 'hidden-line' : doc.workspace.viewStyle));
       view.setLod(settings.lod);
@@ -223,14 +235,14 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
       if (!doc || !visible) return;
       pending = null;
       view.setSection(sectionOf(doc, portalId));
-      view.setDocument(doc);
       applySettings(doc);
+      view.setDocument(doc);
       // A camera marker moved on the board: aim the live view at the new eye/aim point.
       const next = portalId ? (doc.elements[portalId]?.meta?.['view3d'] as { camera?: CameraState | null } | undefined)?.camera : null;
       if (next && !sameCamera(next, view.getCamera())) view.setCamera(next);
     };
     const schedule = () => {
-      if (!pending || !visible) return;
+      if (!pending || !visible || initialising) return;
       if (thumbnail) {
         clearTimeout(timer);
         timer = window.setTimeout(applyPending, THUMBNAIL_SETTLE_MS);
@@ -257,19 +269,35 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
       if (state.ui.selection !== previous.ui.selection) view.setSelection(state.ui.selection);
       if (state.ui.groupEditId !== previous.ui.groupEditId) view.setGroupScope(state.ui.groupEditId);
     });
-    return () => {
+    cleanup = () => {
       unsubscribe();
       observer?.disconnect();
       cancelAnimationFrame(frame);
       clearTimeout(timer);
       // Do not lose the last orbit/pan when the full-screen view closes before the
       // debounced camera callback fires; the board thumbnail must resume exactly here.
-      if (portalId) executor.dispatchSync('set-view3d-camera', { id: portalId, camera: view.getCamera() });
+      if (!initialising && portalId && store.getState().doc.elements[portalId] && !cameraNavigationLocked(store.getState().doc, portalId)) executor.dispatchSync('set-view3d-camera', { id: portalId, camera: view.getCamera() });
       if (portalId && mountedViews.get(portalId) === view) mountedViews.delete(portalId);
       view.dispose();
       viewRef.current = null;
     };
-  }, [catalog, containerRef, executor, onOpen, portalId, store, toasts]);
+    await view.initialise(store.getState().doc, (detail) => { if (!stopped) onLoading?.({ detail }); });
+    if (stopped) return;
+    initialising = false;
+    if (pending) applyPending();
+    view.setSelection(store.getState().ui.selection);
+    view.setGroupScope(store.getState().ui.groupEditId);
+    const material = materialUi.get();
+    view.setPainting(material.painting && !section);
+    view.setPicking(material.picking && !section);
+    view.setPaintScope(material.scope);
+    onLoading?.(null);
+    })().catch((error: unknown) => {
+      cleanup();
+      if (!stopped) onLoading?.({ detail: error instanceof Error ? error.message : 'Could not open 3D view', error: true });
+    });
+    return () => { stopped = true; cleanup(); };
+  }, [catalog, containerRef, executor, onOpen, onLoading, portalId, store, toasts]);
 
   return viewRef;
 }

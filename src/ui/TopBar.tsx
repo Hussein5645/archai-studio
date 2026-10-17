@@ -3,7 +3,7 @@ import { SettingsDialog } from './SettingsDialog';
 import { AccountButton, CloudSyncState } from './AccountButton';
 import { PeersBar } from './PeersBar';
 import { LiveBridgeChip } from '@/bridge/LiveBridgePanel';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useApp, useAppState, useAvailable, useDispatch } from '@/app/context';
 import { formatShortcut, IS_MAC } from '@/commands';
 import { modelingStorage, type SavedAsset } from '@/modeling/persistence';
@@ -46,7 +46,8 @@ function LinkedModelsMenu() {
   }, [docId]);
 
   useEffect(() => {
-    void refreshSaved();
+    const timer = window.setTimeout(() => void refreshSaved(), 0);
+    return () => window.clearTimeout(timer);
   }, [refreshSaved]);
 
   // Sync active sessions and auto-refresh on project sync channel events
@@ -89,7 +90,7 @@ function LinkedModelsMenu() {
   // Close menu on pointerdown outside
   useEffect(() => {
     if (!open) return;
-    void refreshSaved();
+    const timer = window.setTimeout(() => void refreshSaved(), 0);
     const channel = getProjectSyncChannel();
     channel?.postMessage({ type: 'REQUEST_MODELING_SESSIONS', projectId: docId });
 
@@ -99,7 +100,7 @@ function LinkedModelsMenu() {
       }
     };
     window.addEventListener('pointerdown', close, true);
-    return () => window.removeEventListener('pointerdown', close, true);
+    return () => { window.clearTimeout(timer); channel?.close(); window.removeEventListener('pointerdown', close, true); };
   }, [open, docId, refreshSaved]);
 
   // Merge savedAssets and activeSessions
@@ -292,7 +293,8 @@ function CommandIconButton({ command, label, children }: { command: string; labe
 }
 
 export function TopBar() {
-  const { platform } = useApp();
+  const { platform, persistence, toasts } = useApp();
+  const saveStatus = useSyncExternalStore((listener) => persistence.subscribe(listener), persistence.getSaveStatus, persistence.getSaveStatus);
   const { locale, setLocale, t } = useI18n();
   const { touchMode, setTouchMode, isTouch } = useTouchMode();
   const dispatch = useDispatch();
@@ -331,7 +333,17 @@ export function TopBar() {
   }
 
   const shortcut = (s: string) => formatShortcut(s, IS_MAC);
-  const stateText = t(filePath ? (dirty ? 'Unsaved changes' : 'Saved') : 'Autosaved locally');
+  const needsSave = saveStatus === 'unsaved' || saveStatus === 'error' || Boolean(filePath && dirty);
+  const stateText = t(saveStatus === 'saving' ? 'Saving…' : saveStatus === 'error' ? 'Save failed — retry' : needsSave ? 'Unsaved changes' : 'Saved');
+  const saveProject = async () => {
+    try {
+      if (filePath) {
+        const result = await dispatch('save-document');
+        if (!result.ok || !result.value) return;
+      }
+      await persistence.saveNow();
+    } catch (error) { toasts.push({ kind: 'error', message: error instanceof Error ? error.message : String(error) }); }
+  };
 
   return (
     <header className={styles.topbar} data-ui-scale>
@@ -340,6 +352,7 @@ export function TopBar() {
           <img className={styles.markLogo} src={BRAND_MARK} alt="ArchAI" draggable={false} />
           <ChevronDown size={10} />
         </button>
+        <span className={styles.version} data-testid="app-version">v{__APP_VERSION__}</span>
         {appMenuOpen && (
           <div className={styles.appMenu} role="menu">
             {platform.kind === 'electron' && <>
@@ -392,9 +405,9 @@ export function TopBar() {
         }}
         data-testid="document-name"
       />
-      <span className={styles.state} data-testid="save-state">
+      <button type="button" className={styles.state} data-testid="save-state" data-unsaved={needsSave || undefined} disabled={saveStatus === 'saving'} onClick={() => void saveProject()} title={t('Save project')}>
         {stateText}
-      </span>
+      </button>
       <CloudSyncState />
       <div className={styles.spacer} />
       <div className={styles.group}>

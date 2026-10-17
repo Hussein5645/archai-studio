@@ -21,6 +21,9 @@ object Channels {
     const val FILES_SAVE_DOCUMENT_AS = "archai:files:saveDocumentAs"
     const val FILES_SAVE_DOCUMENT_TO = "archai:files:saveDocumentTo"
     const val FILES_OPEN_IMAGE = "archai:files:openImage"
+    const val FILES_SAVE_BINARY = "archai:files:saveBinary"
+    const val CLIPBOARD_READ_IMAGE = "archai:clipboard:readImage"
+    const val CLIPBOARD_WRITE_IMAGE = "archai:clipboard:writeImage"
     const val STORAGE_GET = "archai:storage:get"
     const val STORAGE_SET = "archai:storage:set"
     const val STORAGE_DELETE = "archai:storage:delete"
@@ -89,6 +92,14 @@ class BridgeRouter(private val host: HostServices) {
             }
         } ?: JsonNull
         Channels.CLIPBOARD_READ_TEXT -> JsonPrimitive(host.clipboard.readText())
+        Channels.FILES_SAVE_BINARY -> pathResult(host.files.saveBinary(payload.string("data", min = 1, max = 64 * 1024 * 1024), payload.string("suggestedName", min = 1, max = 200), payload.string("mime", min = 1, max = 100)))
+        Channels.CLIPBOARD_READ_IMAGE -> host.clipboard.readImage()?.let {
+            buildJsonObject { put("name", it.name); put("mime", it.mime); put("data", it.base64) }
+        } ?: JsonNull
+        Channels.CLIPBOARD_WRITE_IMAGE -> {
+            host.clipboard.writeImage(payload.string("data", min = 1, max = 64 * 1024 * 1024), payload["text"]?.jsonPrimitive?.contentOrNull)
+            JsonNull
+        }
         Channels.CLIPBOARD_WRITE_TEXT -> {
             host.clipboard.writeText(payload.string("text"))
             JsonNull

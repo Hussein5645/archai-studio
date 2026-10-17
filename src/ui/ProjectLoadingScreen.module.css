@@ -1,0 +1,19 @@
+.screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: #f6f7f9;
+  color: #20232b;
+  cursor: progress;
+}
+.card { width: min(360px, 100%); text-align: center; }
+.card img { margin-bottom: 16px; }
+.card h1 { margin: 0 0 10px; font-size: 22px; font-weight: 600; }
+.name { margin: 0; color: #606777; overflow-wrap: anywhere; }
+.track { margin: 30px 0 16px; height: 5px; border-radius: 5px; background: #e0e4eb; overflow: hidden; }
+.track > div { height: 100%; background: #426ce9; transition: width 160ms ease; }
+.detail { margin: 0; min-height: 20px; font-size: 13px; color: #606777; }
+@media (prefers-reduced-motion: reduce) { .track > div { transition: none; } }

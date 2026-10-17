@@ -1,6 +1,6 @@
 .panel {
   position: absolute;
-  top: var(--panel-gap);
+  top: var(--scene-toolbar-offset, var(--panel-gap));
   right: var(--panel-gap);
   width: var(--inspector-w);
   max-height: calc(100% - var(--panel-gap) - 72px);

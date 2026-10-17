@@ -46,6 +46,11 @@ export function SettingsSections() {
   const percent = Math.round(prefs.uiScale * 100);
   return (
     <>
+    <Section icon={<Monitor size={14} />} title="Saving">
+      <Row label="Autosave local projects" hint="Online projects always autosave and sync. With local autosave off, click Unsaved changes to save.">
+        <Segmented value={prefs.autosave ? 'on' : 'off'} ariaLabel="Autosave local projects" onChange={(value) => preferences.set({ autosave: value === 'on' })} options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]} />
+      </Row>
+    </Section>
     <Section icon={<Monitor size={14} />} title="Interface">
       <Row label="UI scale" hint="Size of bars, panels, menus and dialogs. The drawing keeps its own zoom.">
         <div className={styles.scale}>

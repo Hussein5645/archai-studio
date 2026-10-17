@@ -129,7 +129,7 @@ test('raw scene keeps element IDs and shared VR supports tabletop, live edits an
       tools.update([left],true); renderer.render(scene,camera);
       return {tab:tools.tab, hasGrid:tools.layout.some(b=>b.id==='grid'), stopMenu:window.tour.stopMenu};
     })()`);
-    expect(toolbar.tab).toBe('move'); expect(toolbar.hasGrid).toBe(true);
+    expect((toolbar as {tab:string}).tab).toBe('move'); expect((toolbar as {hasGrid:boolean}).hasGrid).toBe(true);
     await viewer.screenshot({ path: testInfo.outputPath('tabletop.png') });
     expect(errors).toEqual([]);
     await viewer.addInitScript(`Object.defineProperty(navigator,'xr',{configurable:true,value:{

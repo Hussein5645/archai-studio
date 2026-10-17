@@ -111,6 +111,17 @@ export function createWebPlatform(): Platform {
     clipboard: {
       readText: () => navigator.clipboard.readText(),
       writeText: (text) => navigator.clipboard.writeText(text),
+      readImage: async () => {
+        for (const item of await navigator.clipboard.read()) {
+          const mime = item.types.find(type => type.startsWith('image/'));
+          if (mime) return { name: 'Pasted image.png', mime, bytes: new Uint8Array(await (await item.getType(mime)).arrayBuffer()) };
+        }
+        return null;
+      },
+      writeImage: (image, text) => navigator.clipboard.write([new ClipboardItem({
+        [image.mime]: new Blob([image.bytes as BlobPart], { type: image.mime }),
+        ...(text ? { 'text/plain': new Blob([text], { type: 'text/plain' }) } : {}),
+      })]),
     },
     menu: null,
     window: {

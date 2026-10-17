@@ -13,6 +13,14 @@ function appWithModel() {
 }
 
 describe('working copy storage', () => {
+  it('refuses a working copy whose stored geometry bytes are missing', async () => {
+    const { app } = appWithModel();
+    const store = new WorkingCopyStore(app.platform.storage);
+    const doc = app.store.getState().doc;
+    await store.save(doc);
+    await app.platform.storage.delete(blobKey(doc.id, Object.keys(doc.blobs)[0]!));
+    await expect(store.load(doc.id)).rejects.toThrow('Project data is missing');
+  });
   it('keeps blob bytes out of the document text, writes each blob once and reads them back', async () => {
     const { app, id } = appWithModel();
     const store = new WorkingCopyStore(app.platform.storage);

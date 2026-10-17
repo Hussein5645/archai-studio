@@ -2,12 +2,13 @@
  * Hit-testing against the document, not the DOM. Tolerance is in world units (callers derive
  * it from screen pixels / zoom).
  */
-import { childrenOf, type ArchaiDocument, type Element, type ElementTable } from '@/document';
+import { ancestorsOf, childrenOf, type ArchaiDocument, type Element, type ElementTable } from '@/document';
 import { boundsUnder, localBounds, localMatrix, parentWorldMatrix, worldMatrix } from './bounds';
 import { applyToPoint, IDENTITY, invert, multiply, type Mat } from './matrix';
 import { distanceToRectEdge, rect, rectContainsPoint, rectContainsRect, rectsIntersect, type Rect } from './rect';
 import { distanceToSegment, pointInPolygon, tupleToVec, type Vec2 } from './vec';
 import { linePoints } from './curves';
+import { indexedHitCandidates } from './hitIndex';
 
 export interface HitOptions {
   /** World-unit tolerance around thin geometry. */
@@ -82,6 +83,8 @@ function hitWithin(
 
 /** The deepest (leaf) element under a world point, or null. */
 export function hitTest(doc: ArchaiDocument, point: Vec2, options: HitOptions): Element | null {
+  const indexed = indexedHits(doc, point, options);
+  if (indexed) return indexed.next().value ?? null;
   const scope = options.scopeId ? doc.elements[options.scopeId] : undefined;
   if (scope) return hitWithin(doc, scope.id, worldMatrix(doc.elements, scope), point, options);
   return hitWithin(doc, null, IDENTITY, point, options);
@@ -89,6 +92,8 @@ export function hitTest(doc: ArchaiDocument, point: Vec2, options: HitOptions): 
 
 /** Every leaf element under `point`, front-most first (what Tab cycles through on the board). */
 export function hitTestAll(doc: ArchaiDocument, point: Vec2, options: HitOptions): Element[] {
+  const indexed = indexedHits(doc, point, options);
+  if (indexed) return [...indexed];
   const out: Element[] = [];
   const collect = (parentId: string | null, parentWorld: Mat) => {
     const siblings = childrenOf(doc.elements, parentId);
@@ -106,6 +111,24 @@ export function hitTestAll(doc: ArchaiDocument, point: Vec2, options: HitOptions
   if (scope) collect(scope.id, worldMatrix(doc.elements, scope));
   else collect(null, IDENTITY);
   return out;
+}
+
+function indexedHits(doc: ArchaiDocument, point: Vec2, options: HitOptions): Generator<Element, void> | null {
+  const scope = options.scopeId ? doc.elements[options.scopeId] : undefined;
+  // A temporarily detached scope is still editable, but is absent from the root index.
+  if (scope && (ancestorsOf(doc.elements, scope.id).at(-1) ?? scope).parentId !== null) return null;
+  const candidates = indexedHitCandidates(doc.elements, point, options.tolerance);
+  if (!candidates) return null;
+  return (function* () {
+    for (const { element, ancestors, inverse } of candidates) {
+      const scopeIndex = scope ? ancestors.findIndex((ancestor) => ancestor.id === scope.id) : ancestors.length;
+      if (scopeIndex < 0 || !isTestable(element, options)) continue;
+      // The open scope itself and its parents are intentionally ignored, like hitWithin.
+      if (ancestors.slice(0, scopeIndex).some((ancestor) => !isTestable(ancestor, options))) continue;
+      if (options.accept && !options.accept(element)) continue;
+      if (hitLocalShape(doc.elements, element, applyToPoint(inverse, point), options.tolerance)) yield element;
+    }
+  })();
 }
 
 /** Root-level elements whose world bounds intersect (or are contained by) `area`. */

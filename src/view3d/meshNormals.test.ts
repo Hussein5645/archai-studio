@@ -78,3 +78,22 @@ it('keeps nonmanifold and degenerate triangles finite and preserves every source
   expect(Array.from(repaired.getAttribute('normal').array).every(Number.isFinite)).toBe(true);
   expect(repaired.userData.normalRepair.closedShells).toBe(0);
 });
+
+it('uses independently owned worker repair results and releases cached geometry with its source', async () => {
+  const {cacheNormalRepair}=await import('./meshNormals');
+  const {packGeometry,unpackGeometry,geometryTransfers}=await import('./geometryPacket');
+  const source=new THREE.BoxGeometry();
+  const expected=repairNormals(source,'recompute-flip');
+  const packet=packGeometry(expected);
+  expect(geometryTransfers(packet).length).toBeGreaterThan(0);
+  const cached=unpackGeometry(packet);
+  let disposed=false;cached.addEventListener('dispose',()=>{disposed=true;});
+  cacheNormalRepair(source,'recompute-flip',cached);
+  const a=repairNormals(source,'recompute-flip'),b=repairNormals(source,'recompute-flip');
+  expect(Array.from(a.index!.array)).toEqual(Array.from(expected.index!.array));
+  expect(a.groups).toEqual(expected.groups);
+  a.getAttribute('position').setX(0,999);
+  expect(b.getAttribute('position').getX(0)).not.toBe(999);
+  expect(source.getAttribute('position').getX(0)).not.toBe(999);
+  source.dispose();expect(disposed).toBe(true);
+});

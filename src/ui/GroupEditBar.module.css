@@ -7,4 +7,5 @@
 .bar [aria-current] { font-weight: 600; color: var(--accent, #2f6fed); }
 .exit { display: flex; align-items: center; gap: 5px; }
 .bar kbd { color: var(--text-muted); font: inherit; font-size: 10px; }
+.bar[data-in-3d='true'] { top: auto; bottom: 16px; max-width: calc(100% - 32px); }
 @media (max-width: 1100px) { .bar { max-width: calc(100% - 32px); } .bar strong { display: none; } }

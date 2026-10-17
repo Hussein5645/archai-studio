@@ -1,4 +1,5 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, Menu, nativeImage, session, shell } from 'electron';
+import { Blob } from 'node:buffer';
 import type { MenuItemConstructorOptions } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -6,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   ClipboardWriteInput,
+  ClipboardImageInput,
   DOCUMENT_FILE_EXTENSION,
   LEGACY_DOCUMENT_FILE_EXTENSIONS,
   IPC,
@@ -30,6 +32,7 @@ import {
 } from '../shared/ipc.js';
 import { liveReply, startLiveLink } from './liveLink.js';
 import { readD5Folder, readD5Files } from './d5Folder.js';
+import { SITE_CONTEXT_URLS, siteContextHeaders } from '../shared/siteContextNetwork.js';
 
 const DEV_URL = process.env['ARCHAI_DEV_URL'];
 /**
@@ -380,8 +383,22 @@ function registerIpc(): void {
   ipcMain.handle(IPC.storageKeys, (_e, raw) => storageKeys(StorageKeysInput.parse(raw).prefix));
 
   ipcMain.handle(IPC.clipboardReadText, () => clipboard.readText());
+  ipcMain.handle(IPC.clipboardReadImage, async () => {
+    for (const item of await clipboard.read()) {
+      if (!item.types.includes('image/png')) continue;
+      const data = await item.getType('image/png');
+      return { name: 'Pasted image.png', mime: 'image/png', data: Buffer.from(await (data as Blob).arrayBuffer()).toString('base64') };
+    }
+    return null;
+  });
+  ipcMain.handle(IPC.clipboardWriteImage, (_event, raw) => {
+    const { data, text } = ClipboardImageInput.parse(raw);
+    const image = nativeImage.createFromBuffer(Buffer.from(data, 'base64'));
+    if (image.isEmpty()) throw new Error('The clipboard image could not be decoded');
+    return clipboard.write([new ClipboardItem({ 'image/png': new Blob([image.toPNG()], {type:'image/png'}), ...(text ? { 'text/plain': text } : {}) })]);
+  });
   ipcMain.handle(IPC.clipboardWriteText, (_e, raw) => {
-    clipboard.writeText(ClipboardWriteInput.parse(raw).text);
+    return clipboard.writeText(ClipboardWriteInput.parse(raw).text);
   });
 
   ipcMain.handle(IPC.menuSet, (_e, raw) => {
@@ -441,6 +458,9 @@ app.on('second-instance', (_event, argv) => {
 });
 
 void app.whenReady().then(() => {
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: SITE_CONTEXT_URLS }, (details, callback) => {
+    callback({ requestHeaders: siteContextHeaders(details.requestHeaders, app.getVersion()) });
+  });
   if (!firstInstance) return;
   // The installer registers archai://; an installed copy without it (older install) claims it once.
   // Dev runs and the unpacked build folder never do (they would take it from the installed app).

@@ -16,13 +16,14 @@ export interface Preferences {
   wheel: 'pan' | 'zoom';
   /** After the pen touches the screen, fingers only pan and zoom for a few seconds. */
   palmRejection: boolean;
+  autosave: boolean;
 }
 
 export const UI_SCALE_MIN = 0.8;
 export const UI_SCALE_MAX = 1.5;
 export const UI_SCALE_PRESETS = [0.9, 1, 1.1, 1.25, 1.5] as const;
 
-export const DEFAULT_PREFERENCES: Preferences = { uiScale: 1, wheel: 'pan', palmRejection: true };
+export const DEFAULT_PREFERENCES: Preferences = { uiScale: 1, wheel: 'pan', palmRejection: true, autosave: true };
 
 const STORAGE_KEY = 'archai.preferences';
 
@@ -37,6 +38,7 @@ function read(): Preferences {
       uiScale: clampScale(typeof raw.uiScale === 'number' ? raw.uiScale : 1),
       wheel: raw.wheel === 'zoom' ? 'zoom' : 'pan',
       palmRejection: raw.palmRejection !== false,
+      autosave: raw.autosave !== false,
     };
   } catch {
     // Storage can be unavailable (private mode) or hold junk: defaults.

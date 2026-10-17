@@ -10,6 +10,8 @@ import type { AppStore } from '@/store';
 import { EXAMPLE_PROJECT_ID, fetchExampleProject } from './example-project';
 import { parseDocument, parseDocumentData } from './serialize';
 import { WorkingCopyStore } from './workingCopy';
+import { finishProjectBoard, prepareProjectBoard, withProjectLoading, type ProjectLoadTask } from './projectLoading';
+import { preferences } from '@/ui/preferences';
 import { documentKey, forgetRecent, parseSessionRecord, SESSION_KEY, touchRecent, type RecentEntry, type SessionRecord } from './session';
 
 type Listener = () => void;
@@ -20,7 +22,28 @@ export class PersistenceService {
   private docTimer: ReturnType<typeof setTimeout> | null = null;
   private viewportTimer: ReturnType<typeof setTimeout> | null = null;
   private stopStore: (() => void) | null = null;
+  private stopPreferences: (() => void) | null = null;
+  private stopCommands: (() => void) | null = null;
+  private saveStatus: 'saved' | 'unsaved' | 'saving' | 'error' = 'saved';
   private lastSavedDoc: unknown = null;
+  private opening = false;
+
+  getSaveStatus = () => this.saveStatus;
+
+  private setSaveStatus(status: typeof this.saveStatus): void {
+    if (status === this.saveStatus) return;
+    this.saveStatus = status;
+    this.notify();
+  }
+
+  private autosaveEnabled(): boolean {
+    return preferences.get().autosave || Boolean(this.entry(this.store.getState().doc.id)?.cloud);
+  }
+
+  async saveNow(): Promise<void> {
+    await this.flush(true);
+    if (this.saveStatus === 'error') throw new Error('Could not save the project. Please try again.');
+  }
   private readonly workingCopies: WorkingCopyStore;
 
   constructor(
@@ -92,10 +115,26 @@ export class PersistenceService {
   }
 
   /** Opens a working copy by document id (used by "recent documents"). */
-  async openStored(id: string): Promise<boolean> {
+  async openStored(id: string, task?: ProjectLoadTask): Promise<boolean> {
+    if (task) return this.openStoredWithin(id, task);
+    if (this.opening) return false;
+    return withProjectLoading(this.entry(id)?.name ?? 'Project', (loading) => this.openStoredWithin(id, loading));
+  }
+
+  private async openStoredWithin(id: string, task: ProjectLoadTask): Promise<boolean> {
+    this.opening = true;
+    try {
+      await this.flushPending();
+      return await this.readStored(id, task);
+    } finally {
+      this.opening = false;
+    }
+  }
+
+  private async readStored(id: string, task: ProjectLoadTask): Promise<boolean> {
     let raw: unknown;
     try {
-      raw = await this.workingCopies.load(id);
+      raw = await this.workingCopies.load(id, (done, total) => task.update('Reading project', 0.05 + 0.2 * done / Math.max(1, total)));
     } catch (error) {
       console.error(`[Persistence] Failed to read document ${id}:`, error);
       return false;
@@ -105,12 +144,15 @@ export class PersistenceService {
       await this.writeSession();
       return false;
     }
+    task.update('Checking project', 0.3);
+    await task.paint();
     const parsed = parseDocumentData(raw);
     if (!parsed.ok) {
       console.error(`[Persistence] Failed to parse document ${id}:`, parsed.error);
       return false;
     }
     const entry = this.record.recent.find((r) => r.id === id);
+    await prepareProjectBoard(parsed.document, task, this.executor.services.catalog);
     const loaded = this.executor.dispatchSync(loadDocument, { document: parsed.document, filePath: entry?.filePath ?? null });
     if (!loaded.ok) {
       console.error(`[Persistence] Failed to load document ${id}:`, loaded);
@@ -119,6 +161,8 @@ export class PersistenceService {
     const viewport = this.record.viewports[id];
     if (viewport) this.executor.dispatchSync(setViewport, viewport);
     this.lastSavedDoc = this.store.getState().doc;
+    this.setSaveStatus('saved');
+    await finishProjectBoard(this.store.getState().doc, task);
     this.record = touchRecent(this.record, {
       id: parsed.document.id,
       name: parsed.document.meta.name,
@@ -133,10 +177,27 @@ export class PersistenceService {
 
   start(): void {
     this.stopStore?.();
+    this.stopPreferences?.();
+    this.stopCommands?.();
+    this.stopCommands = this.executor.onResult((result) => {
+      if (result.ok && result.value && ['save-document', 'save-document-as'].includes(result.commandId)) void this.saveNow().catch((error: unknown) => console.error('Could not save working copy', error));
+    });
+    this.stopPreferences = preferences.subscribe(() => {
+      if (!this.autosaveEnabled()) {
+        if (this.docTimer) clearTimeout(this.docTimer);
+        this.docTimer = null;
+      } else if (this.store.getState().doc !== this.lastSavedDoc) this.scheduleDocSave();
+    });
     let previous = this.store.getState();
     this.stopStore = this.store.subscribe((state) => {
-      if (state.doc !== previous.doc || state.session.filePath !== previous.session.filePath) this.scheduleDocSave();
-      if (state.ui.viewport !== previous.ui.viewport) this.scheduleViewportSave();
+      // Opening an existing copy is not an edit: avoid immediately serialising it again.
+      if (!this.opening) {
+        if (state.doc !== previous.doc || state.session.filePath !== previous.session.filePath) {
+          if (state.doc !== this.lastSavedDoc) this.setSaveStatus(state.session.filePath && !state.session.dirty ? 'saved' : 'unsaved');
+          if (this.autosaveEnabled()) this.scheduleDocSave();
+        }
+        if (state.ui.viewport !== previous.ui.viewport) this.scheduleViewportSave();
+      }
       previous = state;
     });
   }
@@ -144,12 +205,20 @@ export class PersistenceService {
   stop(): void {
     this.stopStore?.();
     this.stopStore = null;
+    this.stopPreferences?.();
+    this.stopPreferences = null;
+    this.stopCommands?.();
+    this.stopCommands = null;
     if (this.docTimer) clearTimeout(this.docTimer);
     if (this.viewportTimer) clearTimeout(this.viewportTimer);
   }
 
   /** Writes any pending changes immediately (e.g. before the window closes). */
-  async flush(): Promise<void> {
+  async flushPending(): Promise<void> {
+    if (this.docTimer || this.viewportTimer) await this.flush();
+  }
+
+  async flush(force = false): Promise<void> {
     if (this.docTimer) {
       clearTimeout(this.docTimer);
       this.docTimer = null;
@@ -158,7 +227,7 @@ export class PersistenceService {
       clearTimeout(this.viewportTimer);
       this.viewportTimer = null;
     }
-    await this.saveDocument();
+    if (force || this.autosaveEnabled()) await this.saveDocument();
     await this.saveViewport();
   }
 
@@ -239,7 +308,7 @@ export class PersistenceService {
     if (state.doc === this.lastSavedDoc && this.record.lastDocumentId === state.doc.id) return;
     // The Home screen's placeholder document is not a project: never list it.
     if (state.ui.screen === 'home' && !this.record.recent.some((entry) => entry.id === state.doc.id)) return;
-    this.lastSavedDoc = state.doc;
+    this.setSaveStatus('saving');
     try {
       await this.workingCopies.save(state.doc);
       const existing = this.record.recent.find((r) => r.id === state.doc.id);
@@ -252,7 +321,10 @@ export class PersistenceService {
         ...(existing?.cloud ? { cloud: existing.cloud } : {}),
       });
       await this.writeSession();
+      this.lastSavedDoc = state.doc;
+      this.setSaveStatus(this.store.getState().doc === state.doc ? 'saved' : 'unsaved');
     } catch (error) {
+      this.setSaveStatus('error');
       console.error('Autosave failed', error);
     }
   }

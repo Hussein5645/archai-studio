@@ -16,12 +16,15 @@ import { onMaterialTextures } from '@/materials/three';
 import { drawHatchTile, graphicsResolver, hatchKey, type GraphicsOverrides, type GraphicsResolver, type HatchSpec } from '@/graphics';
 import { boundsOfIds } from '@/geometry';
 import { tileGrid } from '@/export/quality';
-import { buildScene, instanceElevationOf, sceneCentre, sceneHeight, type Built } from './geometry';
+import { buildSceneSteps, extrusionTasks, instanceElevationOf, sceneCentre, sceneHeight, type Built } from './geometry';
+import { paint } from '@/progress';
 import { prepareMassing } from '@/analysis/massing';
 import { prepareParametric } from './parametricModels';
 import { modelStore, textureStore } from './assets';
-import { edgesOf } from './edges';
-import { meshStore } from './meshes';
+import { edgesOf, prepareEdges } from './edges';
+import { meshOf, meshStore } from './meshes';
+import { ModelGeometry } from './modelGeometry';
+import type { NormalMode } from './meshNormals';
 import { inGroup } from '@/selection/groupScope';
 import { AnalysisLayer, type AnalysisSample } from '@/analysis/layer3d';
 import { isAnalysisElement, type AnalysisSpec } from '@/analysis/model';
@@ -237,6 +240,7 @@ export interface RenderImageOptions {
 export const mountedViews = new Map<string, SceneView>();
 
 export interface SceneViewEvents {
+  onUpdate?: (state: { detail: string; error?: boolean } | null) => void;
   /** The user clicked an element (or empty space → null). */
   onSelect: (id: string | null, additive: boolean) => void;
   /** A gizmo drag is in progress / finished. `delta` is a plan-space move; `degrees` a rotation about up. */
@@ -287,6 +291,11 @@ export class SceneView {
   private pointerDown: { x: number; y: number; time: number } | null = null;
   private disposed = false;
   private cameraTimer = 0;
+  private navigationLocked = false;
+  private preparing = false;
+  private updateController: AbortController | null = null;
+  private updateTimer = 0;
+  private readonly modelGeometry = new ModelGeometry();
   private viewStyle: ViewStyle;
   private placingStop = false;
   private painting = false;
@@ -363,7 +372,7 @@ export class SceneView {
     this.gizmo.enabled = false;
     this.scene.add(this.gizmoHelper);
     this.gizmo.addEventListener('dragging-changed', (event) => {
-      this.controls.enabled = !(event as unknown as { value: boolean }).value;
+      this.controls.enabled = !this.navigationLocked && !(event as unknown as { value: boolean }).value;
       if ((event as unknown as { value: boolean }).value) {
         this.dragStart = { x: this.anchor.position.x, y: this.anchor.position.y, z: this.anchor.position.z, rotation: this.anchor.rotation.y };
       } else if (this.dragStart) {
@@ -460,20 +469,17 @@ export class SceneView {
     };
   }
 
+  setNavigationLocked(locked: boolean): void {
+    this.navigationLocked = locked;
+    this.controls.enabled = !locked && !this.gizmo.dragging;
+    if (locked) window.clearTimeout(this.cameraTimer);
+  }
+
   setViewStyle(style: ViewStyle): void {
     if (!this.section && style === 'section') return;
     if (this.viewStyle === style) return;
     this.viewStyle = style;
-    this.content.traverse((child) => {
-      if (!(child instanceof THREE.Mesh) || !child.userData['selectedMaterial']) return;
-      disposeMaterials(child.material as THREE.Material | THREE.Material[]);
-      child.material = child.userData['originalMaterial'] as THREE.Material | THREE.Material[];
-      child.userData['selectedMaterial'] = false;
-    });
-    this.applySceneGraphics();
-    this.applyViewStyle();
-    this.updateGizmo();
-    this.requestRender();
+    if (this.doc) this.setDocument(this.doc);
   }
 
   /** Background and grid from the document's graphics (3D scene / section view types). */
@@ -495,9 +501,9 @@ export class SceneView {
     this.grid.visible = !this.section && this.viewStyle !== 'section' && g.bool('scene', '3d', this.viewStyle, 'grid.visible');
   }
 
-  private applyViewStyle(root: THREE.Object3D = this.content): void {
+  private applyViewStyle(root: THREE.Object3D = this.content, recursive = true): void {
     this.scene.environment = this.viewStyle === 'realistic' && !this.section ? this.environmentMap() : null;
-    root.traverse((child) => {
+    const style = (child: THREE.Object3D) => {
       if (!(child instanceof THREE.Mesh) || child.userData['capHelper']) return;
       const current = child.material as THREE.Material | THREE.Material[];
       const stored = child.userData['baseViewMaterial'] as THREE.Material | THREE.Material[] | undefined;
@@ -541,7 +547,9 @@ export class SceneView {
       const material = Array.isArray(baseMaterials) ? baseMaterials.map(styled) : styled(baseMaterials);
       child.userData['viewStyleMaterial'] = material;
       child.material = material;
-    });
+    };
+    if (recursive) root.traverse(style);
+    else style(root);
   }
 
   private environment: THREE.Texture | null = null;
@@ -560,16 +568,18 @@ export class SceneView {
     return this.environment;
   }
 
-  private addSectionEdges(root: THREE.Object3D = this.content): void {
+  private addSectionEdges(root: THREE.Object3D = this.content, recursive = true, doc = this.doc): void {
     if (!this.section) return;
-    const g = graphicsResolver(this.doc?.workspace.graphics as GraphicsOverrides | undefined);
+    const g = graphicsResolver(doc?.workspace.graphics as GraphicsOverrides | undefined);
     if (!g.bool('section', 'section', this.viewStyle, 'beyond.visible')) return;
     const colour = new THREE.Color(g.color('section', 'section', this.viewStyle, 'beyond.stroke') ?? '#34363a');
     const opacity = g.number('section', 'section', this.viewStyle, 'beyond.opacity');
     const meshes: THREE.Mesh[] = [];
-    root.traverse((child) => {
+    const collect = (child: THREE.Object3D) => {
       if (child instanceof THREE.Mesh && !child.userData['capHelper']) meshes.push(child);
-    });
+    };
+    if (recursive) root.traverse(collect);
+    else collect(root);
     for (const mesh of meshes) {
       const edges = new THREE.LineSegments(edgesOf(mesh.geometry, 28), new THREE.LineBasicMaterial({ color: colour, transparent: true, opacity }));
       edges.userData['sectionEdges'] = true;
@@ -750,6 +760,7 @@ export class SceneView {
 
   /** Frames the whole document (a section frames it from in front of the cut). */
   frameAll(): void {
+    if (this.navigationLocked) return;
     if (!this.doc) return;
     const { centre, radius } = sceneCentre(this.doc);
     const plan = this.section?.plan;
@@ -985,16 +996,102 @@ export class SceneView {
   }
 
   setDocument(doc: ArchaiDocument): void {
-    const hadDoc = this.doc !== null;
-    this.doc = doc;
-    this.rebuild();
-    if (!hadDoc && !this.hasInitialCamera) this.frameAll();
-    // Models and textures arrive later; rebuild once they do.
-    void Promise.all([modelStore.prepare(doc), textureStore.prepare(doc), prepareMassing(doc), prepareParametric(doc), meshStore.prepare(doc)]).then(([modelsChanged, texturesChanged, massingReady, parametricReady, meshesReady]) => {
-      // The document may have moved on meanwhile (camera saves change it too); rebuild the current one.
-      // They load into the same maps in place, so cached objects cannot tell: rebuild everything.
-      if (!this.disposed && (modelsChanged || texturesChanged || massingReady || parametricReady || meshesReady)) this.rebuild(true);
-    });
+    if (this.disposed) return;
+    this.updateController?.abort();
+    window.clearTimeout(this.updateTimer);
+    this.updateTimer = window.setTimeout(() => {
+      void this.initialise(doc, (detail) => this.events.onUpdate?.({ detail }), false).then(
+        () => {},
+        (error: unknown) => { if (!this.disposed && !(error instanceof DOMException && error.name === 'AbortError')) this.events.onUpdate?.({ detail: error instanceof Error ? error.message : String(error), error: true }); },
+      );
+    }, 0);
+  }
+
+  /** Prepare once, then construct and style in time slices before exposing the live canvas. */
+  async initialise(doc: ArchaiDocument, progress: (detail: string) => void, initial = true): Promise<void> {
+    this.updateController?.abort();
+    const controller = this.updateController = new AbortController();
+    const signal = controller.signal;
+    const check = () => { signal.throwIfAborted(); if (this.disposed) throw new DOMException('View closed', 'AbortError'); };
+    this.preparing = initial;
+    if (initial) { cancelAnimationFrame(this.frame); this.frame = 0; }
+    const previous = new Map(this.built.map((item) => [item.id, item]));
+    const existing = new Set(this.built.map((item) => item.object));
+    let uncommitted: Built[] = [];
+    try {
+      progress('Loading 3D resources');
+      await paint();
+      await Promise.all([modelStore.prepare(doc), textureStore.prepare(doc), prepareMassing(doc), prepareParametric(doc), meshStore.prepare(doc)]);
+      check();
+      progress('Preparing model geometry');
+      for (const element of Object.values(doc.elements)) {
+        const mesh = meshOf(element);
+        const mode = element.meta?.['normalMode'] as NormalMode | undefined;
+        if (!mesh || !mode || mode === 'source') continue;
+        for (const model of [meshStore.models.get(mesh.blobId), meshStore.lowModels.get(mesh.blobId)]) {
+          const geometries = new Set<THREE.BufferGeometry>();
+          model?.traverse((child) => { if (child instanceof THREE.Mesh) geometries.add(child.geometry); });
+          for (const geometry of geometries) { check(); await this.modelGeometry.prepareNormals(geometry, mode, signal); }
+        }
+      }
+      check();
+      const extrusions = await this.modelGeometry.prepareExtrusions(extrusionTasks(doc), signal);
+      check();
+      progress('Building 3D scene');
+      await paint();
+      const steps = buildSceneSteps(doc, { textures: textureStore.textures, models: modelStore.models, lowModels: modelStore.lowModels, lod: this.lod ?? doc.workspace.lod, drawing: Boolean(this.section), reuseParts: true, style: this.viewStyle, extrusions }, previous);
+      let finished = false;
+      try {
+        let next = steps.next();
+        let slice = performance.now();
+        while (!next.done) {
+          check();
+          if (performance.now() - slice >= 8) { await paint(); slice = performance.now(); }
+          next = steps.next();
+        }
+        uncommitted = next.value;
+        finished = true;
+      } finally {
+        if (!finished) steps.return([]);
+      }
+      const meshes: THREE.Mesh[] = [];
+      for (const item of uncommitted) if (!existing.has(item.object)) item.object.traverse((child) => { if (child instanceof THREE.Mesh) meshes.push(child); });
+      progress('Preparing 3D display');
+      let slice = performance.now();
+      for (const mesh of meshes) {
+        check();
+        await prepareEdges(mesh.geometry, [...(this.viewStyle === 'hidden-line' ? [25] : []), ...(this.section ? [28] : [])]);
+        check();
+        this.applyViewStyle(mesh, false);
+        this.addSectionEdges(mesh, false, doc);
+        if (performance.now() - slice >= 8) { await paint(); slice = performance.now(); }
+      }
+      check();
+      const staging = new THREE.Group();
+      for (const item of uncommitted) if (!existing.has(item.object)) staging.add(item.object);
+      await this.renderer.compileAsync(staging, this.camera, this.scene);
+      check();
+      this.doc = doc;
+      this.clearSectionCaps();
+      this.commitScene(uncommitted, true);
+      uncommitted = [];
+      if (initial && !this.hasInitialCamera) this.frameAll();
+      if (initial) {
+        progress('Preparing first frame');
+        await paint();
+        check();
+        await this.renderer.compileAsync(this.scene, this.camera);
+      }
+    } finally {
+      for (const item of uncommitted) if (!existing.has(item.object)) item.object.traverse((child) => {
+        if (child instanceof THREE.Mesh && !child.userData['shared']) child.geometry.dispose();
+        if (child instanceof THREE.Mesh && child.userData['viewStyleMaterial']) disposeMaterials(child.userData['viewStyleMaterial'] as THREE.Material | THREE.Material[]);
+      });
+      if (this.updateController === controller) { this.preparing = false; this.requestRender(); }
+    }
+    await paint();
+    check();
+    if (!initial) this.events.onUpdate?.(null);
   }
 
   setSelection(selection: string[]): void {
@@ -1008,13 +1105,14 @@ export class SceneView {
    * their objects (see buildScene), so an edit only styles, adds and disposes what it replaced;
    * `full` discards every cached object.
    */
-  private rebuild(full = false): void {
+  private rebuild(): void {
+    if (this.doc) this.setDocument(this.doc);
+  }
+
+  private commitScene(next: Built[], styled = false): void {
     if (!this.doc) return;
-    this.clearSectionCaps();
-    const previous = full ? undefined : new Map(this.built.map((item) => [item.id, item]));
-    // Low LOD: only packages that ship a low-poly model get one; the rest fall back to boxes.
-    // Elements may override the view's level of detail individually (`meta.lod`).
-    const next = buildScene(this.doc, { textures: textureStore.textures, models: modelStore.models, lowModels: modelStore.lowModels, lod: this.lod ?? this.doc.workspace.lod, drawing: Boolean(this.section) }, previous);
+    // Move retained children only when the replacement is ready; cancellation leaves the old scene intact.
+    for (const item of next) for (const attachment of item.attachments ?? []) attachment.parent.add(attachment.object);
     const kept = new Set(next.map((item) => item.object));
     const existing = new Set<THREE.Object3D>();
     for (const item of this.built) {
@@ -1031,7 +1129,7 @@ export class SceneView {
     const added = next.filter((item) => !existing.has(item.object)).map((item) => item.object);
     for (const object of added) this.content.add(object);
     this.applySceneGraphics();
-    for (const object of added) {
+    for (const object of styled ? [] : added) {
       this.applyViewStyle(object);
       this.addSectionEdges(object);
     }
@@ -1455,12 +1553,13 @@ export class SceneView {
   };
 
   private scheduleCameraSave(): void {
+    if (this.navigationLocked) return;
     window.clearTimeout(this.cameraTimer);
     this.cameraTimer = window.setTimeout(() => this.events.onCameraChange(this.getCamera()), 400);
   }
 
   requestRender(): void {
-    if (this.frame || this.disposed) return;
+    if (this.frame || this.disposed || this.preparing) return;
     this.frame = requestAnimationFrame(() => {
       this.frame = 0;
       this.draw();
@@ -1470,7 +1569,11 @@ export class SceneView {
   }
 
   dispose(): void {
+    if (this.disposed) return;
     this.disposed = true;
+    window.clearTimeout(this.updateTimer);
+    this.updateController?.abort();
+    this.modelGeometry.dispose();
     cancelAnimationFrame(this.frame);
     window.clearTimeout(this.cameraTimer);
     this.resize.disconnect();
@@ -1482,6 +1585,11 @@ export class SceneView {
     this.renderer.domElement.removeEventListener('pointerleave', this.clearPaintHover);
     this.unsubscribeTextures();
     this.clearPaintHover();
+    for (const item of this.built) item.object.traverse((child) => {
+      if (child instanceof THREE.Mesh && !child.userData['shared']) child.geometry.dispose();
+      if (child instanceof THREE.Mesh && child.userData['viewStyleMaterial']) disposeMaterials(child.userData['viewStyleMaterial'] as THREE.Material | THREE.Material[]);
+    });
+    this.built = [];
     this.hoverMaterial.dispose();
     this.hiddenMaterial.dispose();
     this.environment?.dispose();

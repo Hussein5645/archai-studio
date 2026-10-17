@@ -644,3 +644,21 @@ describe("An app's geometry edited in ArchAI", () => {
     expect(doc(app).elements[door]!.name).toBe('Named in ArchAI');
   });
 });
+
+for (const take of ['theirs', 'mine'] as const) it('resolves all conflicts with one undo: ' + take, () => {
+  const app = createTestApp();
+  sync(app, 'batch', model({ meshes: [mesh('a'), mesh('b')] }));
+  run(app, 'bridge-set-source', { key: 'batch', authority: { metadata: 'shared' } });
+  const ids = ['a', 'b'].map(id => bound(app, 'batch', id)!.id);
+  ids.forEach(id => run(app, 'rename', { id, name: 'Mine' }));
+  sync(app, 'batch', model({ meshes: [mesh('a', 0, 'Theirs'), mesh('b', 0, 'Theirs')] }));
+  expect(bridge(app).conflicts).toHaveLength(2);
+  const before = doc(app);
+  const idsToResolve = bridge(app).conflicts.map(c => c.id);
+  expect(run(app, 'bridge-resolve-all', { take, conflicts: [...idsToResolve, idsToResolve[0], 'stale'] })).toEqual({ resolved: 2 });
+  expect(bridge(app).conflicts).toEqual([]);
+  expect(ids.map(id => doc(app).elements[id]!.name)).toEqual([take === 'theirs' ? 'Theirs' : 'Mine', take === 'theirs' ? 'Theirs' : 'Mine']);
+  app.executor.undo();
+  expect(doc(app).elements).toEqual(before.elements);
+  expect(bridge(app).conflicts).toEqual(before.bridge!.conflicts);
+});

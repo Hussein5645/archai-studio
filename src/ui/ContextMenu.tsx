@@ -6,6 +6,8 @@ import { profileKindOf } from '@/commands/builtin/profileEdit';
 const SELECTION_COMMANDS: (string | 'separator')[] = [
   'cut-selection',
   'copy-selection',
+  'copy-image',
+  'save-image',
   'paste',
   'duplicate-selection',
   'delete-selection',
@@ -63,6 +65,7 @@ export function ContextMenu({ position, onClose }: { position: { x: number; y: n
     }
     const command = executor.registry.get(id);
     if (!command) continue;
+    if ((id === 'copy-image' || id === 'save-image') && !executor.isAvailable(command, state)) continue;
     const available = executor.isAvailable(command, state);
     // Hide unavailable toggles (e.g. "Unlock" when nothing is locked) to keep the menu short.
     if (!available && (id.startsWith('lock') || id.startsWith('unlock') || id === 'ungroup-selection' || id === 'detach-instance' || id === 'repeat-last-tool' || id === 'join-lines')) continue;

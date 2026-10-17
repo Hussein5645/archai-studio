@@ -13,7 +13,11 @@
     <title>ArchAI</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div role="status" aria-live="polite" style="position:fixed;inset:0;display:grid;place-items:center;background:#f6f7f9;color:#606777;font:15px system-ui,sans-serif">
+        <div style="text-align:center"><img src="./brand/archai-mark.png" alt="" width="52" height="52" style="display:block;margin:0 auto 20px" />Loading ArchAI…</div>
+      </div>
+    </div>
     <script type="module" src="/src/app/main.tsx"></script>
   </body>
 </html>

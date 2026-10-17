@@ -3,6 +3,18 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 export type Locale = 'en' | 'ar';
 
 const AR: Record<string, string> = {
+  'Opening 3D view': 'جارٍ فتح العرض ثلاثي الأبعاد', 'Preparing 3D view': 'جارٍ تجهيز العرض ثلاثي الأبعاد',
+  'Loading 3D resources': 'جارٍ تحميل موارد العرض ثلاثي الأبعاد', 'Building 3D scene': 'جارٍ بناء المشهد ثلاثي الأبعاد',
+  'Preparing 3D display': 'جارٍ تجهيز العرض', 'Preparing first frame': 'جارٍ تجهيز الإطار الأول',
+  'Camera pinned': 'الكاميرا مثبتة', 'Loading 3D view…': 'جارٍ تحميل العرض ثلاثي الأبعاد…',
+  Saving: 'الحفظ', 'Autosave local projects': 'حفظ المشاريع المحلية تلقائياً',
+  'Online projects always autosave and sync. With local autosave off, click Unsaved changes to save.': 'تُحفظ المشاريع المتصلة وتُزامن دائماً تلقائياً. عند إيقاف الحفظ المحلي التلقائي، انقر على التغييرات غير المحفوظة للحفظ.',
+  'Saving…': 'جارٍ الحفظ…', 'Save project': 'حفظ المشروع', 'Save failed — retry': 'فشل الحفظ — أعد المحاولة',
+  'Opening project': 'جارٍ فتح المشروع', 'Loading progress': 'تقدم التحميل',
+  'Reading project': 'جارٍ قراءة المشروع', 'Checking project': 'جارٍ التحقق من المشروع',
+  'Preparing drawing': 'جارٍ تجهيز الرسم', 'Preparing selection': 'جارٍ تجهيز التحديد',
+  'Preparing assets': 'جارٍ تجهيز الأصول', 'Preparing 3D views': 'جارٍ تجهيز العروض ثلاثية الأبعاد',
+  'Opening workspace': 'جارٍ فتح مساحة العمل', Ready: 'جاهز',
   Settings: 'الإعدادات', Interface: 'الواجهة', 'UI scale': 'حجم الواجهة', 'ArchAI menu': 'قائمة ArchAI',
   'Size of bars, panels, menus and dialogs. The drawing keeps its own zoom.': 'حجم الأشرطة واللوحات والقوائم والنوافذ. يحتفظ الرسم بتكبيره الخاص.',
   'Auto: using touch now': 'تلقائي: اللمس مستخدم الآن', 'Auto: using mouse now': 'تلقائي: الفأرة مستخدمة الآن', 'Larger controls and touch gestures': 'أزرار أكبر وإيماءات اللمس',

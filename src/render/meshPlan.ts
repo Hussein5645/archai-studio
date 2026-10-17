@@ -9,6 +9,7 @@
  * cached per blob; static rendering (sheets, export) computes them on the spot.
  */
 import { base64ToBytes } from '@/persistence/base64';
+import type { ArchaiDocument } from '@/document';
 
 export interface MeshPlan {
   /** Section lines at the cut height: x1, y1, x2, y2, ... (element-local mm). */
@@ -264,6 +265,31 @@ export class MeshPlanStore {
   };
 
   getVersion = (): number => this.version;
+
+  peek = (blobId: string): MeshPlan | null => this.plans.get(blobId) ?? null;
+
+  /** Await the initial plans without mounting every mesh and repainting them after each job. */
+  async prepare(doc: ArchaiDocument, progress: (done: number, total: number) => void): Promise<void> {
+    const blobs = new Map<string, string>();
+    for (const element of Object.values(doc.elements)) {
+      const mesh = element.meta?.['mesh'];
+      if (!element.visible || !mesh || typeof mesh !== 'object' || Array.isArray(mesh) || typeof mesh['blobId'] !== 'string') continue;
+      const blob = doc.blobs[mesh['blobId']];
+      if (blob) blobs.set(blob.id, blob.data);
+    }
+    let done = 0;
+    for (const [id, data] of blobs) {
+      if (!this.plans.has(id)) await new Promise<void>((resolve, reject) => {
+        const unsubscribe = this.subscribe(() => {
+          if (!this.plans.has(id)) return;
+          unsubscribe();
+          resolve();
+        });
+        try { this.get(id, data); } catch (error) { unsubscribe(); reject(error); }
+      });
+      progress(++done, blobs.size);
+    }
+  }
 
   /** The plan now if computed (or `sync`: computed on the spot), else queued and null. */
   get(blobId: string, data: string, sync = false): MeshPlan | null {

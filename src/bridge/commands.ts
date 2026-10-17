@@ -128,6 +128,26 @@ export const bridgeHeld = defineMutation({
   },
 });
 
+export const bridgeResolveAll = defineMutation({
+  id: 'bridge-resolve-all',
+  label: 'Resolve all Live Bridge conflicts',
+  group: 'document',
+  palette: false,
+  history: 'record',
+  input: z.object({ take: z.enum(['theirs', 'mine']), conflicts: z.array(z.string().min(1).max(64)).optional() }),
+  run: (ctx, input) => {
+    const bridge = bridgeOf(ctx.doc as { bridge?: BridgeData });
+    const ids = input.conflicts ?? bridge.conflicts.map((conflict) => conflict.id);
+    let resolved = 0;
+    for (const id of new Set(ids)) {
+      if (!bridge.conflicts.some((conflict) => conflict.id === id)) continue;
+      bridgeResolve.run(ctx, { conflict: id, take: input.take });
+      resolved++;
+    }
+    return { resolved };
+  },
+});
+
 export const bridgeSetSource = defineMutation({
   id: 'bridge-set-source',
   label: 'Live Bridge link settings',
@@ -410,6 +430,6 @@ export const bridgeLinkSource = defineMutation({
   },
 });
 
-export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeHeld, bridgeSetSource, bridgeSetOwner, bridgeLinkSource,
+export const bridgeCommands = [bridgeSync, syncLiveLink, bridgeResolve, bridgeResolveAll, bridgeHeld, bridgeSetSource, bridgeSetOwner, bridgeLinkSource,
   bridgeSetControl,
   bridgeSetShare, bridgeOffer, bridgeConvert, bridgeRevert, bridgeForget];

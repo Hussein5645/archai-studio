@@ -9,9 +9,10 @@ export function GroupEditBar() {
   const elements = useAppState((s) => s.doc.elements);
   const groupId = useAppState((s) => activeGroup(s.doc.elements, s.ui));
   const sheet = useAppState((s) => Boolean(s.ui.sheet));
+  const view3d = useAppState((s) => s.ui.view3d.open);
   if (!groupId) return null;
   const path = groupPath(elements, groupId);
-  return <nav className={styles.bar} aria-label="Group editing" data-testid="group-edit-bar" onPointerDown={(e) => e.stopPropagation()}>
+  return <nav className={styles.bar} aria-label="Group editing" data-testid="group-edit-bar" data-in-3d={view3d || undefined} onPointerDown={(e) => e.stopPropagation()}>
     <FolderOpen size={16} aria-hidden="true" /><strong>Editing group</strong>
     <div className={styles.path}>
       <button type="button" onClick={() => void dispatch('exit-group', { all: true })}>{sheet ? 'Sheet' : 'Board'}</button>

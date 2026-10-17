@@ -46,6 +46,9 @@ private class FakeFiles : HostFiles {
 }
 
 private class FakeClipboard : HostClipboard {
+    var image: PickedImage? = null
+    override suspend fun readImage() = image
+    override suspend fun writeImage(data: String, text: String?) { image = PickedImage("Copied.png", "image/png", data); this.text = text }
     var text: String? = null
     override suspend fun readText() = text
     override suspend fun writeText(text: String) {
@@ -126,6 +129,15 @@ class BridgeRouterTest {
         assertEquals("Tower.AIR", opened["name"]!!.jsonPrimitive.content)
         val saved = call(Channels.FILES_SAVE_DOCUMENT_AS, """{"text":"{}","suggestedName":"Plan.AIR"}""")
         assertEquals("content://docs/Plan.AIR", saved["value"]!!.jsonObject["path"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun exchangesImagesAndRejectsEmptyBinaryPayloads() = runTest {
+        val copied = call(Channels.CLIPBOARD_WRITE_IMAGE, """{"data":"aW1hZ2U=","text":"editable"}""")
+        assertTrue(copied["ok"]!!.jsonPrimitive.boolean)
+        assertEquals("editable", clipboard.text)
+        assertEquals("aW1hZ2U=", call(Channels.CLIPBOARD_READ_IMAGE)["value"]!!.jsonObject["data"]!!.jsonPrimitive.content)
+        assertEquals(false, call(Channels.CLIPBOARD_WRITE_IMAGE, """{"data":""}""")["ok"]!!.jsonPrimitive.boolean)
     }
 
     @Test

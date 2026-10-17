@@ -1,6 +1,6 @@
 import { Brush, Glasses, MapPin, Pipette, X } from 'lucide-react';
 import { SceneMaterialTools } from '@/ui/SceneMaterialTools';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useApp, useAppState, useDispatch } from '@/app/context';
 import styles from './View3D.module.css';
 import { paintTarget, sectionOf, useSceneView } from './useSceneView';
@@ -12,6 +12,8 @@ import { useI18n } from '@/ui/i18n';
 import { canRender, openRenderStudio } from '@/studio/link';
 import { openAccountDialog } from '@/ui/account-dialog';
 import { VR_SIGN_IN_MESSAGE } from './vrShare';
+import { cameraNavigationLocked } from '@/document/viewCamera';
+import type { SceneLoading } from './useSceneView';
 
 /** Full-screen 3D workspace: same scene, same selection, same commands as the board. */
 export function View3DWorkspace() {
@@ -28,9 +30,22 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
   const { t } = useI18n();
   const { executor, platform, toasts, store } = useApp();
   const containerRef = useRef<HTMLDivElement>(null);
-  const view = useSceneView(containerRef, portalId);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const toolbar = toolbarRef.current;
+    const main = toolbar?.closest('main');
+    if (!toolbar || !main) return;
+    const update = () => main.style.setProperty('--scene-toolbar-offset', `${Math.ceil(toolbar.getBoundingClientRect().bottom - main.getBoundingClientRect().top + 12)}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(toolbar);
+    return () => { observer.disconnect(); main.style.removeProperty('--scene-toolbar-offset'); };
+  }, []);
+  const [loading, setLoading] = useState<SceneLoading>({ detail: 'Preparing 3D view' });
+  const view = useSceneView(containerRef, portalId, undefined, setLoading);
   const doc = useAppState((s) => s.doc);
   const portal = portalId ? doc.elements[portalId] : null;
+  const pinned = cameraNavigationLocked(doc, portalId);
   const cut = sectionOf(doc, portalId);
   const isSection = Boolean(cut);
   const isCamera = Boolean((portal?.meta?.['view3d'] as { cameraMode?: boolean } | undefined)?.cameraMode);
@@ -126,7 +141,7 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
   };
 
   return (
-    <div className={styles.workspace} data-testid="view3d-workspace">
+    <div className={styles.workspace} data-testid="view3d-workspace" aria-busy={loading !== null}>
       <div
         ref={containerRef}
         className={styles.workspaceCanvas}
@@ -156,11 +171,17 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
           else void droppedMaterial(fromLibrary, (id, input) => executor.dispatch(id, input), store.getState().doc, platform).then(paint, (error: unknown) => toasts.push({ kind: 'error', message: error instanceof Error ? error.message : String(error) }));
         }}
       />
-      {!isSection && <SceneMaterialTools view={view.current} onTogglePaint={togglePaint} />}
-      <div className={styles.workspaceBar}>
+      {loading && <div className={loading.updating ? styles.sceneUpdating : styles.sceneLoading} data-testid={loading.updating ? "view3d-updating" : "view3d-loading"} role="status">
+        <strong>{t(loading.error ? 'Could not update 3D view' : loading.updating ? 'Updating model' : 'Opening 3D view')}</strong>
+        <span>{t(loading.detail)}</span>
+        {loading.error && <button type="button" onClick={onClose}>{t('Close')}</button>}
+      </div>}
+      {!isSection && (!loading || loading.updating) && <SceneMaterialTools view={view.current} onTogglePaint={togglePaint} />}
+      <div ref={toolbarRef} className={styles.workspaceBar} data-testid="view3d-toolbar">
         <strong>{t(cut?.plan ? 'Plan (Level)' : isSection ? 'Section' : isCamera ? 'Camera (Perspective)' : '3D (Orthographic)')}</strong>
-        <button type="button" onClick={() => view.current?.frameAll()}>{t('Frame all')}</button>
-        {!isSection && (
+        {pinned && <span className={styles.hint}>{t('Camera pinned')}</span>}
+        <button type="button" disabled={pinned || (loading !== null && !loading.updating)} onClick={() => view.current?.frameAll()}>{t('Frame all')}</button>
+        {!isSection && (!loading || loading.updating) && (
           <>
             <button type="button" data-active={placing} onClick={() => { materialUi.set({ painting: false }); setPlacing((on) => !on); }} title={t('Click floors to place VR tour stops; each faces the way you are looking (Esc to stop)')}>
               <MapPin size={13} />
@@ -175,7 +196,7 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
             </details>
           </>
         )}
-        {!isSection && (
+        {!isSection && (!loading || loading.updating) && (
           <>
             <button type="button" data-active={painting} onClick={togglePaint} title={t('Paint (B): click to apply the material in hand (Face / Part / Object / Replace all in the bar below), Shift+click the part, Ctrl+click the whole object, Alt+click to pick a material. Or drag a swatch from Materials.')}>
               {activeMaterial ? <Swatch material={activeMaterial} size="small" /> : <Brush size={13} />}

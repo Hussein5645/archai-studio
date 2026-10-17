@@ -1,11 +1,11 @@
 import { Camera, FlipHorizontal2, Maximize2 } from 'lucide-react';
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 import { useAppState, useAppStateShallow, useDispatch } from '@/app/context';
 import { boardDoc } from '@/store';
 import { isEffectivelyVisible } from '@/document';
 import { worldMatrix } from '@/geometry';
 import styles from './View3D.module.css';
-import { sectionOf, useSceneView } from './useSceneView';
+import { sectionOf, useSceneView, type SceneLoading } from './useSceneView';
 import { useI18n } from '@/ui/i18n';
 
 /** One live 3D viewport sitting inside a portal rect on the board. */
@@ -19,7 +19,8 @@ export const View3DPortal = memo(function View3DPortal({ id }: { id: string }) {
   const selected = useAppState((s) => s.ui.selection.includes(id));
   const containerRef = useRef<HTMLDivElement>(null);
   const open = useCallback(() => void dispatch('open-view3d', { id }), [dispatch, id]);
-  useSceneView(containerRef, id, open);
+  const [loading, setLoading] = useState<SceneLoading>({ detail: 'Preparing 3D view' });
+  useSceneView(containerRef, id, open, setLoading);
   if (!element || element.kind !== 'rect' || !element.visible) return null;
   const matrix = worldMatrix(doc.elements, element);
   const left = matrix[4] * viewport.zoom + viewport.x;
@@ -56,6 +57,7 @@ export const View3DPortal = memo(function View3DPortal({ id }: { id: string }) {
         </span>
       </div>
       <div ref={containerRef} className={styles.portalCanvas} data-tiny={tiny || undefined} onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()} />
+      {loading && !loading.updating && <div className={styles.portalLoading} role="status">{t(loading.error ? 'Could not open 3D view' : 'Loading 3D view…')}</div>}
     </div>
   );
 });

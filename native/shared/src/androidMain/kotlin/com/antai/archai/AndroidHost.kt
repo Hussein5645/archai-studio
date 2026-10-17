@@ -8,6 +8,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
 import androidx.activity.result.ActivityResultLauncher
+import androidx.core.content.FileProvider
 import com.antai.archai.host.HostClipboard
 import com.antai.archai.host.HostFiles
 import com.antai.archai.host.OpenedDocument
@@ -75,6 +76,14 @@ class PickerLaunchers {
  */
 class AndroidFiles(private val context: Context, private val pickers: PickerLaunchers) : HostFiles {
     private val resolver get() = context.contentResolver
+    override suspend fun saveBinary(data: String, suggestedName: String, mime: String): String? {
+        val uri = pickers.pick(pickers.createDocument, suggestedName) ?: return null
+        withContext(Dispatchers.IO) {
+            val bytes = Base64.decode(data, Base64.DEFAULT)
+            resolver.openOutputStream(uri, "wt")?.use { it.write(bytes) } ?: throw FileNotFoundException(uri.toString())
+        }
+        return uri.toString()
+    }
 
     override suspend fun openDocument(): OpenedDocument? {
         // .AIR has no registered MIME type, so the picker shows every file.
@@ -145,9 +154,37 @@ class AndroidFiles(private val context: Context, private val pickers: PickerLaun
 
 class AndroidClipboard(private val context: Context) : HostClipboard {
     private val manager get() = context.getSystemService(ClipboardManager::class.java)
+    override suspend fun readImage(): PickedImage? {
+        val clip = withContext(Dispatchers.Main) { manager.primaryClip } ?: return null
+        for (index in 0 until clip.itemCount) {
+            val uri = clip.getItemAt(index).uri ?: continue
+            val mime = context.contentResolver.getType(uri) ?: continue
+            if (!mime.startsWith("image/")) continue
+            return withContext(Dispatchers.IO) {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@withContext null
+                PickedImage("Pasted image", mime, Base64.encodeToString(bytes, Base64.NO_WRAP))
+            }
+        }
+        return null
+    }
+
+    override suspend fun writeImage(data: String, text: String?) {
+        val uri = withContext(Dispatchers.IO) {
+            val directory = File(context.cacheDir, "clipboard").also { it.mkdirs() }
+            val file = File(directory, "image-${System.currentTimeMillis()}.png")
+            file.writeBytes(Base64.decode(data, Base64.DEFAULT))
+            FileProvider.getUriForFile(context, "${context.packageName}.clipboard", file)
+        }
+        withContext(Dispatchers.Main) {
+            val clip = ClipData.newUri(context.contentResolver, "ArchAI image", uri)
+            if (text != null) clip.addItem(ClipData.Item(text))
+            manager.setPrimaryClip(clip)
+        }
+    }
 
     override suspend fun readText(): String? = withContext(Dispatchers.Main) {
-        manager.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
+        val clip = manager.primaryClip ?: return@withContext null
+        (0 until clip.itemCount).firstNotNullOfOrNull { clip.getItemAt(it).text?.toString() }
     }
 
     override suspend fun writeText(text: String) = withContext(Dispatchers.Main) {

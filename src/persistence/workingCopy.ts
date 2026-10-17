@@ -56,24 +56,27 @@ export class WorkingCopyStore {
    * The stored working copy as plain document data (blob bytes filled back in), ready for
    * parseDocumentData; null when there is none. Older copies with inline bytes load as they are.
    */
-  async load(id: string): Promise<unknown> {
+  async load(id: string, onProgress?: (done: number, total: number) => void): Promise<unknown> {
     const text = await this.storage.get(documentKey(id));
     if (!text) return null;
     const raw: unknown = JSON.parse(text);
     const blobs = (raw as { blobs?: Record<string, { data?: unknown }> } | null)?.blobs;
     const present = new Set<string>();
     if (blobs && typeof blobs === 'object') {
-      await Promise.all(
-        Object.entries(blobs).map(async ([blobId, blob]) => {
+      const entries = Object.entries(blobs);
+      // Bound storage IPC and payloads instead of requesting every large blob at once.
+      for (let offset = 0; offset < entries.length; offset += 8) {
+        await Promise.all(entries.slice(offset, offset + 8).map(async ([blobId, blob]) => {
           if (!blob || typeof blob !== 'object') return;
           if (blob.data === '') {
             const data = await this.storage.get(blobKey(id, blobId));
-            if (data === null) return;
+            if (data === null) throw new Error(`Project data is missing for blob ${blobId}.`);
             blob.data = data;
           }
           present.add(blobId);
-        }),
-      );
+        }));
+        onProgress?.(Math.min(entries.length, offset + 8), entries.length);
+      }
     }
     // Inline blobs of an older copy are not in storage yet: the next save writes them out.
     this.stored.set(id, new Set((await this.storedIds(id)).filter((blobId) => present.has(blobId))));

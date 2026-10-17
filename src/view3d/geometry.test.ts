@@ -9,6 +9,17 @@ const options = { lod: 'high' as const, models: new Map(), textures: new Map() }
 const byId = (built: Built[]) => new Map(built.map((item) => [item.id, item]));
 
 describe('incremental scene builds', () => {
+  it('keeps geometry for board display changes and invalidates graphics changes', () => {
+    const app = createTestApp();
+    run(app, 'create-rect', { x: 0, y: 0, meta: { solid: { height: 1000 } } });
+    const doc = app.store.getState().doc;
+    const first = buildScene(doc, options);
+    const display = { ...doc, workspace: { ...doc.workspace, background: '#eeeeee', grid: { ...doc.workspace.grid, visible: false }, viewStyle: 'realistic' as const } };
+    const second = buildScene(display, options, byId(first));
+    expect(second[0]!.object).toBe(first[0]!.object);
+    const graphics = { ...display, workspace: { ...display.workspace, graphics: { ...display.workspace.graphics } } };
+    expect(buildScene(graphics, options, byId(second))[0]!.object).not.toBe(second[0]!.object);
+  });
   it('uses a generated imported-model preview only in Low detail mode', () => {
     const app = createTestApp();
     const blobId = 'large-model-lod-test';
@@ -117,4 +128,35 @@ describe('incremental scene builds', () => {
     const low = byId(buildScene(app.store.getState().doc, { ...options, lod: 'low' }, third));
     expect(low.get(rectId)!.object).not.toBe(third.get(rectId)!.object);
   });
+});
+
+it('stages group replacements without detaching unchanged children until commit', () => {
+  const app = createTestApp();
+  const a = run<string>(app, 'create-rect', { x: 0, y: 0, meta: { solid: { height: 100 } } });
+  const b = run<string>(app, 'create-rect', { x: 500, y: 0, meta: { solid: { height: 100 } } });
+  const group = run<string>(app, 'group-selection', { ids: [a, b] });
+  const opts = { ...options, reuseParts: true };
+  const first = byId(buildScene(app.store.getState().doc, opts));
+  const old = first.get(group)!;
+  const unchanged = old.parts!.get(b)!.object;
+  const parent = unchanged.parent;
+  run(app, 'move-selection', { ids: [a], dx: 30, dy: 0 });
+  const next = byId(buildScene(app.store.getState().doc, opts, first)).get(group)!;
+  expect(next.object).not.toBe(old.object);
+  expect(next.parts!.get(b)!.object).toBe(unchanged);
+  expect(unchanged.parent).toBe(parent);
+  expect(next.parts!.get(a)!.object).not.toBe(old.parts!.get(a)!.object);
+  for (const item of next.attachments!) item.parent.add(item.object);
+  expect(unchanged.parent).not.toBe(parent);
+  expect(old.object.getObjectById(unchanged.id)).toBeUndefined();
+  expect(next.object.getObjectById(unchanged.id)).toBe(unchanged);
+});
+
+it('retains unrelated geometry when an imported binary blob changes', () => {
+  const app=createTestApp();
+  const id=run<string>(app,'create-rect',{x:0,y:0,meta:{solid:{height:100}}});
+  const doc=app.store.getState().doc;
+  const first=byId(buildScene(doc,options));
+  const changed={...doc,blobs:{...doc.blobs,unrelated:{id:'unrelated',mime:'model/gltf-binary',data:'AAAA',width:1,height:1}}} as typeof doc;
+  expect(byId(buildScene(changed,options,first)).get(id)!.object).toBe(first.get(id)!.object);
 });

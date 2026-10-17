@@ -7,6 +7,7 @@ import { createDocumentFromTemplate, ArchaiTemplateSchema } from '@/persistence/
 import { DEFAULT_VIEWPORT } from '@/store';
 import { CommandError, defineEffect, defineMutation, type EffectContext } from '../contract';
 import { megabytes, startProgress, withProgress, type ProgressHandle } from '@/progress';
+import { finishProjectBoard, prepareProjectBoard, withProjectLoading, type ProjectLoadTask } from '@/persistence/projectLoading';
 
 /**
  * Whether replacing the current document would lose work: either it has unsaved changes, or it
@@ -164,6 +165,12 @@ export const loadDocument = defineMutation({
   run: (ctx, input) => {
     Object.assign(ctx.doc, input.document);
     ctx.ui.selection = [];
+    ctx.ui.groupEditId = null;
+    ctx.ui.sheet = null;
+    ctx.ui.view3d = { open: false, portalId: null };
+    ctx.ui.parametricEditor = { open: false, elementId: null };
+    ctx.ui.graphicsDialog = { open: false, type: null, elementId: null };
+    ctx.ui.exportDialog = { open: false, paperId: null };
     ctx.ui.editingTextId = null;
     ctx.ui.tool = 'select';
     const bounds = rootBounds(input.document.elements as ElementTable);
@@ -228,7 +235,7 @@ export const openDocument = defineEffect({
     if (!file) return null;
     const task = startProgress(`Opening ${file.name}`, `Reading ${megabytes(file.text.length)}`, 0.1);
     try {
-      const result = await openFile(ctx, file, task);
+      const result = await withProjectLoading(file.name, (loading) => openFile(ctx, file, task, loading));
       task.done();
       return result;
     } catch (error) {
@@ -239,7 +246,7 @@ export const openDocument = defineEffect({
 });
 
 /** Opens a picked .AIR (or Revit export) file, reporting each step. */
-async function openFile(ctx: EffectContext, file: { name: string; text: string; path: string | null }, task: ProgressHandle) {
+async function openFile(ctx: EffectContext, file: { name: string; text: string; path: string | null }, task: ProgressHandle, loading: ProjectLoadTask) {
   await task.paint();
   if (/.(rvt|rfa|rte)$/i.test(file.name)) {
     throw new CommandError('rejected', `${file.name}: Revit files open through the ArchAI add-in for Revit. In Revit choose ArchAI > Send to ArchAI, then open the exported .AIR file here.`);
@@ -261,10 +268,12 @@ async function openFile(ctx: EffectContext, file: { name: string; text: string; 
   await task.paint();
   const parsed = parseDocument(file.text);
   if (!parsed.ok) throw new CommandError('rejected', `${file.name}: ${parsed.error.message}`, parsed.error.details);
+  await prepareProjectBoard(parsed.document, loading, ctx.catalog);
   task.update(`Loading ${Object.keys(parsed.document.elements).length} elements`, 0.7);
   await task.paint();
   const result = ctx.dispatchSync(loadDocument, { document: parsed.document, filePath: file.path });
   if (!result.ok) throw new CommandError(result.error.code, result.error.message, result.error.details);
+  await finishProjectBoard(ctx.getState().doc, loading);
   return { id: parsed.document.id, path: file.path, migratedFrom: parsed.migratedFrom };
 }
 

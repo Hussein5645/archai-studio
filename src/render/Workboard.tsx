@@ -22,6 +22,8 @@ import { TouchActionBar } from '@/ui/TouchActionBar';
 import { useTouchMode } from '@/ui/touch';
 import { useParametricAssets } from './useParametricAssets';
 import styles from './Workboard.module.css';
+import { projectLoading } from '@/persistence/projectLoading';
+import { bytesToBase64 } from '@/persistence/base64';
 
 function gridStyle(visible: boolean, gridSize: number, viewport: { x: number; y: number; zoom: number }): CSSProperties {
   if (!visible) return {};
@@ -51,10 +53,12 @@ export function Workboard({ onContextMenu }: { onContextMenu: (position: Vec2) =
   const background = useAppState((s) => boardDoc(s).workspace.background);
   const viewStyle = useAppState((s) => boardDoc(s).workspace.viewStyle);
   const elements = useAppState((s) => boardDoc(s).elements);
+  const documentId = useAppState((s) => s.doc.id);
+  useEffect(() => { projectLoading.boardReady(documentId); }, [documentId, elements]);
   const view3dOpen = useAppState((s) => s.ui.view3d.open);
   const sheetId = useAppState((s) => s.ui.sheet?.paperId ?? null);
   const groupId = useAppState((s) => s.ui.groupEditId);
-  const isEmpty = useAppState((s) => Object.keys(boardDoc(s).elements).length === 0);
+  const isEmpty = useMemo(() => Object.keys(elements).length === 0, [elements]);
   const { overlay, handlers, drawingActions } = useInteractions(containerRef, { onContextMenu });
   const { isTouch } = useTouchMode();
   const hasSelection = useAppState((s) => s.ui.selection.length > 0);
@@ -102,6 +106,16 @@ export function Workboard({ onContextMenu }: { onContextMenu: (position: Vec2) =
       data-panning={overlay.panning || undefined}
       data-cursor={overlay.cursor ?? undefined}
       {...handlers}
+      onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } }}
+      onDrop={(event) => {
+        const image = Array.from(event.dataTransfer.files).find(file => file.type.startsWith('image/'));
+        if (!image || projectLoading.getSnapshot()) return;
+        event.preventDefault();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const x = (event.clientX - rect.left - viewport.x) / viewport.zoom;
+        const y = (event.clientY - rect.top - viewport.y) / viewport.zoom;
+        void image.arrayBuffer().then(data => { if (store.getState().doc.id === documentId) return dispatch('paste-image', {data:bytesToBase64(new Uint8Array(data)), mime:image.type, name:image.name, x, y}); });
+      }}
     >
       <BoardLayers elements={elements} transform={transform} viewStyle={viewStyle} hidePortals={view3dOpen} sheetId={sheetId} />
       <Overlay state={overlay} />
@@ -141,6 +155,10 @@ function BoardLayers({ elements, transform, viewStyle, hidePortals, sheetId }: {
   // Paint order only depends on `elements`, not viewport/tool — memoise it so panning and
   // zooming (which re-render Workboard every pointermove) don't recompute it every frame.
   const runs = useMemo(() => boardRuns(elements, sheetId), [elements, sheetId]);
+  // Retain the React children while only the SVG transform changes during pan/zoom.
+  const painted = useMemo(() => runs.map((run) => run.kind === 'svg'
+    ? run.ids.map((id) => <ElementNode key={id} id={id} />)
+    : null), [runs]);
   return (
     <div className={styles.world} data-testid="world" data-view-style={viewStyle} data-sheet={sheetId ?? undefined}>
       {runs.map((run, index) =>
@@ -161,7 +179,7 @@ function BoardLayers({ elements, transform, viewStyle, hidePortals, sheetId }: {
         ) : (
           <svg key={`paint-${index}`} className={styles.paintLayer} data-run={index}>
             <g transform={transform}>
-              {run.ids.map((id) => <ElementNode key={id} id={id} />)}
+              {painted[index]}
             </g>
           </svg>
         ),

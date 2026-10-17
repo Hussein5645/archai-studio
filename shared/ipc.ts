@@ -23,6 +23,8 @@ export const IPC = {
   storageKeys: 'archai:storage:keys',
   clipboardReadText: 'archai:clipboard:readText',
   clipboardWriteText: 'archai:clipboard:writeText',
+  clipboardReadImage: 'archai:clipboard:readImage',
+  clipboardWriteImage: 'archai:clipboard:writeImage',
   menuSet: 'archai:menu:set',
   windowSetTitle: 'archai:window:setTitle',
   windowOpenModeling: 'archai:window:openModeling',
@@ -82,6 +84,7 @@ export const StorageKeyInput = z.object({ key: z.string().min(1).max(200) });
 export const StorageSetInput = z.object({ key: z.string().min(1).max(200), value: z.string() });
 export const StorageKeysInput = z.object({ prefix: z.string().max(200) });
 export const ClipboardWriteInput = z.object({ text: z.string() });
+export const ClipboardImageInput = z.object({ data: z.string().min(1).max(64 * 1024 * 1024), text: z.string().optional() });
 export const WindowOpenModelingInput = z.object({ assetId: z.string().min(1).max(200), name: z.string().max(200) });
 /** A live-link message: `type` plus whatever the studio protocol carries (src/studio/link.ts). */
 export const StudioMessageInput = z.object({ type: z.string().min(1).max(40) }).passthrough();

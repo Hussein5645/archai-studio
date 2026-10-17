@@ -15,7 +15,7 @@ import { LIGHT_INK } from '@/assets/system-geometry';
 import { parseSystemParameters } from '@/catalog';
 import { isWall } from '@/interaction/wallSnap';
 import { topViewStore, useModelTopView, usePackageStyleView, useParametricTopView } from './lodViews';
-import { useAppOptional } from '@/app/context';
+import { useAppOptional, useAppPresent } from '@/app/context';
 import { isPoint, POINT_SIZE } from '@/document/point';
 import { wallBodyPath, wallLayerPath, wallOutlinePath } from './wallBody';
 import { GraphOrigin } from './GraphOrigin';
@@ -754,8 +754,8 @@ function CatalogImage({ element, definition, context }: { element: Element & { k
  * light dashed box holds the place.
  */
 function MeshPlanShape({ element, blobId, context }: { element: Element & { kind: 'rect' }; blobId: string; context: RenderContext }) {
-  const live = useAppOptional() !== null;
-  useSyncExternalStore(meshPlanStore.subscribe, meshPlanStore.getVersion, meshPlanStore.getVersion);
+  const live = useAppPresent();
+  useSyncExternalStore(meshPlanStore.subscribe, () => meshPlanStore.peek(blobId), () => meshPlanStore.peek(blobId));
   const plan = meshPlanStore.get(blobId, context.blobs[blobId]!.data, !live);
   const ink = element.style.stroke && element.style.stroke !== '#9aa0aa' ? element.style.stroke : '#2b2f36';
   if (!plan) return <rect width={element.width} height={element.height} fill="none" stroke="#c3c8d2" strokeWidth={6} strokeDasharray="30 20" data-loading-mesh="true" />;

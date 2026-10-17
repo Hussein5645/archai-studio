@@ -247,6 +247,15 @@ function Conflicts({ bridge }: { bridge: BridgeData | undefined }) {
   const appOf = (key: string) => bridge?.sources[key]?.app || 'The app';
   return (
     <>
+        {conflicts.length > 0 && <section className={styles.conflict} data-testid="bridge-conflict-bulk">
+          <strong>Resolve all {conflicts.length} conflicts</strong>
+          <small>Applies to the conflicts listed below. Held mass deletions remain separate.</small>
+          <div className={styles.actions}>
+            <button type="button" onClick={() => void dispatch('select', { ids: [...new Set(conflicts.map((conflict) => conflict.element))].filter((id) => elements[id]) })}>Select all conflicts</button>
+            <button type="button" onClick={() => void dispatch('bridge-resolve-all', { conflicts: conflicts.map((conflict) => conflict.id), take: 'theirs' })}>Take source for all</button>
+            <button type="button" onClick={() => void dispatch('bridge-resolve-all', { conflicts: conflicts.map((conflict) => conflict.id), take: 'mine' })}>Keep ArchAI for all</button>
+          </div>
+        </section>}
       {held.map((h) => (
         <section key={h.id} className={styles.conflict}>
           <strong>{appOf(h.source)} would delete {h.elements.length} elements

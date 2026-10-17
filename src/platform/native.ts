@@ -109,6 +109,11 @@ export function createNativePlatform(transport: NativeTransport): Platform {
     clipboard: {
       readText: () => invoke<string | null>(IPC.clipboardReadText),
       writeText: (text) => invoke<void>(IPC.clipboardWriteText, { text }),
+      readImage: async () => {
+        const image = await invoke<OpenImageResult | null>(IPC.clipboardReadImage);
+        return image ? { name: image.name, mime: image.mime, bytes: base64ToBytes(image.data) } : null;
+      },
+      writeImage: (image, text) => invoke<void>(IPC.clipboardWriteImage, { data: bytesToBase64(image.bytes), text }),
     },
     // Tablets have no menu bar; the app's own shortcuts and toolbar cover the commands.
     menu: null,

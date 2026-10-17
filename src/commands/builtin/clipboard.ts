@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { CommandError, defineEffect } from '../contract';
 import { collectPayload, deleteSelection, ElementsPayload, insertElements } from './arrange';
+import { copyImage, pasteImage, pngImage, saveImage } from './clipboardImage';
+import { base64ToBytes, bytesToBase64 } from '@/persistence/base64';
 
 export const CLIPBOARD_TYPE = 'archai/elements';
 
@@ -27,7 +29,10 @@ export const copySelection = defineEffect({
     const text = JSON.stringify({ type: CLIPBOARD_TYPE, version: 1, payload });
     lastCopied = { text, pastes: 0 };
     try {
-      await ctx.platform.clipboard.writeText(text);
+      const element = state.ui.selection.length === 1 ? state.doc.elements[state.ui.selection[0]!] : null;
+      const blob = element?.kind === 'image' ? state.doc.blobs[element.blobId] : null;
+      if (blob && ctx.platform.clipboard.writeImage) await ctx.platform.clipboard.writeImage(await pngImage({name: element!.name ?? 'Image', mime: blob.mime, bytes: base64ToBytes(blob.data)}), text);
+      else await ctx.platform.clipboard.writeText(text);
     } catch {
       // The in-memory copy still allows pasting inside the app.
     }
@@ -56,17 +61,29 @@ export const paste = defineEffect({
   label: 'Paste',
   group: 'arrange',
   shortcuts: ['Mod+V'],
-  input: z.object({ offset: z.object({ x: z.number(), y: z.number() }).optional() }).prefault({}),
+  input: z.object({ offset: z.object({ x: z.number(), y: z.number() }).optional(), text: z.string().optional() }).prefault({}),
   when: (ctx) => ctx.ui.editingTextId === null,
   run: async (ctx, input) => {
     let text: string | null = null;
+    let denied = false;
     try {
-      text = await ctx.platform.clipboard.readText();
+      text = input.text ?? await ctx.platform.clipboard.readText();
     } catch {
       text = null;
+      denied = true;
     }
     let envelope = text ? ClipboardEnvelope.safeParse(tryJson(text)) : null;
-    if (!envelope?.success && lastCopied) envelope = ClipboardEnvelope.safeParse(tryJson(lastCopied.text));
+    if (!envelope?.success && input.text === undefined && ctx.platform.clipboard.readImage) {
+      try {
+        const image = await ctx.platform.clipboard.readImage();
+        if (image) {
+          const result = await ctx.dispatch('paste-image', {data:bytesToBase64(image.bytes), mime:image.mime, name:image.name});
+          if (!result.ok) throw new CommandError(result.error.code,result.error.message);
+          return result.value;
+        }
+      } catch (error) { if (error instanceof CommandError) throw error; }
+    }
+    if (!envelope?.success && (denied || !text) && lastCopied) envelope = ClipboardEnvelope.safeParse(tryJson(lastCopied.text));
     if (!envelope?.success) throw new CommandError('rejected', 'The clipboard has no ArchAI elements');
 
     const isRepeat = lastCopied && text === lastCopied.text;
@@ -86,4 +103,4 @@ function tryJson(text: string): unknown {
   }
 }
 
-export const clipboardCommands = [copySelection, cutSelection, paste];
+export const clipboardCommands = [copySelection, cutSelection, paste, pasteImage, copyImage, saveImage];

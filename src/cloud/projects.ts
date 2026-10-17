@@ -17,6 +17,7 @@ import type { AppStore } from '@/store';
 import type { ToastStore } from '@/ui/toast-store';
 import { CLOUD_URL, CloudError, type AccountService } from './account';
 import { LiveSession, type LiveState, type Peer } from './live';
+import { withProjectLoading, type ProjectLoadTask } from '@/persistence/projectLoading';
 import { megabytes, readWithProgress, uploadWithProgress, withProgress, type ProgressHandle } from '@/progress';
 
 export type Role = 'owner' | 'editor' | 'viewer';
@@ -235,6 +236,12 @@ export class CloudProjects {
 
   /** Opens an online project (the board's latest version, or this device's copy offline) and joins its board. */
   async open(id: string): Promise<boolean> {
+    const name = this.persistence.entry(id)?.name ?? this.listState.projects.find((project) => project.id === id)?.name ?? 'Project';
+    return withProjectLoading(name, (task) => this.openWithinLoad(id, task));
+  }
+
+  private async openWithinLoad(id: string, task: ProjectLoadTask): Promise<boolean> {
+    await this.persistence.flushPending();
     const entry = this.persistence.entry(id);
     if (entry?.cloud?.pending) await this.pushPending(id, entry.cloud);
     try {
@@ -250,7 +257,7 @@ export class CloudProjects {
       this.toasts.push({ kind: 'info', message: 'Offline: opened the copy on this device. Your edits are sent when the connection is back.' });
     }
     this.closeLive();
-    const opened = await this.persistence.openStored(id);
+    const opened = await this.persistence.openStored(id, task);
     const cloud = this.persistence.entry(id)?.cloud;
     if (opened && cloud && this.account.state().status === 'signed-in') this.startLive(id, cloud);
     this.notify();

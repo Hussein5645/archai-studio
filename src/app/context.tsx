@@ -36,6 +36,11 @@ export function useApp(): AppServices {
   return services;
 }
 
+/** Presence only; static/live drawing detection must not subscribe each mesh to the whole doc. */
+export function useAppPresent(): boolean {
+  return useContext(AppContext) !== null;
+}
+
 const noSubscribe = () => () => {};
 
 /** Document and catalog when rendered inside the app (null in static previews / templates). */

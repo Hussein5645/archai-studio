@@ -1,5 +1,5 @@
 import { IPC, type ArchaiBridge, type OpenDocumentResult, type OpenImageResult, type SaveDocumentResult } from '@shared/ipc';
-import { base64ToBytes } from '@/persistence/base64';
+import { base64ToBytes, bytesToBase64 } from '@/persistence/base64';
 import type { Platform } from './types';
 import { electronStorage } from './electronStorage';
 import { electronStudio } from './electronStudio';
@@ -50,6 +50,11 @@ export function createElectronPlatform(bridge: ArchaiBridge): Platform {
     clipboard: {
       readText: () => bridge.invoke<string>(IPC.clipboardReadText),
       writeText: (text) => bridge.invoke<void>(IPC.clipboardWriteText, { text }),
+      readImage: async () => {
+        const image = await bridge.invoke<OpenImageResult | null>(IPC.clipboardReadImage);
+        return image ? { name: image.name, mime: image.mime, bytes: base64ToBytes(image.data) } : null;
+      },
+      writeImage: (image, text) => bridge.invoke<void>(IPC.clipboardWriteImage, { data: bytesToBase64(image.bytes), text }),
     },
     menu: {
       set: (menus) => void bridge.invoke(IPC.menuSet, { menus }),

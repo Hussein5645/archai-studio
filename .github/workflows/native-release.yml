@@ -1,0 +1,38 @@
+name: Native release builds
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 21
+      - run: npm ci && npm run build:web
+      - name: Compile shared iOS code
+        working-directory: native
+        run: bash gradlew :shared:linkReleaseFrameworkIosArm64 -PskipWebBuild --console=plain
+      - name: Build unsigned iOS app
+        run: xcodebuild -project native/iosApp/iosApp.xcodeproj -scheme iosApp -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath release/ios CODE_SIGNING_ALLOWED=NO build
+      - name: Package unsigned app
+        run: |
+          mkdir -p release/unsigned/Payload
+          cp -R release/ios/Build/Products/Release-iphoneos/Archai.app release/unsigned/Payload/
+          cd release/unsigned
+          zip -qr ../ArchAI-iOS-0.2.2.31-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArchAI-iOS-0.2.2.31-unsigned
+          path: release/ArchAI-iOS-0.2.2.31-unsigned.ipa

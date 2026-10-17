@@ -9,6 +9,7 @@ import { CommandError, defineMutation } from '../contract';
 import { markerLocalPoint, requireTargets, snapshot, syncCameraFromMarker } from '../helpers';
 import { createRect } from './create';
 import { rebuildSystemElement } from './system';
+import { cameraNavigationLocked } from '@/document/viewCamera';
 
 const Camera = z.object({
   position: z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]),
@@ -64,8 +65,15 @@ export const setView3dCamera = defineMutation({
   run: (ctx, input) => {
     const element = ctx.doc.elements[input.id];
     if (!element || !element.meta?.['view3d']) throw new CommandError('rejected', 'Not a 3D view');
+    if (cameraNavigationLocked(ctx.doc, input.id)) return;
     const current = element.meta['view3d'];
     const view = current && typeof current === 'object' && !Array.isArray(current) ? (current as Record<string, JsonValue>) : {};
+    const saved = view['camera'];
+    if (saved && typeof saved === 'object' && !Array.isArray(saved) &&
+      JSON.stringify(saved['position']) === JSON.stringify(input.camera.position) &&
+      JSON.stringify(saved['target']) === JSON.stringify(input.camera.target) &&
+      saved['zoom'] === input.camera.zoom && saved['fov'] === input.camera.fov &&
+      JSON.stringify(saved['cut']) === JSON.stringify(input.camera.cut)) return;
     element.meta = { ...snapshot(element.meta), view3d: { ...view, camera: input.camera as unknown as JsonValue } };
 
     const cameraId = typeof view['cameraId'] === 'string' ? view['cameraId'] : undefined;

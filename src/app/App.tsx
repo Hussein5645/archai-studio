@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { projectLoading } from '@/persistence/projectLoading';
+import { ProjectLoadingScreen } from '@/ui/ProjectLoadingScreen';
 import { Workboard } from '@/render/Workboard';
 import { CommandPalette } from '@/ui/CommandPalette';
 import { ContextMenu } from '@/ui/ContextMenu';
@@ -41,8 +43,10 @@ export function App() {
   const { platform, registry, persistence, catalog, toasts } = useApp();
   const dispatch = useDispatch();
   const screen = useAppState((s) => s.ui.screen);
+  const loading = useSyncExternalStore(projectLoading.subscribe, projectLoading.getSnapshot, projectLoading.getSnapshot);
   const doc = useAppState((s) => s.doc);
   const sheetOpen = useAppState((s) => s.ui.sheet !== null);
+  const view3dOpen = useAppState((s) => s.ui.view3d.open);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   useGlobalShortcuts();
   useAppRouter();
@@ -117,7 +121,7 @@ export function App() {
   useEffect(() => {
     if (!platform.menu) return;
     platform.menu.set(buildAppMenu(registry));
-    return platform.menu.onCommand((commandId) => void dispatch(commandId));
+    return platform.menu.onCommand((commandId) => { if (!projectLoading.getSnapshot()) void dispatch(commandId); });
   }, [platform, registry, dispatch]);
 
   useEffect(() => {
@@ -141,7 +145,7 @@ export function App() {
 
   if (screen === 'home') {
     return (
-      <div className={styles.app}>
+      <><div className={styles.app} inert={loading !== null} aria-busy={loading !== null}>
         <HomeScreen />
         <AccountDialog />
         <ShareDialog />
@@ -150,21 +154,21 @@ export function App() {
         <ProgressCenter />
         <LiveLog />
         <Toasts />
-      </div>
+      </div><ProjectLoadingScreen /></>
     );
   }
 
   return (
-    <div className={styles.app}>
+    <><div className={styles.app} inert={loading !== null} aria-busy={loading !== null}>
       <TopBar />
       <main className={styles.main}>
         <Workboard onContextMenu={openContextMenu} />
         <View3DWorkspace />
         {sheetOpen ? <SheetPanel /> : <LeftPanel />}
         <Inspector />
-        {sheetOpen ? <SheetToolbar /> : <Toolbar />}
+        {!view3dOpen && (sheetOpen ? <SheetToolbar /> : <Toolbar />)}
         {sheetOpen && <SheetBar />}
-        <StatusBar />
+        {!view3dOpen && <StatusBar />}
         <GroupEditBar />
         {contextMenu && <ContextMenu position={contextMenu} onClose={closeContextMenu} />}
       </main>
@@ -188,6 +192,6 @@ export function App() {
         <strong>{t('Window too narrow')}</strong>
         <span>{t('Drag the window wider to keep working.')}</span>
       </div>
-    </div>
+    </div><ProjectLoadingScreen /></>
   );
 }

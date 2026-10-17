@@ -1,6 +1,18 @@
 import * as THREE from 'three';
 
 export type NormalMode = 'source' | 'auto' | 'recompute' | 'flip' | 'recompute-flip';
+const prepared = new WeakMap<THREE.BufferGeometry, Map<NormalMode, THREE.BufferGeometry>>();
+
+export function cacheNormalRepair(source: THREE.BufferGeometry, mode: NormalMode, geometry: THREE.BufferGeometry): void {
+  let byMode = prepared.get(source);
+  if (!byMode) {
+    byMode = new Map(); prepared.set(source, byMode);
+    const entries = byMode;
+    source.addEventListener('dispose', () => { for (const value of entries.values()) value.dispose(); prepared.delete(source); });
+  }
+  byMode.get(mode)?.dispose();
+  byMode.set(mode, geometry);
+}
 
 /** Orient connected triangles across position seams, then turn closed shells outward.
  * UV/material seams remain separate vertices; only the triangle index order changes.
@@ -113,6 +125,8 @@ export function inspectNormals(root: THREE.Object3D): string {
 
 /** Work on a clone: cached source geometry and other instances must remain intact. */
 export function repairNormals(source: THREE.BufferGeometry, mode: NormalMode): THREE.BufferGeometry {
+  const cached = prepared.get(source)?.get(mode);
+  if (cached) return cached.clone();
   if (mode === 'auto') return autoOrientNormals(source);
   const g = source.clone();
   if (mode === 'flip' || mode === 'recompute-flip') {

@@ -1,9 +1,14 @@
 .topbar {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  height: var(--topbar-h);
+  min-height: var(--topbar-h);
+  height: auto;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  padding-block: 4px;
   padding: 0 8px 0 12px;
   background: var(--bg-app);
   border-bottom: 1px solid var(--border);
@@ -16,6 +21,10 @@
 .topbar input {
   -webkit-app-region: no-drag;
 }
+.state[data-unsaved='true'] { color: var(--accent); font-weight: 600; cursor: pointer; }
+.name { min-width: 70px; flex-shrink: 1; }
+.state { white-space: nowrap; flex-shrink: 0; background: transparent; border: 0; }
+@media (max-width: 1200px) { .name { width: 130px; } .palette kbd { display: none; } }
 
 .appMenuAnchor { position: relative; -webkit-app-region: no-drag; }
 
@@ -435,3 +444,5 @@
   cursor: pointer;
 }
 
+
+.version { font-size: 10px; color: var(--text-muted, #71717a); white-space: nowrap; align-self: center; }

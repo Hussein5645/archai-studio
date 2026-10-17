@@ -34,6 +34,8 @@ import platform.UIKit.UIApplication
 import platform.UIKit.UIDocumentPickerDelegateProtocol
 import platform.UIKit.UIDocumentPickerViewController
 import platform.UIKit.UIPasteboard
+import platform.UIKit.UIImage
+import platform.UIKit.UIImagePNGRepresentation
 import platform.UIKit.UIViewController
 import platform.UniformTypeIdentifiers.UTType
 import platform.UniformTypeIdentifiers.UTTypeData
@@ -68,6 +70,17 @@ class IosStorageDirectory : StorageDirectory {
 }
 
 class IosClipboard : HostClipboard {
+    override suspend fun readImage(): PickedImage? {
+        val image = UIPasteboard.generalPasteboard.image ?: return null
+        val data = UIImagePNGRepresentation(image) ?: return null
+        return PickedImage("Pasted image.png", "image/png", data.base64EncodedStringWithOptions(0u))
+    }
+    override suspend fun writeImage(data: String, text: String?) {
+        val bytes = NSData.create(base64EncodedString = data, options = 0u) ?: throw IllegalArgumentException("Invalid image")
+        val item = mutableMapOf<Any?, Any>("public.png" to bytes)
+        if (text != null) item["public.utf8-plain-text"] = text
+        UIPasteboard.generalPasteboard.items = listOf(item)
+    }
     override suspend fun readText(): String? = UIPasteboard.generalPasteboard.string
     override suspend fun writeText(text: String) {
         UIPasteboard.generalPasteboard.string = text
@@ -80,6 +93,12 @@ class IosClipboard : HostClipboard {
  */
 class IosFiles : HostFiles {
     private val defaults get() = NSUserDefaults.standardUserDefaults
+    override suspend fun saveBinary(data: String, suggestedName: String, mime: String): String? {
+        val bytes = NSData.create(base64EncodedString = data, options = 0u) ?: throw IllegalArgumentException("Invalid binary data")
+        val temporary = NSURL.fileURLWithPath("${NSTemporaryDirectory()}/${suggestedName.replace('/', '_')}")
+        if (!bytes.writeToURL(temporary, atomically = true)) throw IllegalStateException("Could not write image")
+        return pick(UIDocumentPickerViewController(forExportingURLs = listOf(temporary), asCopy = true))?.absoluteString
+    }
 
     override suspend fun openDocument(): OpenedDocument? {
         val url = pick(UIDocumentPickerViewController(forOpeningContentTypes = listOf(UTTypeData), asCopy = false)) ?: return null

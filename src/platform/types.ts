@@ -41,6 +41,8 @@ export interface Platform {
   clipboard: {
     readText(): Promise<string | null>;
     writeText(text: string): Promise<void>;
+    readImage?(): Promise<ImageFile | null>;
+    writeImage?(image: ImageFile, text?: string): Promise<void>;
   };
   menu: {
     set(menus: MenuItemTemplateT[]): void;

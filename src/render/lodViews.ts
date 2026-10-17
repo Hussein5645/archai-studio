@@ -14,7 +14,7 @@ import { renderStill } from '@/view3d/offscreen';
 
 class TopViewStore {
   private readonly urls = new Map<string, string>();
-  private readonly pending = new Set<string>();
+  private readonly pending = new Map<string, Promise<void>>();
   private readonly missing = new Set<string>();
   private readonly listeners = new Set<() => void>();
   private version = 0;
@@ -43,12 +43,16 @@ class TopViewStore {
     const key = `${definitionId}|${style}`;
     const url = this.urls.get(key);
     if (url) return url;
+    if (this.missing.has(definitionId)) return null;
     if (this.pending.has(key)) return null;
-    this.pending.add(key);
     modelStore.configure(catalog);
-    void modelStore.prepare(doc).then(() => {
+    const definition = doc.definitions[definitionId];
+    const job = modelStore.prepare({ ...doc, definitions: definition ? { [definitionId]: definition } : {} }).then(async () => {
       const model = modelStore.models.get(definitionId);
       if (!model) return this.fail(definitionId); // no model: the package image stays
+      // Let the loading screen and other input paint between GPU thumbnail renders.
+      const { paint } = await import('@/progress');
+      await paint();
       try {
         const canvas = renderStill({ objects: [model.clone(true)], view: 'top', style: style === 'consistent' ? 'color' : style, size: 512, background: null });
         this.urls.set(key, canvas.toDataURL('image/png'));
@@ -58,8 +62,19 @@ class TopViewStore {
         console.warn('Top view render failed', error);
         this.fail(definitionId);
       }
-    }, () => this.fail(definitionId));
+    }, () => this.fail(definitionId)).finally(() => this.pending.delete(key));
+    this.pending.set(key, job);
     return null;
+  }
+
+  async prepare(doc: ArchaiDocument, catalog: AssetCatalog): Promise<void> {
+    const ids = new Set(Object.values(doc.elements).flatMap((element) => element.visible && element.kind === 'instance' ? [element.definitionId] : []));
+    for (const id of ids) {
+      const definition = doc.definitions[id];
+      if (definition?.kind !== 'image' || !(definition.catalog?.modelPaths?.glb || definition.catalog?.modelPaths?.fbx || definition.catalog?.modelUrl)) continue;
+      this.get(doc, catalog, id, doc.workspace.viewStyle);
+      await this.pending.get(`${id}|${doc.workspace.viewStyle}`);
+    }
   }
 }
 

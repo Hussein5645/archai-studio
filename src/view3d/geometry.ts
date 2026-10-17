@@ -7,6 +7,9 @@
  * Axes: document x → scene X, document y → scene Z, height → scene Y (up). Units stay in mm.
  */
 import * as THREE from 'three';
+import { extrusionKey } from './modelGeometry';
+import { unpackGeometry, type GeometryPacket } from './geometryPacket';
+import type { GeometryTask } from './modelGeometry.worker';
 import { slabOpenings } from '@/assets/slabOpenings';
 import { archOf, archTypeOf, elementLod, hostOf, isArchType } from '@/assets/arch-meta';
 import { stairFlightsOf, wallThicknessOf } from '@/commands/builtin/system';
@@ -181,11 +184,14 @@ function cutKey(object: THREE.Object3D, key: string): THREE.Object3D {
  * none of those changed (documents are immutable, so identity means unchanged).
  */
 export type Built = { id: string; object: THREE.Object3D; dependencies?: readonly Element[]; inputs?: BuildInputs;
+  parts?: ReadonlyMap<string, Built>;
+  /** Borrowed unchanged children move out of the old visible root only when the new root commits. */
+  attachments?: { parent: THREE.Object3D; object: THREE.Object3D }[];
 };
 
 /** Document-wide inputs every builder may read (materials, definitions, images, models, LOD). */
 interface BuildInputs {
-  workspace: ArchaiDocument['workspace'];
+  graphics: ArchaiDocument['workspace']['graphics'];
   definitions: ArchaiDocument['definitions'];
   blobs: ArchaiDocument['blobs'];
   materials: ArchaiDocument['materials'];
@@ -194,12 +200,21 @@ interface BuildInputs {
   lowModels: BuildOptions['lowModels'];
   lod: BuildOptions['lod'];
   drawing: BuildOptions['drawing'];
+  style: BuildOptions['style'];
 }
 
 function sameInputs(a: BuildInputs, b: BuildInputs): boolean {
   return (
-    a.workspace === b.workspace && a.definitions === b.definitions && a.blobs === b.blobs && a.materials === b.materials && a.textures === b.textures && a.models === b.models && a.lowModels === b.lowModels && a.lod === b.lod && a.drawing === b.drawing
+    a.graphics === b.graphics && a.definitions === b.definitions && a.materials === b.materials && a.textures === b.textures && a.models === b.models && a.lowModels === b.lowModels && a.lod === b.lod && a.drawing === b.drawing && a.style === b.style
   );
+}
+
+function sameBlobInputs(a: BuildInputs, b: BuildInputs, dependencies: readonly Element[]): boolean {
+  if (a.blobs === b.blobs) return true;
+  return dependencies.every((element) => {
+    const id = element.kind === 'image' ? element.blobId : meshOf(element)?.blobId;
+    return !id || a.blobs[id] === b.blobs[id];
+  });
 }
 
 function sameElements(a: readonly Element[], b: readonly Element[]): boolean {
@@ -795,14 +810,15 @@ function buildCurtainWall(doc: ArchaiDocument, element: LineElement, matrix: Mat
 }
 
 /** Extrudes a closed polygon (world plan points) between two heights. */
-function extrudePolygon(points: Vec2[], bottom: number, top: number, material: THREE.Material, holes: Vec2[][] = []): THREE.Mesh | null {
+function extrudePolygon(points: Vec2[], bottom: number, top: number, material: THREE.Material, holes: Vec2[][] = [], extrusions?: ReadonlyMap<string, GeometryPacket>): THREE.Mesh | null {
   if (points.length < 3) return null;
   const shape = new THREE.Shape(points.map((p) => new THREE.Vector2(p.x, p.y)));
   for (const hole of holes) if (hole.length >= 3) shape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p.x, p.y))));
   const depth = Math.max(top - bottom, 1);
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+  const cached = extrusions?.get(extrusionKey(points, depth, holes));
+  const geometry = cached ? unpackGeometry(cached).clone() : new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
   // ExtrudeGeometry extrudes along +Z; rotate so plan XY maps to scene XZ and the depth points up.
-  geometry.rotateX(Math.PI / 2);
+  if (!cached) geometry.rotateX(Math.PI / 2);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.y = top;
   return mesh;
@@ -878,7 +894,7 @@ function fillMaterial(colour: string, doubleSided: boolean): THREE.Material {
   return material;
 }
 
-function buildGeneric(doc: ArchaiDocument, element: Element, matrix: Mat, textures: Map<string, THREE.Texture>): THREE.Object3D | null {
+function buildGeneric(doc: ArchaiDocument, element: Element, matrix: Mat, textures: Map<string, THREE.Texture>, extrusions?: ReadonlyMap<string, GeometryPacket>): THREE.Object3D | null {
   const look = lookOf(doc, element);
   const MATERIALS = {
     flat: look.slot('body', 'default:flat', true),
@@ -928,7 +944,7 @@ function buildGeneric(doc: ArchaiDocument, element: Element, matrix: Mat, textur
       }
       let material: THREE.Material = element.kind === 'instance' ? MATERIALS.fallback : MATERIALS.generic;
       if (!assigned && element.kind === 'rect' && element.style.fill) material = fillMaterial(element.style.fill, false);
-      const extruded = extrudePolygon(corners, bottom, top, material);
+      const extruded = extrudePolygon(corners, bottom, top, material, [], extrusions);
       if (!extruded) return null;
       surfaceMesh(extruded, look, 'body', material, look.slotId('body', element.kind === 'instance' ? 'default:asset' : 'default:generic'));
       return cutKey(extruded, element.kind === 'instance' ? 'asset' : 'rect');
@@ -941,7 +957,7 @@ function buildGeneric(doc: ArchaiDocument, element: Element, matrix: Mat, textur
         const material = type === 'floor' ? MATERIALS.floor : type === 'ceiling' ? MATERIALS.ceiling : (assigned ?? fillMaterial(element.style.fill, true));
         // Openings (shafts, voids) go right through the slab.
         const holes = type === 'floor' || type === 'ceiling' ? slabOpenings(element).map((opening) => opening.points.map(([x, y]) => applyToPoint(matrix, { x, y }))) : [];
-        const extruded = extrudePolygon(points, bottom, top, material, holes);
+        const extruded = extrudePolygon(points, bottom, top, material, holes, extrusions);
         if (!extruded) return null;
         surfaceMesh(extruded, look, 'body', material, look.slotId('body', fallback));
         return cutKey(extruded, type === 'floor' || type === 'ceiling' ? type : 'line');
@@ -962,6 +978,10 @@ function buildGeneric(doc: ArchaiDocument, element: Element, matrix: Mat, textur
 }
 
 export interface BuildOptions {
+  extrusions?: ReadonlyMap<string, GeometryPacket>;
+  /** Live views reuse unchanged subtrees; exports retain independent objects. */
+  reuseParts?: boolean;
+  style?: string;
   /** Select output roots before construction; dependency queries still see the full document. */
   include?: (id: string) => boolean;
   /** Textures for image blobs, keyed by blob id (prepared asynchronously by the scene). */
@@ -996,10 +1016,24 @@ function buildLevelDatum(element: Element, matrix: Mat): THREE.Object3D | null {
  * unchanged keep their previous entry, object included, so an edit rebuilds only what it touched.
  */
 export function buildScene(doc: ArchaiDocument, options: BuildOptions, previous?: ReadonlyMap<string, Built>): Built[] {
+  const steps = buildSceneSteps(doc, options, previous);
+  let next = steps.next();
+  while (!next.done) next = steps.next();
+  return next.value;
+}
+
+/** The interactive viewport yields between elements, including children of large source groups. */
+export function* buildSceneSteps(doc: ArchaiDocument, options: BuildOptions, previous?: ReadonlyMap<string, Built>): Generator<void, Built[]> {
   const built: Built[] = [];
+  const created: THREE.Object3D[] = [];
+  let completed = false;
+  let oldParts: ReadonlyMap<string, Built> | undefined;
+  let parts = new Map<string, Built>();
+  let attachments: { parent: THREE.Object3D; object: THREE.Object3D }[] = [];
+  const borrowed = new Set<THREE.Object3D>();
   const elements: ElementTable = doc.elements;
-  const inputs: BuildInputs = { workspace: doc.workspace, definitions: doc.definitions, blobs: doc.blobs, materials: doc.materials, textures: options.textures, models: options.models, lowModels: options.lowModels, lod: options.lod, drawing: options.drawing };
-  const visit = (element: Element) => {
+  const inputs: BuildInputs = { graphics: doc.workspace.graphics, definitions: doc.definitions, blobs: doc.blobs, materials: doc.materials, textures: options.textures, models: options.models, lowModels: options.lowModels, lod: options.lod, drawing: options.drawing, style: options.style };
+  const visit = function* (element: Element): Generator<void, void> {
     if (!element.visible) return;
     // Board annotations (sketches, sticky notes) never reach 3D views or section cuts.
     if (element.meta?.['annotation'] || element.meta?.['annotationLayer']) return;
@@ -1022,14 +1056,14 @@ export function buildScene(doc: ArchaiDocument, options: BuildOptions, previous?
       const points = p.profile.map(([x, y]) => applyToPoint(matrix, { x: x * element.width, y: y * element.height }));
       const look = lookOf(doc, element);
       const material = look.slot('body', 'default:facade');
-      const mesh = extrudePolygon(points, 0, p.height, material);
+      const mesh = extrudePolygon(points, 0, p.height, material, [], options.extrusions);
       object = mesh ? cutKey(surfaceMesh(mesh, look, 'body', material, look.slotId('body', 'default:facade')), 'facade-element') : null;
     }
     else if (type === 'room' && element.kind === 'line') {
       const points = linePoints(element).map(([x, y]) => applyToPoint(matrix, { x, y }));
       const look = lookOf(doc, element);
       const material = look.slot('floor', 'default:room-floor');
-      const mesh = extrudePolygon(points, -20, 0, material);
+      const mesh = extrudePolygon(points, -20, 0, material, [], options.extrusions);
       object = mesh ? surfaceMesh(mesh, look, 'floor', material, look.slotId('floor', 'default:room-floor')) : null;
     } else if (type === 'room-label' || type === 'room-divider' || element.meta?.['view3d'] || element.meta?.['sectionLine'] || element.meta?.['planRegion'] || element.meta?.['cameraMarker'] || element.meta?.['analysis'] || element.meta?.['location'] || element.meta?.['noiseEmitter']) {
       object = null;
@@ -1043,8 +1077,11 @@ export function buildScene(doc: ArchaiDocument, options: BuildOptions, previous?
     } else if (element.kind === 'group' || element.meta?.['paper']) {
       const group = new THREE.Group();
       for (const child of childrenOf(elements, element.id)) {
-        const childBuilt = buildOne(child);
-        if (childBuilt) group.add(childBuilt);
+        const childBuilt = yield* buildOne(child);
+        if (childBuilt) {
+          if (borrowed.has(childBuilt)) attachments.push({ parent: group, object: childBuilt });
+          else group.add(childBuilt);
+        }
       }
       object = group;
     } else if (element.kind === 'instance') {
@@ -1091,16 +1128,16 @@ export function buildScene(doc: ArchaiDocument, options: BuildOptions, previous?
           const local = worldMatrix(table, child);
           const scaled: Mat = [local[0] * sx, local[1] * sy, local[2] * sx, local[3] * sy, local[4] * sx, local[5] * sy];
 
-          const childObject = buildGeneric(doc, child, scaled, options.textures);
+          const childObject = buildGeneric(doc, child, scaled, options.textures, options.extrusions);
           if (childObject) group.add(childObject);
         }
         placeInFrame(group, matrix);
         object = cutKey(group, type === 'facade-element' ? 'facade-element' : 'asset');
       } else {
-        object = buildGeneric(doc, element, matrix, options.textures);
+        object = buildGeneric(doc, element, matrix, options.textures, options.extrusions);
       }
     } else {
-      object = buildGeneric(doc, element, matrix, options.textures);
+      object = buildGeneric(doc, element, matrix, options.textures, options.extrusions);
     }
     if (object) {
       object.position.y += instanceElevationOf(element, elements) - baseElevationOf(element);
@@ -1110,30 +1147,62 @@ export function buildScene(doc: ArchaiDocument, options: BuildOptions, previous?
       });
       applyWorldUvs(object);
       built.push({ id: element.id, object: tagged(object, element.id) });
+      created.push(object);
     }
+    yield;
   };
-  const buildOne = (element: Element): THREE.Object3D | null => {
+  const buildOne = function* (element: Element): Generator<void, THREE.Object3D | null> {
+    const dependencies = sceneDependencies(elements, element);
+    const last = oldParts?.get(element.id);
+    if (options.reuseParts && last?.inputs && last.dependencies && sameInputs(last.inputs, inputs) && sameBlobInputs(last.inputs, inputs, dependencies) && sameElements(last.dependencies, dependencies)) {
+      const retain = (item: Element) => {
+        const part = oldParts?.get(item.id);
+        if (part) parts.set(item.id, part);
+        for (const child of childrenOf(elements, item.id)) retain(child);
+      };
+      retain(element);
+      borrowed.add(last.object);
+      yield;
+      return last.object;
+    }
     const before = built.length;
-    visit(element);
+    yield* visit(element);
     const produced = built.splice(before);
     if (produced.length === 0) return null;
     const group = new THREE.Group();
     for (const item of produced) group.add(item.object);
+    parts.set(element.id, { id: element.id, object: group, dependencies, inputs });
     return group;
   };
+  try {
   for (const element of childrenOf(elements, null)) {
     if (options.include && !options.include(element.id)) continue;
     const dependencies = sceneDependencies(elements, element);
     const last = previous?.get(element.id);
-    if (last?.dependencies && last.inputs && sameInputs(last.inputs, inputs) && sameElements(last.dependencies, dependencies)) {
+    if (last?.dependencies && last.inputs && sameInputs(last.inputs, inputs) && sameBlobInputs(last.inputs, inputs, dependencies) && sameElements(last.dependencies, dependencies)) {
       built.push(last);
       continue;
     }
     const before = built.length;
-    visit(element);
-    for (let index = before; index < built.length; index++) built[index] = { ...built[index]!, dependencies, inputs };
+    oldParts = options.reuseParts ? last?.parts : undefined;
+    parts = new Map();
+    attachments = [];
+    yield* visit(element);
+    for (let index = before; index < built.length; index++) built[index] = { ...built[index]!, dependencies, inputs, parts, attachments };
   }
+  completed = true;
   return built;
+  } finally {
+    if (!completed) {
+      const disposed = new Set<THREE.BufferGeometry>();
+      for (const object of created) object.traverse((child) => {
+        if (child instanceof THREE.Mesh && !child.userData['shared'] && !disposed.has(child.geometry)) {
+          disposed.add(child.geometry);
+          child.geometry.dispose();
+        }
+      });
+    }
+  }
 }
 
 /** Tallest point of the built scene (walls, columns, assets), for framing sections. */
@@ -1209,4 +1278,22 @@ function buildConcept(elements: ElementTable, element: Element): THREE.Object3D 
     }
   }
   return cutKey(group, 'rect');
+}
+
+/** Prepare costly closed polygons off-thread; simple primitives stay cheap to construct locally. */
+export function extrusionTasks(doc: ArchaiDocument): Extract<GeometryTask, { kind: 'extrude' }>[] {
+  const tasks = new Map<string, Extract<GeometryTask, { kind: 'extrude' }>>();
+  for (const element of Object.values(doc.elements)) {
+    if (!element.visible || element.kind !== 'line' || !(element.closed && element.style.fill || archTypeOf(element) === 'room')) continue;
+    const type = archTypeOf(element);
+    if (type && !['room', 'floor', 'ceiling'].includes(type)) continue;
+    const matrix = worldMatrix(doc.elements, element);
+    const points = linePoints(element).map(([x,y]) => applyToPoint(matrix, {x,y}));
+    const holes = type === 'floor' || type === 'ceiling' ? slabOpenings(element).map(opening => opening.points.map(([x,y]) => applyToPoint(matrix, {x,y}))) : [];
+    if (points.length < 32 && holes.length === 0) continue;
+    const depth = type === 'room' ? 20 : Math.max(solidOf(element).height, 1);
+    const key = extrusionKey(points, depth, holes);
+    tasks.set(key, { kind: 'extrude', key, points, holes, depth });
+  }
+  return [...tasks.values()];
 }
