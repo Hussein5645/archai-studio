@@ -40,3 +40,23 @@ test('board image clipboard, original-file saving and visible version',async({pa
   await expect(page.getByRole('menuitem',{name:'Copy image',exact:true})).toBeVisible();
   await expect(page.getByRole('menuitem',{name:'Save image…',exact:true})).toBeVisible();
 });
+
+
+test('image and existing library-definition drops both reach the board',async({page})=>{
+ await page.goto('/');await page.waitForFunction(()=>Boolean(window.__archai));
+ await page.evaluate(async()=>{
+  const {executor}=window.__archai!;await executor.dispatch('new-document');
+  const c=document.createElement('canvas');c.width=32;c.height=16;
+  const data=c.toDataURL('image/png').split(',')[1]!;
+  const result=await executor.dispatch('create-image-definition',{name:'Drop fixture',width:1000,height:500,blob:{mime:'image/png',data,width:32,height:16}});
+  if(!result.ok)throw new Error(result.error.message);
+  const board=document.querySelector('[data-testid="workboard"]')!;
+  const library=new DataTransfer();library.setData('application/x-archai-definition',String(result.value));
+  board.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:library,clientX:600,clientY:300}));
+  board.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:library,clientX:600,clientY:300}));
+  const blob=await new Promise<Blob>(resolve=>c.toBlob(blob=>resolve(blob!),'image/png'));
+  const image=new DataTransfer();image.items.add(new File([blob],'Dropped.png',{type:'image/png'}));
+  board.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:image,clientX:700,clientY:400}));
+ });
+ await expect.poll(()=>page.evaluate(()=>(Object.values(window.__archai!.store.getState().doc.elements) as {kind:string}[]).map(e=>e.kind).sort())).toEqual(['image','instance']);
+});
