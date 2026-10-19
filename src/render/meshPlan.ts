@@ -234,9 +234,13 @@ export function planOfBlob(data: string): MeshPlan {
 }
 
 /** SVG path data of segments. */
+const segmentPaths = new WeakMap<readonly number[], string>();
 export function segmentsPath(segments: readonly number[]): string {
+  const cached = segmentPaths.get(segments);
+  if (cached !== undefined) return cached;
   let d = '';
   for (let i = 0; i + 3 < segments.length; i += 4) d += `M${segments[i]!.toFixed(1)} ${segments[i + 1]!.toFixed(1)}L${segments[i + 2]!.toFixed(1)} ${segments[i + 3]!.toFixed(1)}`;
+  segmentPaths.set(segments, d);
   return d;
 }
 

@@ -14,6 +14,9 @@ export interface ProjectDocUpdateMsg {
 }
 
 export interface InsertModeledAssetMsg {
+  requestId?: string;
+  /** Identity used by packages sent before project links used the workspace id. */
+  previousPackageKey?: string;
   type: 'INSERT_MODELED_ASSET';
   projectId: string;
   assetId: string;
@@ -30,6 +33,7 @@ export interface InsertModeledAssetMsg {
 }
 
 export interface AssetInsertedAckMsg {
+  requestId?: string;
   type: 'ASSET_INSERTED_ACK';
   projectId: string;
   assetId: string;
@@ -78,4 +82,26 @@ export function getProjectSyncChannel(): BroadcastChannel | null {
   } catch {
     return null;
   }
+}
+
+/** A send succeeds only after the destination has applied and saved the model. */
+export function sendModeledAsset(message: InsertModeledAssetMsg): Promise<void> {
+  const channel = getProjectSyncChannel();
+  if (!channel) return Promise.reject(new Error('Project communication is unavailable.'));
+  return new Promise((resolve, reject) => {
+    const requestId = crypto.randomUUID();
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      channel.close();
+      if (error) reject(error); else resolve();
+    };
+    const timer = setTimeout(() => finish(new Error('The linked project did not confirm the model. Open that project and try again.')), 120_000);
+    channel.onmessage = (event: MessageEvent<ProjectSyncMessage>) => {
+      const ack = event.data;
+      if (ack?.type !== 'ASSET_INSERTED_ACK' || ack.requestId !== requestId || ack.projectId !== message.projectId || ack.assetId !== message.assetId) return;
+      finish(ack.success ? undefined : new Error(ack.message || 'The project could not save the model.'));
+    };
+    try { channel.postMessage({ ...message, requestId }); }
+    catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
+  });
 }

@@ -37,6 +37,9 @@ export function BridgeInspector({ ids: selectedIds }: { ids: string[] }) {
   return (
     <div className={styles.inspector} data-testid="bridge-inspector">
       <h5>Live Bridge</h5>
+      {selectedIds.some((id) => sourceGroups.has(id)) && (
+        <p>Whole-model position stays in ArchAI. The controls below apply to individual elements inside the model.</p>
+      )}
       {origins.size > 0 ? (
         <p>
           From{' '}

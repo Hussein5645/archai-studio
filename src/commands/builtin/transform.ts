@@ -24,7 +24,7 @@ import { CommandError, defineMutation, type MutationContext } from '../contract'
 import { requireTargets, scaleElementLocal, syncCamerasAmong, targetIds } from '../helpers';
 import { assertInstanceSizable, resizeWindow, syncParametersFromSize } from './system';
 import { joinWallBody, joinWallEnd, unjoinWallEnd } from './wallJoints';
-import { mapAnchorWorld, setMapAnchorWorld } from '@/analysis/model';
+import { locationOf, mapAnchorWorld, setMapAnchorWorld } from '@/analysis/model';
 
 const RectInput = z.object({
   x: z.number().finite(),
@@ -102,6 +102,8 @@ function moveTargets(ctx: MutationContext, ids: string[] | undefined, dx: number
   for (const id of hostedBy(elements, [...moved])) {
     const hosted = ctx.doc.elements[id];
     if (!hosted || moved.has(id) || hosted.locked) continue;
+    const hostId = hostOf(hosted);
+    if (hostId && locationOf(elements[hostId])) continue;
     // Skip when an ancestor group already moved.
     if (targets.some((target) => target.kind === 'group' && isAncestor(elements, target.id, id))) continue;
     translateElement(elements, hosted, { x: dx, y: dy });

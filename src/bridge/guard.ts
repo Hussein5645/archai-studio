@@ -13,6 +13,7 @@ import type { ArchaiDocument } from '@/document';
 import { BRIDGE_FACETS } from '@/document';
 import { originOf, ownerOf } from './engine';
 import { childLookup, facetHashes, type ChildLookup } from './facets';
+import type { Element } from '@/document';
 
 /** Whether an element is an app's and differs (in parts the app decides) from what the app sent. */
 export function needsRevert(doc: ArchaiDocument, id: string, children?: ChildLookup): boolean {
@@ -28,8 +29,17 @@ export function needsRevert(doc: ArchaiDocument, id: string, children?: ChildLoo
 
 export function startBridgeGuard(executor: CommandExecutor, store: AppStore, notify?: (app: string) => void): () => void {
   const touched = new Set<string>();
+  let previous = store.getState().doc;
+  const containers = new Map<string, Element>();
   let scheduled = false;
   return executor.onDocChange((patches) => {
+    const next = store.getState().doc;
+    if (next.id !== previous.id) containers.clear();
+    else for (const source of Object.values(next.bridge?.sources ?? {})) {
+      const id = source.groupId;
+      if (id && !next.elements[id] && previous.elements[id]) containers.set(id, previous.elements[id]!);
+    }
+    previous = next;
     for (const patch of patches) {
       if (patch.path[0] === 'elements' && typeof patch.path[1] === 'string') touched.add(patch.path[1]);
     }
@@ -44,7 +54,10 @@ export function startBridgeGuard(executor: CommandExecutor, store: AppStore, not
       const children = childLookup(doc.elements);
       const revert = ids.filter((id) => needsRevert(doc, id, children));
       if (revert.length === 0) return;
-      const result = executor.dispatchSync('bridge-revert', { ids: revert });
+      const restore = [...containers.values()].filter((group) => !doc.elements[group.id] &&
+        Object.values(doc.bridge!.sources).some((source) => source.groupId === group.id));
+      containers.clear();
+      const result = executor.dispatchSync('bridge-revert', { ids: revert, containers: restore });
       if (result.ok && notify) {
         const origin = originOf(doc.bridge.elements[revert[0]!]);
         notify(origin ? doc.bridge.sources[origin]?.app || 'Its app' : 'Its app');

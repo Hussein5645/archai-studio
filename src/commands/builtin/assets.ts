@@ -838,6 +838,7 @@ export const placeCatalogAsset = defineEffect({
   }),
   run: async (ctx, input) => {
     const { asset } = input;
+    const projectId = ctx.getState().doc.id;
     const existing = Object.values(ctx.getState().doc.definitions).find(
       (d) => d.kind === 'image' && d.catalog?.path === asset.path && d.catalog?.source === ctx.catalog.source,
     );
@@ -848,6 +849,7 @@ export const placeCatalogAsset = defineEffect({
     }
     const x = input.centered ? input.x - asset.size.width / 2 : input.x;
     const y = input.centered ? input.y - asset.size.height / 2 : input.y;
+    if (ctx.getState().doc.id !== projectId) throw new CommandError('rejected', 'The project changed while loading the asset.');
     return ctx.transaction(`Place ${asset.name}`, () => {
       const definitionResult = ctx.dispatchSync(createImageDefinition, {
         name: asset.name,
@@ -947,12 +949,13 @@ const replacePlacedCatalogAsset = defineMutation({
   input: z.object({
     asset: CatalogAssetInput,
     source: z.string().optional(),
+    previousPackageKey: z.string().optional(),
     blob: z.object({ mime: z.string(), data: z.string(), width: z.number().positive(), height: z.number().positive() }),
   }),
   run: (ctx, input) => {
     const { asset } = input;
     const existing = Object.values(ctx.doc.definitions).filter(
-      (definition) => definition.kind === 'image' && definition.catalog?.path === asset.path && definition.catalog?.source === input.source,
+      (definition) => definition.kind === 'image' && (definition.catalog?.path === asset.path || (asset.package?.key && definition.catalog?.package?.key === asset.package.key) || (input.previousPackageKey && definition.catalog?.package?.key === input.previousPackageKey)) && definition.catalog?.source === input.source,
     );
     if (existing.length === 0) return 0;
     const currentIds = new Set(existing.map((definition) => definition.id));
@@ -999,18 +1002,21 @@ export const updatePlacedCatalogAsset = defineEffect({
   description: 'Updates every placed instance of a local .CAI package without adding another instance.',
   group: 'edit',
   palette: false,
-  input: z.object({ asset: CatalogAssetInput }),
+  input: z.object({ asset: CatalogAssetInput, previousPackageKey: z.string().optional() }),
   run: async (ctx, input) => {
     const { asset } = input;
+    const projectId = ctx.getState().doc.id;
     const existing = Object.values(ctx.getState().doc.definitions).filter(
-      (definition) => definition.kind === 'image' && definition.catalog?.path === asset.path && definition.catalog?.source === ctx.catalog.source,
+      (definition) => definition.kind === 'image' && (definition.catalog?.path === asset.path || (asset.package?.key && definition.catalog?.package?.key === asset.package.key) || (input.previousPackageKey && definition.catalog?.package?.key === input.previousPackageKey)) && definition.catalog?.source === ctx.catalog.source,
     );
     if (existing.length === 0) return 0;
     const image = await ctx.catalog.fetchImage(asset);
+    if (ctx.getState().doc.id !== projectId) throw new CommandError('rejected', 'The project changed while loading the asset.');
     return ctx.transaction(`Update ${asset.name}`, () => {
       const result = ctx.dispatchSync(replacePlacedCatalogAsset, {
         asset,
         source: ctx.catalog.source,
+        previousPackageKey: input.previousPackageKey,
         blob: { mime: image.mime, data: bytesToBase64(image.bytes), width: image.width, height: image.height },
       });
       if (!result.ok) throw new CommandError(result.error.code, result.error.message);

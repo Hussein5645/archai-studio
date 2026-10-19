@@ -4,6 +4,7 @@
 .spacer { flex: 1; }
 .muted { color: var(--text-muted, #57606a); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header .muted { max-width: 40vw; }
+.header { padding-right: calc(12px + 100vw - env(titlebar-area-width, 100vw)); -webkit-app-region: no-drag; }
 .stat { font-size: 12px; color: var(--text-muted, #57606a); white-space: nowrap; }
 .stat b { color: var(--text, #1f2328); }
 .iconButton { display: inline-grid; place-items: center; min-width: 30px; min-height: 30px; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }

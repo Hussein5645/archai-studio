@@ -72,15 +72,15 @@ describe('concept massing', () => {
     expect(meshVolume).toBeCloseTo(10_000 * 10_000 * 12_000 - 4000 ** 3, -6);
   });
 
-  it('recenters the imagery on the pin and slides placed context along', () => {
+  it('recenters the map frame on the pin without sliding placed context', () => {
     const app = createTestApp();
     const map = run<string>(app, 'create-location', { x: 0, y: 0 });
     run(app, 'update-analysis', { id: map, patch: { lat: 51.5, lon: -0.12, mapCenter: { lat: 51.5, lon: -0.1186 } } });
     run(app, 'upsert-massing-form', { mapId: map, kind: 'solid', source: 'drawn', profile: square(1000), start: 0, end: 3000 });
     run(app, 'recenter-map', { id: map });
     const doc = app.store.getState().doc;
-    expect(locationOf(doc.elements[map])?.mapCenter).toEqual({ lat: 51.5, lon: -0.12 });
-    expect(conceptRoot(doc, map)!.x).toBeGreaterThan(90_000);
+    expect(locationOf(doc.elements[map])?.mapCenter).toEqual({ lat: 51.5, lon: -0.1186 });
+    expect(conceptRoot(doc, map)!.x).toBe(0);
     expect(siteContextRoot(doc, map)).toBeNull();
   });
 });

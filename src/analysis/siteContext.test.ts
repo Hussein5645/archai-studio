@@ -52,14 +52,14 @@ describe('OpenStreetMap site context', () => {
     expect(Object.values(doc.elements).filter((e) => siteContextOf(e)?.role === 'road')).toHaveLength(0);
   });
 
-  it('moves context with the map and keeps imagery still while resizing', () => {
+  it('keeps context fixed while the map frame moves and resizes', () => {
     const app = createTestApp();
     const map = run<string>(app, 'create-location', { x: 0, y: 0 });
     run(app, 'insert-site-context', { id: map, radius: 250, features: parseOverpass(sample) });
     const rootId = siteContextRoot(app.store.getState().doc, map)!.id;
     run(app, 'move-selection', { ids: [map], dx: 5000, dy: -2000 });
     let doc = app.store.getState().doc;
-    expect([doc.elements[rootId]!.x, doc.elements[rootId]!.y]).toEqual([5000, -2000]);
+    expect([doc.elements[rootId]!.x, doc.elements[rootId]!.y]).toEqual([0, 0]);
     const anchor = mapAnchorWorld(doc.elements, doc.elements[map]!)!;
     run(app, 'resize-selection', { ids: [map], from: { x: 5000, y: -2000, width: 200_000, height: 140_000 }, to: { x: -45_000, y: -2000, width: 250_000, height: 140_000 } });
     doc = app.store.getState().doc;

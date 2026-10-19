@@ -33,18 +33,12 @@ import { naturalSize } from '@/catalog/parametric';
 import { isAnalysisElement } from '@/analysis/model';
 import { useI18n } from './i18n';
 import { SheetItemInspector } from '@/sheets/SheetInspector';
+import { VIEW_STYLE_OPTIONS } from '@/view3d/viewAppearance';
 import { DiagramInspector } from '@/diagrams/DiagramInspector';
 import { diagramOf } from '@/diagrams/model';
 import { isSheetItem, northArrowOf, scaleBarOf, sheetViewOf, titleBlockOf } from '@/sheets/model';
 
 const UNIT_LABELS: Record<Unit, string> = { mm: 'Millimetres', cm: 'Centimetres', m: 'Metres', in: 'Inches', ft: 'Feet' };
-const VIEW_STYLE_OPTIONS = [
-  { value: 'realistic', label: 'Realistic' },
-  { value: 'hidden-line', label: 'Hidden line' },
-  { value: 'shaded', label: 'Shaded' },
-  { value: 'wireframe', label: 'Wireframe' },
-  { value: 'consistent', label: 'Colors' },
-];
 
 function InstanceProfileParameter({ parameterKey, label, value, spatial, disabled, onCommit }: { parameterKey: string; label: string; value: ProfilePoint[]; spatial: boolean; disabled: boolean; onCommit: (value: ProfilePoint[]) => void }) {
   const source = JSON.stringify(value);
@@ -211,7 +205,7 @@ function OpenViewInspector({ portalId }: { portalId: string }) {
 }
 
 function workspaceStyleLabel(style: string): string {
-  return style === 'hidden-line' ? 'hidden line' : style;
+  return VIEW_STYLE_OPTIONS.find(option => option.value === style)?.label ?? style;
 }
 
 export function Inspector() {

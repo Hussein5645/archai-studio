@@ -27,6 +27,7 @@ export class PersistenceService {
   private saveStatus: 'saved' | 'unsaved' | 'saving' | 'error' = 'saved';
   private lastSavedDoc: unknown = null;
   private opening = false;
+  private readonly pendingSaves = new Set<Promise<void>>();
 
   getSaveStatus = () => this.saveStatus;
 
@@ -216,6 +217,8 @@ export class PersistenceService {
   /** Writes any pending changes immediately (e.g. before the window closes). */
   async flushPending(): Promise<void> {
     if (this.docTimer || this.viewportTimer) await this.flush();
+    await Promise.all([...this.pendingSaves]);
+    if (this.saveStatus === 'error') throw new Error('Could not save the current project. Try saving again before switching projects.');
   }
 
   async flush(force = false): Promise<void> {
@@ -303,7 +306,15 @@ export class PersistenceService {
     }, 800);
   }
 
-  private async saveDocument(): Promise<void> {
+  private saveDocument(): Promise<void> {
+    const pending = this.writeDocument();
+    this.pendingSaves.add(pending);
+    const cleanup = () => { this.pendingSaves.delete(pending); };
+    void pending.then(cleanup, cleanup);
+    return pending;
+  }
+
+  private async writeDocument(): Promise<void> {
     const state = this.store.getState();
     if (state.doc === this.lastSavedDoc && this.record.lastDocumentId === state.doc.id) return;
     // The Home screen's placeholder document is not a project: never list it.

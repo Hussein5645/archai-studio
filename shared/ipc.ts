@@ -85,7 +85,7 @@ export const StorageSetInput = z.object({ key: z.string().min(1).max(200), value
 export const StorageKeysInput = z.object({ prefix: z.string().max(200) });
 export const ClipboardWriteInput = z.object({ text: z.string() });
 export const ClipboardImageInput = z.object({ data: z.string().min(1).max(64 * 1024 * 1024), text: z.string().optional() });
-export const WindowOpenModelingInput = z.object({ assetId: z.string().min(1).max(200), name: z.string().max(200) });
+export const WindowOpenModelingInput = z.object({ assetId: z.string().min(1).max(200), name: z.string().max(200), projectId: z.string().min(1).max(200).optional() });
 /** A live-link message: `type` plus whatever the studio protocol carries (src/studio/link.ts). */
 export const StudioMessageInput = z.object({ type: z.string().min(1).max(40) }).passthrough();
 export const WindowSetTitleInput = z.object({ title: z.string().max(300) });
@@ -163,6 +163,8 @@ export interface ArchaiBridge {
   platform: 'electron';
   invoke<T = unknown>(channel: string, payload?: unknown): Promise<T>;
   onCommand(listener: (commandId: string) => void): () => void;
+  /** Desktop close waits for the renderer's final save to commit. */
+  onBeforeClose?(listener: () => Promise<void>): () => void;
   /** Live-link messages from other windows (see IPC.studioSend). */
   onStudio?(listener: (message: unknown) => void): () => void;
   /** Live-link requests from plugins (desktop board window). */

@@ -28,15 +28,11 @@ export function createLocalCaiStore(platform?: Platform | null): LocalCaiStore {
 
   return {
     async savePackage(id: string, bytes: Uint8Array): Promise<void> {
-      memory.set(id, bytes);
       if (platform?.storage) {
-        try {
-          const key = `${STORAGE_PREFIX}${id}`;
-          await platform.storage.set(key, bytesToBase64(bytes));
-        } catch (err) {
-          console.warn('Could not persist .cai package to platform storage', err);
-        }
+        const key = `${STORAGE_PREFIX}${id}`;
+        await platform.storage.set(key, bytesToBase64(bytes));
       }
+      memory.set(id, bytes);
       notify();
     },
 

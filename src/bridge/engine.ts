@@ -499,7 +499,10 @@ function syncModel(ctx: MutationContext, input: BridgeSyncInput): BridgeSyncRepo
   }
   if (bridge.held.some((held) => held.source === key)) bridge.held = bridge.held.filter((held) => held.source !== key);
   const sourceSize = [...bound.values()].length;
-  if (deletable.length > MASS_DELETE && deletable.length > sourceSize * MASS_SHARE) {
+  // An empty export can mean a failed collector or a temporarily empty view.
+  // Even a small linked model must survive that until deletion is confirmed.
+  const emptySnapshot = input.complete && present.size === 0 && deletable.length > 0 && explicit.size === 0;
+  if (emptySnapshot || (deletable.length > MASS_DELETE && deletable.length > sourceSize * MASS_SHARE)) {
     bridge.held.push({ id: ctx.ids.next('hist'), source: key, elements: deletable, at: now });
     report.held = deletable.length;
     notes.push(`${deletable.length} deletions held for confirmation`);

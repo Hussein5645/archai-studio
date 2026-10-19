@@ -100,8 +100,40 @@ function createWindow(route: Route = ''): BrowserWindow {
       sandbox: true,
       nodeIntegration: false,
       spellcheck: false,
+      // Project loading, Live Bridge requests and exports run in the renderer. Keep
+      // their timers and animation-frame work running when covered or minimized.
+      backgroundThrottling: false,
     },
   });
+
+  // beforeunload cannot await storage. Keep the renderer alive until its final
+  // project/model transaction commits, rather than quitting halfway through it.
+  let saveReady = false;
+  let allowClose = false;
+  let closingId: string | null = null;
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  win.webContents.on('ipc-message', (_event, channel, value: unknown) => {
+    if (channel === 'archai:window:save-ready') saveReady = value === true;
+    if (channel !== 'archai:window:saved') return;
+    const reply = z.object({ id: z.string(), ok: z.boolean(), error: z.string().optional() }).safeParse(value);
+    if (!reply.success || reply.data.id !== closingId) return;
+    clearTimeout(closeTimer);
+    closingId = null;
+    if (reply.data.ok) { allowClose = true; win.close(); }
+    else dialog.showErrorBox('ArchAI could not save', `${reply.data.error ?? 'Saving failed.'}\nThe window has been kept open so you can retry saving.`);
+  });
+  win.on('close', (event) => {
+    if (allowClose || !saveReady || win.webContents.isCrashed()) return;
+    event.preventDefault();
+    if (closingId) return;
+    closingId = randomUUID();
+    win.webContents.send('archai:window:save', closingId);
+    closeTimer = setTimeout(() => {
+      closingId = null;
+      dialog.showErrorBox('ArchAI could not finish saving', 'The window has been kept open because saving did not finish. Please try saving again.');
+    }, 30_000);
+  });
+  win.once('closed', () => clearTimeout(closeTimer));
 
   // Shown once the page has painted. Some GPU setups never report that first paint for a hidden
   // window (the app then ran with no window at all), so the loaded page, or at the latest three
@@ -143,8 +175,8 @@ function createWindow(route: Route = ''): BrowserWindow {
 let modelingWindow: BrowserWindow | null = null;
 
 /** One modeling window at a time; a second request loads the new asset into it. */
-function openModelingWindow(params: { assetId: string; name: string }): void {
-  const route: Route = `modeling?${new URLSearchParams({ asset: params.assetId, name: params.name })}`;
+function openModelingWindow(params: z.infer<typeof WindowOpenModelingInput>): void {
+  const route: Route = `modeling?${new URLSearchParams({ asset: params.assetId, name: params.name, ...(params.projectId ? { project: params.projectId } : {}) })}`;
   if (modelingWindow && !modelingWindow.isDestroyed()) {
     if (DEV_URL) void modelingWindow.loadURL(`${DEV_URL.replace(/\/$/, '')}/${route}`);
     else void modelingWindow.loadFile(INDEX_HTML, { hash: `/${route}` });
@@ -176,9 +208,19 @@ function storageFile(key: string): string {
 
 async function writeAtomic(file: string, text: string): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, text, 'utf8');
-  await fs.rename(tmp, file);
+  const tmp = `${file}.${randomUUID()}.tmp`;
+  try {
+    const handle = await fs.open(tmp, 'wx');
+    try {
+      await handle.writeFile(text, 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fs.rename(tmp, file);
+  } finally {
+    await fs.unlink(tmp).catch(() => undefined);
+  }
 }
 
 function isMissingFile(error: unknown): boolean {

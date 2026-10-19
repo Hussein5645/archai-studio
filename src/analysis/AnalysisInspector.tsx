@@ -267,6 +267,7 @@ function LocationInspector({ element }: { element: Element }) {
     <>
       <div className={styles.section} data-testid="location-inspector">
         <h3 className="u-section-title">{t('Project location')}</h3>
+        <p className="u-hint">Move or resize the map frame to reveal another area. The project pin and site geometry stay fixed on the board.</p>
         <p className="u-hint">The map is at real scale (1:1): zoom the board to zoom the map, resize the rect to see more ground.</p>
         <div className={styles.actions}>
           <TextButton primary={editingBoundary} onClick={() => setBoundaryEditing(editingBoundary ? null : element.id)}>

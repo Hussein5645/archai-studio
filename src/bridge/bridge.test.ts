@@ -509,7 +509,7 @@ describe('Live Bridge models on the board', () => {
 });
 
 describe('Live Bridge export', () => {
-  it('sends model-group moves to receivers and permitted source objects with a new update token', () => {
+  it('keeps model-group placement in ArchAI while sending only individual permitted moves to the source', () => {
     const app = createTestApp();
     sync(app, 'rhino:facade', model({ meshes: [mesh('a', 1000)] }));
     const group = bridge(app).sources['rhino:facade']!.groupId!;
@@ -519,12 +519,14 @@ describe('Live Bridge export', () => {
     run(app, 'select', { ids: [group] });
     run(app, 'move-selection', { ids: [group], dx: 500, dy: 200 });
     expect(pullPlan(doc(app), 'other', before.sent).nodes.has(id)).toBe(true);
-    const first = pullPlan(doc(app), 'rhino:facade', null).updates[0]!;
-    expect(first.move).toEqual([500, 200, 0]);
+    expect(pullPlan(doc(app), 'rhino:facade', null).updates).toEqual([]);
     run(app, 'move-selection', { ids: [group], dx: 100, dy: 0 });
-    const second = pullPlan(doc(app), 'rhino:facade', null).updates[0]!;
-    expect(second.move).toEqual([600, 200, 0]);
-    expect(second.token).not.toBe(first.token);
+    expect(pullPlan(doc(app), 'rhino:facade', null).updates).toEqual([]);
+    run(app, 'move-selection', { ids: [id], dx: 100, dy: 50 });
+    expect(pullPlan(doc(app), 'rhino:facade', null).updates[0]!.move).toEqual([100, 50, 0]);
+    sync(app, 'rhino:facade', model({ meshes: [mesh('a', 1100)] }));
+    expect(doc(app).elements[group]).toMatchObject({ x: 600, y: 200 });
+    expect(bound(app, 'rhino:facade', 'a')).toBeDefined();
   });
   it('dissolves source groups for export, keeping world positions', () => {
     const app = createTestApp();
@@ -604,6 +606,65 @@ describe('Live Bridge generic meshes', () => {
 
 describe("An app's geometry edited in ArchAI", () => {
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('restores the source layer along with protected children after a container deletion', async () => {
+    const app = createTestApp();
+    const stop = startBridgeGuard(app.executor, app.store);
+    try {
+      sync(app, 'protected', model({ meshes: [mesh('a')] }));
+      const id = bound(app, 'protected', 'a')!.id;
+      const group = bridge(app).sources['protected']!.groupId!;
+      run(app, 'select', { ids: [group] });
+      run(app, 'move-selection', { ids: [group], dx: 500, dy: 200 });
+      await settle();
+      run(app, 'delete-selection', {});
+      await settle();
+      expect(doc(app).elements[id]).toBeDefined();
+      expect(doc(app).elements[group]).toMatchObject({ x: 500, y: 200 });
+    } finally { stop(); }
+  });
+
+  it('keeps the source layer and placement across whole-model moves, source updates and ownership changes', async () => {
+    const app = createTestApp();
+    const stop = startBridgeGuard(app.executor, app.store);
+    try {
+      sync(app, 'revit:model', model({ app: 'Revit', meshes: [mesh('a', 1000)] }));
+      const id = bound(app, 'revit:model', 'a')!.id;
+      const group = bridge(app).sources['revit:model']!.groupId!;
+      run(app, 'select', { ids: [group] });
+      run(app, 'move-selection', { ids: [group], dx: 5000, dy: 2000 });
+      await settle();
+      run(app, 'move-selection', { ids: [id], dx: 100, dy: 0 });
+      await settle();
+      expect(doc(app).elements[id]!.x).toBe(1000);
+      run(app, 'bridge-set-owner', { ids: [id], facet: 'transform', owner: 'archai' });
+      run(app, 'move-selection', { ids: [id], dx: 200, dy: 0 });
+      await settle();
+      expect(doc(app).elements[id]!.x).toBe(1200);
+      expect(pullPlan(doc(app), 'revit:model', null).updates[0]!.move).toEqual([200, 0, 0]);
+      sync(app, 'revit:model', model({ app: 'Revit', meshes: [mesh('a', 3000)] }));
+      await settle();
+      expect(doc(app).elements[id]!.x).toBe(1200);
+      expect(doc(app).elements[group]).toMatchObject({ x: 5000, y: 2000 });
+      expect(doc(app).elements[id]!.parentId).toBe(group);
+      const empty = sync(app, 'revit:model', model({ app: 'Revit', meshes: [] }));
+      await settle();
+      expect(empty.deleted).toBe(0);
+      expect(doc(app).elements[group]).toBeDefined();
+      expect(doc(app).elements[id]).toBeDefined();
+    } finally { stop(); }
+  });
+
+  it('holds an empty complete export even for a small model', () => {
+    const app = createTestApp();
+    sync(app, 'small', model({ meshes: [mesh('a')] }));
+    const id = bound(app, 'small', 'a')!.id;
+    const report = sync(app, 'small', model({ meshes: [] }));
+    expect(report).toMatchObject({ deleted: 0, held: 1 });
+    expect(doc(app).elements[id]).toBeDefined();
+    run(app, 'bridge-held', { id: bridge(app).held[0]!.id, apply: true });
+    expect(doc(app).elements[id]).toBeUndefined();
+  });
 
   it('is put back as the app sent it: moved, renamed, deleted', async () => {
     const app = createTestApp();

@@ -11,6 +11,21 @@ const LINK_EVENT = 'archai:link';
 
 contextBridge.exposeInMainWorld('archai', {
   platform: 'electron',
+  onBeforeClose(listener: () => Promise<void>): () => void {
+    const handler = (_event: unknown, id: unknown) => {
+      if (typeof id !== 'string') return;
+      void Promise.resolve().then(listener).then(
+        () => ipcRenderer.send('archai:window:saved', { id, ok: true }),
+        (error: unknown) => ipcRenderer.send('archai:window:saved', { id, ok: false, error: error instanceof Error ? error.message : 'The project could not be saved.' }),
+      );
+    };
+    ipcRenderer.on('archai:window:save', handler);
+    ipcRenderer.send('archai:window:save-ready', true);
+    return () => {
+      ipcRenderer.removeListener('archai:window:save', handler);
+      ipcRenderer.send('archai:window:save-ready', false);
+    };
+  },
   invoke(channel: string, payload?: unknown): Promise<unknown> {
     if (typeof channel !== 'string' || !channel.startsWith(NAMESPACE)) {
       return Promise.reject(new Error(`Refused IPC channel: ${String(channel)}`));

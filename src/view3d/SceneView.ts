@@ -24,6 +24,8 @@ import { modelStore, textureStore } from './assets';
 import { edgesOf, prepareEdges } from './edges';
 import { meshOf, meshStore } from './meshes';
 import { ModelGeometry } from './modelGeometry';
+import { sceneTriangles } from './largeScene';
+import { NATURAL_LIGHT } from './viewAppearance';
 import type { NormalMode } from './meshNormals';
 import { inGroup } from '@/selection/groupScope';
 import { AnalysisLayer, type AnalysisSample } from '@/analysis/layer3d';
@@ -183,10 +185,10 @@ function highlightMaterial(base: THREE.Material | THREE.Material[]): THREE.Mater
   if ('emissive' in copy && (copy as THREE.MeshStandardMaterial).emissive) {
     const lit = copy as THREE.MeshStandardMaterial;
     lit.emissive = HIGHLIGHT.clone();
-    lit.emissiveIntensity = 0.35;
+    lit.emissiveIntensity = 0.12;
   } else if ('color' in copy && (copy as THREE.MeshBasicMaterial).color) {
     const unlit = copy as THREE.MeshBasicMaterial;
-    unlit.color = unlit.wireframe ? HIGHLIGHT.clone() : new THREE.Color(0xcfdcff);
+    unlit.color = unlit.wireframe ? HIGHLIGHT.clone() : unlit.color.clone().lerp(HIGHLIGHT, 0.12);
   }
   return copy;
 }
@@ -260,6 +262,10 @@ export interface SceneViewEvents {
 const FLOOR_NORMAL_Y = 0.7;
 
 export class SceneView {
+  private triangleCount = 0;
+  private navigationTimer = 0;
+  private navigating = false;
+  private readonly navigationEdges = new Map<THREE.Object3D, boolean>();
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
   private readonly camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
@@ -318,6 +324,8 @@ export class SceneView {
     this.viewStyle = section ? 'hidden-line' : 'realistic';
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, stencil: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = NATURAL_LIGHT.exposure;
     this.renderer.setClearColor(section ? 0xfafafa : 0xf3f4f6);
     this.renderer.domElement.style.display = 'block';
     this.renderer.domElement.style.width = '100%';
@@ -333,6 +341,8 @@ export class SceneView {
     }
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = false;
+    this.controls.addEventListener('start', () => this.beginNavigation());
+    this.controls.addEventListener('end', () => this.endNavigation());
     if (section) {
       // A section is a fixed elevation: pan and zoom only; what is in front of the cut, beyond
       // the ends of the cut line or past its depth is clipped away.
@@ -349,8 +359,8 @@ export class SceneView {
       this.scheduleCameraSave();
     });
 
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa0aa, 1.1));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+    this.scene.add(new THREE.HemisphereLight(NATURAL_LIGHT.sky, NATURAL_LIGHT.ground, NATURAL_LIGHT.ambient));
+    const sun = new THREE.DirectionalLight(0xfff3df, NATURAL_LIGHT.sun);
     sun.position.set(12_000, 20_000, 8_000);
     this.scene.add(sun);
     this.grid = new THREE.GridHelper(40_000, 40, 0xc8cbd2, 0xe1e3e8);
@@ -502,6 +512,7 @@ export class SceneView {
   }
 
   private applyViewStyle(root: THREE.Object3D = this.content, recursive = true): void {
+    this.renderer.toneMapping = this.viewStyle === 'realistic' || this.viewStyle === 'shaded' ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
     this.scene.environment = this.viewStyle === 'realistic' && !this.section ? this.environmentMap() : null;
     const style = (child: THREE.Object3D) => {
       if (!(child instanceof THREE.Mesh) || child.userData['capHelper']) return;
@@ -524,8 +535,8 @@ export class SceneView {
       }
       if (this.viewStyle === 'hidden-line') {
         // White faces that hide what is behind them, feature edges drawn on top.
-        const white = new THREE.MeshBasicMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, side: THREE.DoubleSide });
-        const edges = new THREE.LineSegments(edgesOf(child.geometry, 25), new THREE.LineBasicMaterial({ color: 0x1f1f24 }));
+        const white = new THREE.MeshBasicMaterial({ color: 0xfaf9f5, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, side: THREE.DoubleSide });
+        const edges = new THREE.LineSegments(edgesOf(child.geometry, 25), new THREE.LineBasicMaterial({ color: 0x424744, transparent: true, opacity: 0.72 }));
         child.add(edges);
         child.userData['hiddenLineEdges'] = edges;
         child.userData['viewStyleMaterial'] = white;
@@ -542,7 +553,7 @@ export class SceneView {
             ? new THREE.MeshBasicMaterial({ color: baseColor, side: THREE.DoubleSide, transparent: base.transparent, opacity: base.opacity })
             : this.viewStyle === 'section'
               ? new THREE.MeshBasicMaterial({ color: 0xf2f2f0, side: THREE.DoubleSide })
-              : new THREE.MeshStandardMaterial({ color: 0xb8bdc6, roughness: 0.82, metalness: 0.02, side: THREE.DoubleSide });
+              : new THREE.MeshStandardMaterial({ color: 0xd8cbb8, roughness: 0.96, metalness: 0, side: THREE.DoubleSide });
       };
       const material = Array.isArray(baseMaterials) ? baseMaterials.map(styled) : styled(baseMaterials);
       child.userData['viewStyleMaterial'] = material;
@@ -561,7 +572,7 @@ export class SceneView {
       const generator = new THREE.PMREMGenerator(this.renderer);
       this.environment = generator.fromScene(new RoomEnvironment(), 0.04).texture;
       generator.dispose();
-      this.scene.environmentIntensity = 0.55;
+      this.scene.environmentIntensity = NATURAL_LIGHT.environment;
     } catch {
       this.environment = null;
     }
@@ -1133,6 +1144,7 @@ export class SceneView {
       this.applyViewStyle(object);
       this.addSectionEdges(object);
     }
+    this.triangleCount = sceneTriangles(this.content);
     this.buildSectionCaps();
     this.extent = sceneCentre(this.doc);
     this.updateGizmo();
@@ -1193,11 +1205,41 @@ export class SceneView {
     else this.renderer.render(this.scene, this.camera);
   }
 
+  private beginNavigation(): void {
+    clearTimeout(this.navigationTimer);
+    if (this.navigating || this.triangleCount < 150_000) return;
+    this.navigating = true;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
+    this.content.traverse(object => {
+      const edge = object.userData['hiddenLineEdges'] as THREE.Object3D | undefined;
+      if (edge) { this.navigationEdges.set(edge, edge.visible); edge.visible = false; }
+    });
+    this.requestRender();
+  }
+
+  private endNavigation(): void {
+    clearTimeout(this.navigationTimer);
+    this.navigationTimer = window.setTimeout(() => {
+      if (this.disposed || !this.navigating) return;
+      this.navigating = false;
+      for (const [edge, visible] of this.navigationEdges) edge.visible = visible;
+      this.navigationEdges.clear();
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      this.requestRender();
+    }, 160);
+  }
+
   private updateGizmo(): void {
     if (!this.doc || this.dragStart) return;
     const ids = this.selection.filter((id) => this.doc!.elements[id] && !this.doc!.elements[id]!.locked && !this.doc!.elements[id]!.meta?.['view3d'] && (!isAnalysisElement(this.doc!.elements[id]) || !!this.verticalHandle(id)));
     const bounds = ids.length > 0 ? boundsOfIds(this.doc.elements, ids) : null;
     // Highlight selected objects: tinted materials plus an outline box drawn on top of everything.
+    for (const child of this.selectionOutlines.children) {
+      if (child instanceof THREE.LineSegments) {
+        child.geometry.dispose();
+        disposeMaterials(child.material);
+      }
+    }
     this.selectionOutlines.clear();
     for (const item of this.built) {
       const selected = this.selection.includes(item.id);
@@ -1571,6 +1613,8 @@ export class SceneView {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    clearTimeout(this.navigationTimer);
+    this.navigationEdges.clear();
     window.clearTimeout(this.updateTimer);
     this.updateController?.abort();
     this.modelGeometry.dispose();

@@ -36,15 +36,17 @@ import { useGlobalShortcuts } from './keyboard';
 import { buildAppMenu } from './menu';
 import { useAppRouter } from './router';
 import { getProjectSyncChannel, type ProjectSyncMessage } from '@/modeling/projectSync';
+import { insertModeledAsset } from '@/modeling/insertModeledAsset';
+import { getElectronBridge } from '@/platform/electron';
 
 export function App() {
   installDiagnostics();
   const { t } = useI18n();
-  const { platform, registry, persistence, catalog, toasts } = useApp();
+  const services = useApp();
+  const { platform, registry, persistence, catalog, toasts, store } = services;
   const dispatch = useDispatch();
   const screen = useAppState((s) => s.ui.screen);
   const loading = useSyncExternalStore(projectLoading.subscribe, projectLoading.getSnapshot, projectLoading.getSnapshot);
-  const doc = useAppState((s) => s.doc);
   const sheetOpen = useAppState((s) => s.ui.sheet !== null);
   const editingViewBoard = useAppState((s) => Boolean(s.ui.view3d.open && s.ui.view3d.editingBoard));
   const view3dOpen = useAppState((s) => s.ui.view3d.open);
@@ -57,54 +59,57 @@ export function App() {
     if (screen !== 'project') return;
     const channel = getProjectSyncChannel();
     if (!channel) return;
+    let subscribedProject: string | null = null;
+    const modelingSessions = new Set<string>();
+    let active = true;
+    let scheduled = false;
 
-    channel.postMessage({
-      type: 'PROJECT_DOC_UPDATE',
-      projectId: doc.id,
-      doc,
-    });
+    const publish = () => {
+      if (scheduled || !active || subscribedProject !== store.getState().doc.id) return;
+      scheduled = true;
+      queueMicrotask(() => {
+        scheduled = false;
+        const doc = store.getState().doc;
+        if (active && subscribedProject === doc.id) channel.postMessage({ type: 'PROJECT_DOC_UPDATE', projectId: doc.id, doc });
+      });
+    };
+    const stop = store.subscribe((state, previous) => { if (state.doc !== previous.doc) publish(); });
 
     const onMessage = async (event: MessageEvent) => {
       const msg = event.data as ProjectSyncMessage;
       if (!msg || typeof msg !== 'object') return;
+      const doc = store.getState().doc;
 
+      if (msg.type === 'MODELING_SESSION_ANNOUNCE' && msg.projectId === doc.id) {
+        modelingSessions.add(msg.assetId);
+      } else if (msg.type === 'MODELING_SESSION_CLOSED' && msg.projectId === subscribedProject) {
+        modelingSessions.delete(msg.assetId);
+        if (modelingSessions.size === 0) subscribedProject = null;
+      }
       if (msg.type === 'REQUEST_PROJECT_DOC' && msg.projectId === doc.id) {
-        channel.postMessage({
-          type: 'PROJECT_DOC_UPDATE',
-          projectId: doc.id,
-          doc,
-        });
+        subscribedProject = doc.id;
+        publish();
       } else if (msg.type === 'INSERT_MODELED_ASSET' && msg.projectId === doc.id) {
         try {
-          if (catalog.addLocalPackage) {
-            const asset = await catalog.addLocalPackage(msg.caiBytes);
-            const refreshed = await dispatch('update-placed-catalog-asset', { asset });
-            const updated = refreshed.ok ? Number(refreshed.value) : 0;
-            if (updated === 0) {
-              await dispatch('place-catalog-asset', {
-                asset,
-                x: msg.position.x,
-                y: msg.position.y,
-                centered: true,
-              });
-            }
-            channel.postMessage({
-              type: 'ASSET_INSERTED_ACK',
-              projectId: doc.id,
-              assetId: msg.assetId,
-              success: true,
-            });
-            toasts.push({
-              kind: 'success',
-              message: updated > 0 ? t(`Updated ${updated} instance${updated === 1 ? '' : 's'} of "${msg.name}"`) : t(`Added "${msg.name}" from 3D modeler to project`),
-            });
-          }
+          const updated = await insertModeledAsset(services, msg);
+          channel.postMessage({
+            type: 'ASSET_INSERTED_ACK',
+            projectId: doc.id,
+            assetId: msg.assetId,
+            requestId: msg.requestId,
+            success: true,
+          });
+          toasts.push({
+            kind: 'success',
+            message: updated > 0 ? t(`Updated ${updated} instance${updated === 1 ? '' : 's'} of "${msg.name}"`) : t(`Added "${msg.name}" from 3D modeler to project`),
+          });
         } catch (err) {
           console.error('Failed to insert modeled asset into project', err);
           channel.postMessage({
             type: 'ASSET_INSERTED_ACK',
             projectId: doc.id,
             assetId: msg.assetId,
+            requestId: msg.requestId,
             success: false,
             message: err instanceof Error ? err.message : 'Failed to insert asset',
           });
@@ -114,10 +119,12 @@ export function App() {
 
     channel.addEventListener('message', onMessage);
     return () => {
+      active = false;
+      stop();
       channel.removeEventListener('message', onMessage);
       channel.close();
     };
-  }, [screen, doc, catalog, dispatch, toasts, t]);
+  }, [screen, services, store, catalog, toasts, t]);
 
   useEffect(() => {
     if (!platform.menu) return;
@@ -126,6 +133,10 @@ export function App() {
   }, [platform, registry, dispatch]);
 
   useEffect(() => {
+    const stopClose = getElectronBridge()?.onBeforeClose?.(async () => {
+      await persistence.flush();
+      if (persistence.getSaveStatus() === 'error') throw new Error('Could not save the project.');
+    });
     const flush = () => void persistence.flush();
     // Also when the tab is hidden or closed on mobile (beforeunload is not reliable there).
     const onHidden = () => {
@@ -135,6 +146,7 @@ export function App() {
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', onHidden);
     return () => {
+      stopClose?.();
       window.removeEventListener('beforeunload', flush);
       window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', onHidden);

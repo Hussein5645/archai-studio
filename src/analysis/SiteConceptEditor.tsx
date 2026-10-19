@@ -188,7 +188,7 @@ export function SiteConceptEditor({ mapId, onClose }: { mapId: string; onClose: 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
+      if (target?.closest('input, textarea, select, button, [contenteditable="true"]') && event.key !== 'Escape') return;
       const undo = (event.ctrlKey || event.metaKey) && ['z', 'y'].includes(event.key.toLowerCase());
       // The board underneath must not act on keys (Delete would remove its selection); undo/redo
       // still reach it so edits made here can be undone. Handlers on window itself still run.
@@ -260,7 +260,7 @@ export function SiteConceptEditor({ mapId, onClose }: { mapId: string; onClose: 
         <span className={styles.stat}>Site <b>{siteM2.toLocaleString(undefined, { maximumFractionDigits: 0 })} m²</b></span>
         <span className={styles.stat}>Volume <b>{volume.toLocaleString(undefined, { maximumFractionDigits: 0 })} m³</b></span>
         <span className={styles.stat}>Height <b>{(maxHeight / M).toFixed(1)} m</b></span>
-        <button type="button" className={styles.iconButton} onClick={onClose} aria-label="Close site concept editor"><X size={18} /></button>
+        <button type="button" className={styles.iconButton} onClick={onClose} aria-label="Close site concept editor"><X size={18} /> Back to project</button>
       </header>
       <div className={styles.body}>
         <aside className={styles.panel}>

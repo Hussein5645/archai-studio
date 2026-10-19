@@ -1,10 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { createTestApp, run } from '@/test/harness';
 import { conceptRoot } from './massing';
-import { siteContextRoot } from './model';
+import { locationFrame, locationOf, mapAnchorWorld, siteContextRoot } from './model';
+import { geoToLocal } from './mapGeometry';
 import { parseOverpass } from './siteContext';
 
 describe('resizing the map', () => {
+  it('treats dragging and typed position changes as a crop over fixed board coordinates', () => {
+    const app = createTestApp();
+    const id = run<string>(app, 'create-location', { x: 0, y: 0 });
+    const world = () => { const doc = app.store.getState().doc; return mapAnchorWorld(doc.elements, doc.elements[id]!)!; };
+    const initial = world();
+    run(app, 'move-selection', { ids: [id], dx: 50000, dy: -20000 });
+    expect(world()).toEqual(initial);
+    run(app, 'set-transform', { id, x: -40000, y: 10000, width: 250000 });
+    expect(world()).toEqual(initial);
+    run(app, 'recenter-map', { id });
+    const doc = app.store.getState().doc;
+    const map = doc.elements[id]!;
+    const meta = locationOf(map)!;
+    const pin = geoToLocal(locationFrame(map, meta), meta);
+    expect(pin.x).toBeCloseTo('width' in map ? map.width / 2 : 0);
+    expect(world()).toEqual(initial);
+    app.executor.undo();
+    expect(world()).toEqual(initial);
+  });
   it('leaves what is placed on the ground where it is', () => {
     const app = createTestApp();
     const map = run<string>(app, 'create-location', { x: 0, y: 0 });

@@ -25,7 +25,8 @@ import { fieldPath } from './parameters';
 import { modelingStorage, snapshotOf } from './persistence';
 import { modelingScene, PLANE_COLORS, WORK_PLANE_COLOR } from './scene';
 import { packageAsset } from './package';
-import { getProjectSyncChannel, type ProjectSyncMessage } from './projectSync';
+import { getProjectSyncChannel, sendModeledAsset, type ProjectSyncMessage } from './projectSync';
+import { getElectronBridge } from '@/platform/electron';
 import { createGrayedOutProjectGroup } from './projectReference';
 import { arrangeSketch, checkLineLoop, dot, planeFrame, planeLabel, samePlane, shapeContour, shapesBounds, stitchedLineLoops, toPlane, toWorld } from './kernel/sketch';
 import { fixProfile, moveShape } from './sketchEdit';
@@ -3251,8 +3252,10 @@ export function ModelingApp() {
   });
   const [sendDropdownOpen, setSendDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
-  const projectLinkRef = useRef<{ id: string; name: string } | undefined>(undefined);
-  projectLinkRef.current = projectId ? { id: projectId, name: projectDoc?.meta.name ?? 'Project' } : undefined;
+  const projectLinkRef = useRef<{ id: string; name: string } | undefined>(projectId ? { id: projectId, name: 'Project' } : undefined);
+  useEffect(() => {
+    projectLinkRef.current = projectId ? { id: projectId, name: projectDoc?.meta.name ?? 'Project' } : undefined;
+  }, [projectId, projectDoc?.meta.name]);
 
   useEffect(() => {
     // The viewport mounted first (child effects run before the parent's), so it is ready here.
@@ -3275,14 +3278,17 @@ export function ModelingApp() {
   const showError = useCallback((message: string) => setError(message), []);
 
   const saveEditablePackageSource = async (state: ModelingState) => {
+    await modelingStorage.save(snapshotOf(assetId, state, projectLinkRef.current));
     const editableId = state.metadata.id.trim();
     if (!editableId) return;
-    await modelingStorage.save(snapshotOf(editableId, state, projectLinkRef.current));
+    // The package source alias is editable, but only the workspace id owns the
+    // project link. Listing both ids produced duplicate linked-model entries.
     if (editableId === assetId) return;
     for (const layer of state.layers) {
       const bytes = await modelingStorage.loadFile(assetId, layer.id);
       if (bytes) await modelingStorage.saveFile(editableId, layer.id, bytes);
     }
+    await modelingStorage.save(snapshotOf(editableId, state));
   };
 
   // Sync with project tab if linked
@@ -3402,7 +3408,7 @@ export function ModelingApp() {
     setError(null);
     setPackaging('Sending to project…');
     try {
-      const { bytes } = await packageAsset(state, modelingScene, {
+      const { bytes } = await packageAsset({ ...state, metadata: { ...state.metadata, id: assetId } }, modelingScene, {
         includeLow: hasLow,
         onProgress: setPackaging,
       });
@@ -3416,19 +3422,16 @@ export function ModelingApp() {
         elevation: Math.round(bounds ? bounds.min.y : 0),
       };
 
-      const channel = getProjectSyncChannel();
-      if (channel) {
-        channel.postMessage({
-          type: 'INSERT_MODELED_ASSET',
-          projectId,
-          assetId,
-          name: state.metadata.name || 'Modeled Asset',
-          caiBytes: bytes,
-          position,
-        });
-        setStatus('saved');
-        alert(`Model "${state.metadata.name || 'Modeled Asset'}" sent directly to project at (${position.x}mm, ${position.y}mm)!`);
-      }
+      await sendModeledAsset({
+        type: 'INSERT_MODELED_ASSET',
+        projectId,
+        assetId,
+        name: state.metadata.name || 'Modeled Asset',
+        previousPackageKey: state.metadata.id ? `local:${state.metadata.id}.cai` : undefined,
+        caiBytes: bytes,
+        position,
+      });
+      setStatus('saved');
     } catch (caught) {
       showError(caught instanceof Error ? caught.message : 'Sending to project failed');
     } finally {
@@ -3557,6 +3560,7 @@ export function ModelingApp() {
     let cancelled = false;
     let timer = 0;
     let unsubscribe = () => {};
+    let stopClose = () => {};
     void (async () => {
       const store = modelingStore.getState();
       try {
@@ -3624,10 +3628,14 @@ export function ModelingApp() {
       }
       // Persist the ownership link as soon as a model is opened from a project, even when the
       // user returns Home without making a geometry edit.
-      if (projectLinkRef.current) await modelingStorage.save(snapshotOf(assetId, store, projectLinkRef.current));
+      if (projectLinkRef.current) await modelingStorage.save(snapshotOf(assetId, modelingStore.getState(), projectLinkRef.current));
       setStatus('ready');
+      stopClose = getElectronBridge()?.onBeforeClose?.(async () => {
+        window.clearTimeout(timer);
+        await modelingStorage.save(snapshotOf(assetId, modelingStore.getState(), projectLinkRef.current));
+      }) ?? (() => {});
       unsubscribe = modelingStore.subscribe((state, previous) => {
-        const changed = (['metadata', 'layers', 'bodies', 'sketches', 'materials', 'cameras', 'planes', 'planeVisible', 'workPlane', 'workPlaneVisible', 'workPlaneLocked', 'layout', 'panes', 'styles', 'lods'] as const).some((key) => state[key] !== previous[key]);
+        const changed = (['metadata', 'layers', 'bodies', 'sketches', 'parameters', 'bindings', 'materials', 'cameras', 'planes', 'planeVisible', 'workPlane', 'workPlaneVisible', 'workPlaneLocked', 'layout', 'panes', 'styles', 'lods'] as const).some((key) => state[key] !== previous[key]);
         if (!changed) return;
         setStatus('saving');
         window.clearTimeout(timer);
@@ -3641,6 +3649,7 @@ export function ModelingApp() {
     })();
     return () => {
       cancelled = true;
+      stopClose();
       window.clearTimeout(timer);
       unsubscribe();
     };

@@ -24,6 +24,7 @@ import { diagramShape } from './diagramShapes';
 import { annotationShape } from './annotationShapes';
 import { paperAncestor } from '@/sheets/model';
 import { meshPlanStore, segmentsPath } from './meshPlan';
+import { useMeshPlanPreview } from './meshPlanPreview';
 import { useSyncExternalStore } from 'react';
 
 // ---- zoom-aware minimums ------------------------------------------------------------------------
@@ -758,6 +759,7 @@ function MeshPlanShape({ element, blobId, context }: { element: Element & { kind
   useSyncExternalStore(meshPlanStore.subscribe, () => meshPlanStore.peek(blobId), () => meshPlanStore.peek(blobId));
   const plan = meshPlanStore.get(blobId, context.blobs[blobId]!.data, !live);
   const ink = element.style.stroke && element.style.stroke !== '#9aa0aa' ? element.style.stroke : '#2b2f36';
+  const preview = useMeshPlanPreview(plan, element.width, element.height, ink, live && context.workspace?.lod === 'low');
   if (!plan) return <rect width={element.width} height={element.height} fill="none" stroke="#c3c8d2" strokeWidth={6} strokeDasharray="30 20" data-loading-mesh="true" />;
   if (plan.cut.length === 0 && plan.edges.length === 0) {
     return <rect width={element.width} height={element.height} fill="none" stroke={ink} strokeWidth={element.style.strokeWidth} opacity={element.style.opacity} />;
@@ -765,8 +767,10 @@ function MeshPlanShape({ element, blobId, context }: { element: Element & { kind
   return (
     <g opacity={element.style.opacity} data-mesh-plan="true">
       <rect width={element.width} height={element.height} fill="transparent" stroke="none" />
-      {plan.edges.length > 0 && <path d={segmentsPath(plan.edges)} fill="none" stroke={ink} strokeOpacity={0.7} strokeWidth={0.8} vectorEffect="non-scaling-stroke" strokeLinecap="round" />}
-      {plan.cut.length > 0 && <path d={segmentsPath(plan.cut)} fill="none" stroke={ink} strokeWidth={1.8} vectorEffect="non-scaling-stroke" strokeLinecap="round" />}
+      {preview ? <image {...preview} data-mesh-preview="true" data-styled="true" /> : <>
+        {plan.edges.length > 0 && <path d={segmentsPath(plan.edges)} fill="none" stroke={ink} strokeOpacity={0.7} strokeWidth={0.8} vectorEffect="non-scaling-stroke" strokeLinecap="round" />}
+        {plan.cut.length > 0 && <path d={segmentsPath(plan.cut)} fill="none" stroke={ink} strokeWidth={1.8} vectorEffect="non-scaling-stroke" strokeLinecap="round" />}
+      </>}
     </g>
   );
 }

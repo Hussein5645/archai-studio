@@ -182,7 +182,7 @@ export const BoardMapOverlay = memo(function BoardMapOverlay({ id, top = false }
             }}
           />
         )}
-        <span className={styles.pin} style={{ left: pin.x, top: pin.y }}>
+        <span className={styles.pin} style={{ left: pin.x, top: pin.y }} data-testid={`map-pin-${id}`}>
           <MapPin size={28} fill="#fecaca" />
         </span>
         {roomy && <span className={`${styles.chip} ${styles.label}`}>{meta.address || `${meta.lat.toFixed(5)}, ${meta.lon.toFixed(5)}`}</span>}
@@ -219,7 +219,7 @@ const MapActions = memo(function MapActions({ id }: { id: string }) {
   return (
     <div className={styles.floatingActions} style={actionsPlacement(box, canvas)} onPointerDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
       <button type="button" onClick={() => setBoundaryEditing(id)} title={meta.boundary?.length ? 'Edit the site boundary' : 'Draw the site boundary'}><PenLine size={14} /> Boundary</button>
-      <button type="button" onClick={() => void dispatch('recenter-map', { id })} title="Recenter the map on the project pin"><Crosshair size={14} /> Recenter</button>
+      <button type="button" onClick={() => void dispatch('recenter-map', { id })} title="Center the map frame on the fixed project pin"><Crosshair size={14} /> Recenter</button>
       <button type="button" onClick={() => setConceptEditor(id)} title="Open the site concept editor: setbacks, solids and voids on the site boundary"><Box size={14} /> Concept</button>
       <span className={styles.divider} />
       <label>

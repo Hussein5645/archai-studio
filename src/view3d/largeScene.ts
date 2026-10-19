@@ -6,9 +6,16 @@ export function sceneTriangles(root: THREE.Object3D): number {
   root.traverseVisible((object) => {
     if (object instanceof THREE.Mesh)
       count +=
-        (object.geometry.index?.count ?? object.geometry.getAttribute('position')?.count ?? 0) / 3;
+        (object.geometry.index?.count ?? object.geometry.getAttribute('position')?.count ?? 0) / 3 * (object instanceof THREE.InstancedMesh ? object.count : 1);
   });
   return count;
+}
+
+/** Share a preview budget across the document, including repeated copies of a mesh. */
+export function previewTriangleTargets(models: readonly { id: string; triangles: number; copies: number }[], budget = 350_000): Map<string, number> {
+  const total = models.reduce((sum, model) => sum + model.triangles * model.copies, 0);
+  const ratio = total > budget ? budget / total : 1;
+  return new Map(models.map(model => [model.id, Math.min(model.triangles, Math.max(1, Math.floor(model.triangles * ratio)))]));
 }
 
 /** Detached preview geometry. Original geometry/materials remain owned by the document cache. */
@@ -18,6 +25,7 @@ export async function reduceLargeScene<T extends THREE.Object3D>(
   maxWorldError: number,
   signal?: AbortSignal,
   preserveUnusedUvs = true,
+  previewMode = false,
 ): Promise<T> {
   const root = source.clone(true) as T;
   const count = sceneTriangles(root);
@@ -82,6 +90,7 @@ export async function reduceLargeScene<T extends THREE.Object3D>(
         ratio: target / count,
         error,
         protectUv,
+        allowTopologyReduction: previewMode,
       };
       const result = await new Promise<SimplifyInput>((resolve, reject) => {
         const abort = () => reject(new DOMException('Preparation cancelled', 'AbortError'));

@@ -9,7 +9,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import type { ArchaiDocument, Element } from '@/document';
 import { base64ToBytes } from '@/persistence/base64';
-import { reduceLargeScene } from './largeScene';
+import { previewTriangleTargets, reduceLargeScene, sceneTriangles } from './largeScene';
 
 export interface MeshMeta {
   blobId: string;
@@ -41,8 +41,11 @@ class MeshStore {
   readonly models = new Map<string, THREE.Object3D>();
   /** Generated board previews; full geometry stays in models and in the saved blob. */
   readonly lowModels = new Map<string, THREE.Object3D>();
+  previewVersion = 0;
   private readonly pending = new Map<string, Promise<void>>();
   private readonly failed = new Set<string>();
+  private readonly previewTargets = new Map<string, number>();
+  private previewQueue: Promise<void> = Promise.resolve();
   private readonly loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   private active = 0;
   private readonly waiting: (() => void)[] = [];
@@ -84,13 +87,8 @@ class MeshStore {
       const blob = doc.blobs[mesh.blobId];
       if (!blob) continue;
       const job = this.decode(blob.data)
-        .then(async (model) => {
+        .then((model) => {
           this.models.set(mesh.blobId, model);
-          try {
-            this.lowModels.set(mesh.blobId, await reduceLargeScene(model, 350_000, 10));
-          } catch {
-            // The detailed model remains usable if the preview cannot be generated.
-          }
           changed = true;
         })
         .catch(() => {
@@ -101,6 +99,32 @@ class MeshStore {
       jobs.push(job);
     }
     await Promise.all(jobs);
+    const copies = new Map<string, number>();
+    for (const element of Object.values(doc.elements)) {
+      const mesh = meshOf(element);
+      if (mesh && element.visible !== false && this.models.has(mesh.blobId)) copies.set(mesh.blobId, (copies.get(mesh.blobId) ?? 0) + 1);
+    }
+    const targets = previewTriangleTargets([...copies].map(([id, count]) => ({ id, copies: count, triangles: sceneTriangles(this.models.get(id)!) })));
+    // A single worker job at a time avoids launching dozens of simplifiers when a
+    // large linked model is first decoded. Concurrent views share this queue.
+    const previews = this.previewQueue.catch(() => undefined).then(async () => {
+      for (const [id, target] of targets) {
+        if ((this.previewTargets.get(id) ?? Infinity) <= target) continue;
+        const model = this.models.get(id)!;
+        try {
+          const preview = await reduceLargeScene(model, target, 10, undefined, false, true);
+          // Existing views may still hold the old preview's geometry until rebuilt.
+          this.lowModels.set(id, preview);
+          this.previewVersion++;
+          this.previewTargets.set(id, target);
+          changed = true;
+        } catch {
+          // Keep the detailed model usable if a preview cannot be generated.
+        }
+      }
+    });
+    this.previewQueue = previews;
+    await previews;
     return changed;
   }
 }

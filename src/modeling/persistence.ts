@@ -55,9 +55,10 @@ function withStore<T>(name: string, mode: IDBTransactionMode, fn: (store: IDBObj
       new Promise<T>((resolve, reject) => {
         const tx = db.transaction(name, mode);
         const request = fn(tx.objectStore(name));
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-        tx.oncomplete = () => db.close();
+        // A successful request can still be rolled back by an aborted transaction.
+        tx.oncomplete = () => { db.close(); resolve(request.result); };
+        tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Model save transaction was aborted')); };
+        tx.onerror = () => { /* onabort reports the final transaction outcome */ };
       }),
   );
 }

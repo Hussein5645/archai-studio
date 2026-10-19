@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useApp, useAppState, useAvailable, useDispatch } from '@/app/context';
 import { formatShortcut, IS_MAC } from '@/commands';
 import { modelingStorage, type SavedAsset } from '@/modeling/persistence';
+import { linkedModels } from '@/modeling/linkedModels';
 import { getProjectSyncChannel, type ProjectSyncMessage } from '@/modeling/projectSync';
 import { IconButton } from './primitives';
 import { useI18n } from './i18n';
@@ -39,7 +40,7 @@ function LinkedModelsMenu() {
   const refreshSaved = useCallback(async () => {
     try {
       const all = await modelingStorage.list();
-      setSavedAssets(all.filter((item) => item.project?.id === docId));
+      setSavedAssets(linkedModels(all, docId));
     } catch {
       setSavedAssets([]);
     }

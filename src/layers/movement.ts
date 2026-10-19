@@ -1,4 +1,4 @@
-import type { Element, ElementTable } from '@/document';
+import type { Element, ElementTable, JsonValue } from '@/document';
 import { applyToPoint, applyToVector, invert, parentWorldMatrix, worldMatrix, type Vec2 } from '@/geometry';
 import { geoToLocal, mapFrame, type GeoPoint } from '@/analysis/mapGeometry';
 import { layerParentResolver } from './hierarchy';
@@ -30,6 +30,20 @@ function groundPoint(table: ElementTable, item: Element, place: GeoPoint): Vec2 
 
 /** Persist movement for Layers links that are not already inherited through parentId. */
 export function moveNestedLayers(before: ElementTable, elements: ElementTable): void {
+  // A map's rectangle crops a fixed geographic plane. Re-express its old world
+  // anchor after frame movement/resize, including movement of an ancestor group.
+  for (const element of Object.values(elements)) {
+    const old = before[element.id];
+    if (!old || !mapPlacement(old) || !mapPlacement(element)) continue;
+    const oldMatrix = worldMatrix(before, old), matrix = worldMatrix(elements, element);
+    const resized = 'width' in old && 'width' in element && (old.width !== element.width || ('height' in old && 'height' in element && old.height !== element.height));
+    if (!resized && oldMatrix.every((value, index) => Math.abs(value - matrix[index]!) < 1e-9)) continue;
+    const reference = groundReference(old)!;
+    const world = groundPoint(before, old, reference)!;
+    const local = applyToPoint(invert(matrix), world);
+    const location = element.meta!['location'] as Record<string, JsonValue>;
+    location['anchor'] = { x: local.x, y: local.y };
+  }
   // `elements` is a command's draft here, so a plain layerParentOf(elements, id) call would
   // rebuild its view-marker index from scratch every time (see layerParentResolver); resolving
   // every element's layer parent from one shared index keeps this O(n) instead of O(n²).

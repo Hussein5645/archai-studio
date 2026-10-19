@@ -168,7 +168,7 @@ export const updateAnalysis = defineMutation({
 export const recenterMap = defineMutation({
   id: 'recenter-map',
   label: 'Recenter map on pin',
-  description: "Pans the map imagery so the project pin sits at the centre of the map rect (generated context and concept forms stay aligned with the imagery).",
+  description: 'Moves the map frame to the project pin while keeping the geographic plane and site geometry fixed on the board.',
   aliases: ['refresh map', 'recenter', 'find pin'],
   group: 'edit',
   palette: false,
@@ -178,7 +178,10 @@ export const recenterMap = defineMutation({
     const element = ctx.doc.elements[input.id];
     const location = locationOf(element as never);
     if (!element || element.kind !== 'rect' || !location) throw new CommandError('rejected', 'Not the project location');
-    updateAnalysis.run(ctx, { id: input.id, patch: { mapCenter: { lat: location.lat, lon: location.lon }, anchor: { x: element.width / 2, y: element.height / 2 } } });
+    const pin = geoToLocal(locationFrame(element as never, location), location);
+    const m = worldMatrix(ctx.doc.elements as ElementTable, element as never);
+    const dx = pin.x - element.width / 2, dy = pin.y - element.height / 2;
+    moveSelection.run(ctx, { ids: [element.id], dx: m[0] * dx + m[2] * dy, dy: m[1] * dx + m[3] * dy });
   },
 });
 

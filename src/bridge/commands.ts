@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import { defineMutation, CommandError } from '@/commands/contract';
 import { removeSubtree } from '@/commands/helpers';
-import { BRIDGE_FACETS, BRIDGE_MODES, BRIDGE_SHARES, BridgeOwnerSchema, IdSchema, type BridgeData, type Element, type JsonValue } from '@/document';
+import { BRIDGE_FACETS, BRIDGE_MODES, BRIDGE_SHARES, BridgeOwnerSchema, GroupElementSchema, IdSchema, type BridgeData, type Element, type JsonValue } from '@/document';
 import { RevitExchangeSchema } from '@/revit/exchange';
 import { bridgeLog, editableElsewhere, ensureBridge, originOf, ownerOf, registerSource, runBridgeSync, unbind } from './engine';
 import { childLookup, facetHashes, facetsOf, withFacetValue } from './facets';
@@ -326,9 +326,14 @@ export const bridgeRevert = defineMutation({
   group: 'document',
   palette: false,
   history: 'record',
-  input: z.object({ ids: z.array(IdSchema).min(1) }),
+  input: z.object({ ids: z.array(IdSchema).min(1), containers: z.array(GroupElementSchema).default([]) }),
   run: (ctx, input) => {
     const bridge = bridgeOf(ctx.doc as { bridge?: BridgeData });
+    // Restore the source layer in the same edit as its protected children.
+    for (const group of input.containers) {
+      if (!ctx.doc.elements[group.id] && Object.values(bridge.sources).some((source) => source.groupId === group.id))
+        ctx.doc.elements[group.id] = { ...structuredClone(group), parentId: group.parentId && ctx.doc.elements[group.parentId] ? group.parentId : null };
+    }
     let reverted = 0;
     for (const id of input.ids) {
       const binding = bridge.elements[id];

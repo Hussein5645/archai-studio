@@ -9,24 +9,27 @@
 import type { ArchaiDocument } from '@/document';
 import type { Platform } from '@/platform/types';
 import { documentKey } from './session';
+import { parseDocumentData } from './serialize';
 
 type Storage = Platform['storage'];
 
 const blobPrefix = (docId: string): string => `blob:${docId}:`;
 export const blobKey = (docId: string, blobId: string): string => `${blobPrefix(docId)}${blobId}`;
+export const backupKey = (docId: string): string => `${documentKey(docId)}:previous`;
 
 export class WorkingCopyStore {
   /** Blob ids already in storage, per document. */
   private readonly stored = new Map<string, Set<string>>();
   /** The blobs table last reconciled with storage, per document (skips the work while it is unchanged). */
   private readonly reconciled = new Map<string, ArchaiDocument['blobs']>();
+  private readonly recovered = new Set<string>();
 
   /** Saves run one at a time, so an older copy never lands after a newer one. */
   private queue: Promise<void> = Promise.resolve();
 
   constructor(private readonly storage: Storage) {}
 
-  /** Writes new blobs, drops ones the document no longer has, then the document text. */
+  /** Commit new blobs and document before collecting obsolete geometry. */
   save(doc: ArchaiDocument): Promise<void> {
     const run = this.queue.then(() => this.write(doc));
     this.queue = run.catch(() => undefined);
@@ -42,14 +45,38 @@ export class WorkingCopyStore {
         await this.storage.set(blobKey(doc.id, blob.id), blob.data);
         stored.add(blob.id);
       }
-      for (const id of [...stored]) {
-        if (doc.blobs[id]) continue;
-        await this.storage.delete(blobKey(doc.id, id));
-        stored.delete(id);
-      }
       this.reconciled.set(doc.id, doc.blobs);
     }
+    let previous = await this.storage.get(this.recovered.has(doc.id) ? backupKey(doc.id) : documentKey(doc.id));
+    if (previous) {
+      try {
+        if (!parseDocumentData(JSON.parse(previous)).ok) previous = await this.storage.get(backupKey(doc.id));
+      } catch { previous = await this.storage.get(backupKey(doc.id)); }
+    }
+    let previousBlobs: Record<string, unknown> = {};
+    if (previous) {
+      try {
+        const parsed = JSON.parse(previous) as ArchaiDocument;
+        if (parsed.id === doc.id && parsed.blobs && typeof parsed.blobs === 'object') {
+          previousBlobs = parsed.blobs;
+          await this.storage.set(backupKey(doc.id), previous);
+        }
+      } catch (error) {
+        // Do not replace a recoverable backup with malformed project JSON.
+        if (!(error instanceof SyntaxError)) throw error;
+      }
+    }
     await this.storage.set(documentKey(doc.id), workingCopyText(doc));
+    this.recovered.delete(doc.id);
+    const stored = this.stored.get(doc.id);
+    for (const id of [...stored ?? []]) {
+      if (doc.blobs[id] || previousBlobs[id]) continue;
+      // A failed cleanup must not turn a committed save into a reported failure.
+      try {
+        await this.storage.delete(blobKey(doc.id, id));
+        stored?.delete(id);
+      } catch { /* Retry collecting unused blobs on the next save. */ }
+    }
   }
 
   /**
@@ -57,11 +84,30 @@ export class WorkingCopyStore {
    * parseDocumentData; null when there is none. Older copies with inline bytes load as they are.
    */
   async load(id: string, onProgress?: (done: number, total: number) => void): Promise<unknown> {
-    const text = await this.storage.get(documentKey(id));
+    await this.queue;
+    try {
+      const current = await this.loadRecord(id, documentKey(id), onProgress);
+      if (current !== null) return current;
+    } catch (error) {
+      const backup = await this.loadRecord(id, backupKey(id), onProgress);
+      if (backup === null) throw error;
+      this.recovered.add(id);
+      console.warn(`Recovered project ${id} from its previous saved copy`, error);
+      return backup;
+    }
+    const backup = await this.loadRecord(id, backupKey(id), onProgress);
+    if (backup !== null) this.recovered.add(id);
+    return backup;
+  }
+
+  private async loadRecord(id: string, key: string, onProgress?: (done: number, total: number) => void): Promise<unknown> {
+    const text = await this.storage.get(key);
     if (!text) return null;
     const raw: unknown = JSON.parse(text);
+    const checked = parseDocumentData(raw);
+    if (!checked.ok) throw new Error(checked.error.message);
+    if (checked.document.id !== id) throw new Error('The saved project id does not match.');
     const blobs = (raw as { blobs?: Record<string, { data?: unknown }> } | null)?.blobs;
-    const present = new Set<string>();
     if (blobs && typeof blobs === 'object') {
       const entries = Object.entries(blobs);
       // Bound storage IPC and payloads instead of requesting every large blob at once.
@@ -73,13 +119,12 @@ export class WorkingCopyStore {
             if (data === null) throw new Error(`Project data is missing for blob ${blobId}.`);
             blob.data = data;
           }
-          present.add(blobId);
         }));
         onProgress?.(Math.min(entries.length, offset + 8), entries.length);
       }
     }
     // Inline blobs of an older copy are not in storage yet: the next save writes them out.
-    this.stored.set(id, new Set((await this.storedIds(id)).filter((blobId) => present.has(blobId))));
+    this.stored.set(id, new Set(await this.storedIds(id)));
     this.reconciled.delete(id);
     return raw;
   }
@@ -87,6 +132,7 @@ export class WorkingCopyStore {
   /** Removes a working copy and its blobs. */
   async delete(id: string): Promise<void> {
     await this.storage.delete(documentKey(id));
+    await this.storage.delete(backupKey(id));
     for (const blobId of await this.storedIds(id)) await this.storage.delete(blobKey(id, blobId));
     this.stored.delete(id);
     this.reconciled.delete(id);

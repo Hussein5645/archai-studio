@@ -191,6 +191,7 @@ export type Built = { id: string; object: THREE.Object3D; dependencies?: readonl
 
 /** Document-wide inputs every builder may read (materials, definitions, images, models, LOD). */
 interface BuildInputs {
+  importedPreviewVersion: number;
   graphics: ArchaiDocument['workspace']['graphics'];
   definitions: ArchaiDocument['definitions'];
   blobs: ArchaiDocument['blobs'];
@@ -205,7 +206,7 @@ interface BuildInputs {
 
 function sameInputs(a: BuildInputs, b: BuildInputs): boolean {
   return (
-    a.graphics === b.graphics && a.definitions === b.definitions && a.materials === b.materials && a.textures === b.textures && a.models === b.models && a.lowModels === b.lowModels && a.lod === b.lod && a.drawing === b.drawing && a.style === b.style
+    a.importedPreviewVersion === b.importedPreviewVersion && a.graphics === b.graphics && a.definitions === b.definitions && a.materials === b.materials && a.textures === b.textures && a.models === b.models && a.lowModels === b.lowModels && a.lod === b.lod && a.drawing === b.drawing && a.style === b.style
   );
 }
 
@@ -1032,7 +1033,7 @@ export function* buildSceneSteps(doc: ArchaiDocument, options: BuildOptions, pre
   let attachments: { parent: THREE.Object3D; object: THREE.Object3D }[] = [];
   const borrowed = new Set<THREE.Object3D>();
   const elements: ElementTable = doc.elements;
-  const inputs: BuildInputs = { graphics: doc.workspace.graphics, definitions: doc.definitions, blobs: doc.blobs, materials: doc.materials, textures: options.textures, models: options.models, lowModels: options.lowModels, lod: options.lod, drawing: options.drawing, style: options.style };
+  const inputs: BuildInputs = { importedPreviewVersion: options.lod === 'low' ? meshStore.previewVersion : 0, graphics: doc.workspace.graphics, definitions: doc.definitions, blobs: doc.blobs, materials: doc.materials, textures: options.textures, models: options.models, lowModels: options.lowModels, lod: options.lod, drawing: options.drawing, style: options.style };
   const visit = function* (element: Element): Generator<void, void> {
     if (!element.visible) return;
     // Board annotations (sketches, sticky notes) never reach 3D views or section cuts.

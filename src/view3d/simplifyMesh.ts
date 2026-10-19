@@ -8,6 +8,8 @@ export interface SimplifyInput {
   ratio: number;
   error: number;
   protectUv?: boolean;
+  /** Only disposable interactive previews may cluster disconnected CAD topology. */
+  allowTopologyReduction?: boolean;
 }
 
 /** Attribute-aware edge collapse; protects texture seams and material boundaries. */
@@ -108,7 +110,7 @@ export async function simplifyMesh(input: SimplifyInput): Promise<SimplifyInput>
   for (const group of input.groups) {
     const indices = input.indices.slice(group.start, group.start + group.count);
     const target = Math.max(3, Math.floor((indices.length * input.ratio) / 3) * 3);
-    const [reduced] = stride
+    let [reduced] = stride
       ? MeshoptSimplifier.simplifyWithAttributes(
           indices,
           input.positions,
@@ -125,6 +127,17 @@ export async function simplifyMesh(input: SimplifyInput): Promise<SimplifyInput>
           'ErrorAbsolute',
           'Prune',
         ]);
+    if (input.allowTopologyReduction && input.protectUv === false && reduced.length > target * 1.5) {
+      // CAD meshes often consist of disconnected faces, which edge collapse cannot
+      // reduce. A bounded spatial clustering pass can simplify that preview while
+      // retaining material boundaries. Textured models stay on the seam-safe path.
+      const boundaryLocks = Uint8Array.from(locks, lock => lock === 1 ? 1 : 0);
+      const scale = MeshoptSimplifier.getScale(input.positions, 3);
+      if (scale > 0) {
+        const [clustered] = MeshoptSimplifier.simplifySloppy(indices, input.positions, 3, boundaryLocks, target, Math.min(1, input.error / scale));
+        if (clustered.length > 0 && clustered.length < reduced.length) reduced = clustered;
+      }
+    }
     groups.push({ ...group, start: length, count: reduced.length });
     chunks.push(reduced);
     length += reduced.length;

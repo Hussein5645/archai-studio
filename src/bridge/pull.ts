@@ -96,10 +96,23 @@ export function pullPlan(doc: ArchaiDocument, key: string, sent: ReadonlyMap<str
       excluded.add(element.id);
       const hashes = hashOf(element.id);
       const writable = (facet: BridgeFacet) => hashes[facet] !== ref.archai[facet] && ownerOf(bridge!, binding, facet) !== key;
-      const placement = placedOf(elements, element);
+      // Board placement belongs to ArchAI. Strip this source's container (and
+      // its ancestors) before comparing an individual object with the source.
+      let matrix = worldMatrix(elements, element);
+      let elevation = instanceElevationOf(element, elements);
+      const group = source?.groupId ? elements[source.groupId] : undefined;
+      if (group) {
+        for (let parent = element.parentId; parent; parent = elements[parent]?.parentId ?? null) {
+          if (parent !== group.id) continue;
+          matrix = multiply(invert(worldMatrix(elements, group)), matrix);
+          elevation -= instanceElevationOf(group, elements);
+          break;
+        }
+      }
+      const placement = { m: [...matrix], z: elevation };
       const update: BridgeUpdate = { ref: ref.id, kind: ref.kind, element: element.id, token: hashValue([hashes, ref.archai, placement]) };
       if (ownerOf(bridge!, binding, 'transform') !== key && ref.placed) {
-        const move = translationBetween(ref.placed, worldMatrix(elements, element), instanceElevationOf(element, elements));
+        const move = translationBetween(ref.placed, matrix, elevation);
         if (move) update.move = move;
       }
       if (writable('metadata') && element.name) update.name = element.name;
