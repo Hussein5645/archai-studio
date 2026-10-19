@@ -106,22 +106,24 @@ export const createNoiseEmitter = defineMutation({
   group: 'create',
   palette: false,
   history: 'record',
-  input: z.object({ originId: IdSchema, x: z.number().finite(), y: z.number().finite(), level: z.number().finite().default(80), height: z.number().finite().default(1000) }),
+  input: z.object({ originId: IdSchema, x: z.number().finite(), y: z.number().finite(), shape: z.enum(['point', 'area']).default('point'), width: z.number().finite().positive().default(5000), depth: z.number().finite().positive().default(5000), level: z.number().finite().min(0).max(160).default(80), height: z.number().finite().min(0).default(1000) }),
   run: (ctx, input) => {
     const origin = ctx.doc.elements[input.originId];
     if (analysisOf(origin as never)?.kind !== 'noise') throw new CommandError('rejected', 'Pick a noise analysis origin first');
     const size = 900;
+    const width = input.shape === 'area' ? input.width : size;
+    const depth = input.shape === 'area' ? input.depth : size;
     const count = Object.values(ctx.doc.elements).filter((e) => noiseEmitterOf(e as never)?.originId === input.originId).length;
     return createRect.run(ctx, {
-      x: input.x - size / 2,
-      y: input.y - size / 2,
-      width: size,
-      height: size,
-      radius: size / 2,
+      x: input.x - width / 2,
+      y: input.y - depth / 2,
+      width,
+      height: depth,
+      radius: input.shape === 'area' ? 0 : size / 2,
       rotation: 0,
       style: { fill: '#fecaca', stroke: '#dc2626', strokeWidth: 30, opacity: 1 },
-      name: `Emitter ${count + 1}`,
-      meta: { noiseEmitter: { originId: input.originId, level: input.level, height: input.height } },
+      name: `${input.shape === 'area' ? 'Area emitter' : 'Emitter'} ${count + 1}`,
+      meta: { noiseEmitter: { originId: input.originId, level: input.level, height: input.height, shape: input.shape } },
       parentId: null,
       select: false,
     });
@@ -401,9 +403,10 @@ export const toolNoiseEmitter = defineMutation({
   group: 'select',
   palette: false,
   history: 'none',
-  input: z.object({ originId: IdSchema }),
+  input: z.object({ originId: IdSchema, shape: z.enum(['point', 'area']).default('point') }),
   run: (ctx, input) => {
-    ctx.ui.tool = 'noise-emitter';
+    if (analysisOf(ctx.doc.elements[input.originId] as never)?.kind !== 'noise') throw new CommandError('rejected', 'Pick a noise analysis origin first');
+    ctx.ui.tool = input.shape === 'area' ? 'noise-area-emitter' : 'noise-emitter';
     ctx.ui.analysisTargetId = input.originId;
     ctx.ui.placingAsset = null;
     ctx.ui.editingTextId = null;

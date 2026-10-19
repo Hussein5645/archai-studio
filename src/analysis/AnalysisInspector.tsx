@@ -180,7 +180,10 @@ function OriginInspector({ element, meta }: { element: Element; meta: AnalysisMe
           <h3 className="u-section-title">{t('Noise')}</h3>
           <div className={styles.actions}>
             <TextButton primary onClick={() => void dispatch('tool-noise-emitter', { originId: element.id })}>
-              {t('Add emitters on the board')}
+              {t('Add point emitter')}
+            </TextButton>
+            <TextButton onClick={() => void dispatch('tool-noise-emitter', { originId: element.id, shape: 'area' })}>
+              {t('Draw area emitter')}
             </TextButton>
           </div>
           <p className="u-hint">
@@ -355,6 +358,7 @@ function LocationInspector({ element }: { element: Element }) {
 
 function EmitterInspector({ element }: { element: Element }) {
   const { t } = useI18n();
+  const dispatch = useDispatch();
   const doc = useAppState((s) => s.doc);
   const update = useUpdate(element.id);
   const meta = noiseEmitterOf(element)!;
@@ -362,6 +366,14 @@ function EmitterInspector({ element }: { element: Element }) {
   return (
     <div className={styles.section} data-testid="emitter-inspector">
       <h3 className="u-section-title">{t('Noise emitter')}</h3>
+      <label>Source shape <select value={meta.shape ?? 'point'} onChange={(event) => update({ shape: event.target.value })}>
+        <option value="point">Point</option><option value="area">Area</option>
+      </select></label>
+      {meta.shape === 'area' && <p className="u-hint">Resize and rotate the area on the board. Its total reference level is distributed across the area; this is an approximate outdoor screening model.</p>}
+      {meta.shape === 'area' && 'width' in element && 'height' in element && <FieldRow>
+        <Field label="Area width"><NumberField value={element.width} unit={unit} precision={precision} min={100} ariaLabel="Emitter area width" onCommit={(width) => void dispatch('set-transform', { id: element.id, width })} /></Field>
+        <Field label="Area depth"><NumberField value={element.height} unit={unit} precision={precision} min={100} ariaLabel="Emitter area depth" onCommit={(height) => void dispatch('set-transform', { id: element.id, height })} /></Field>
+      </FieldRow>}
       <p className="u-hint">
         {t('Belongs to')}: <b>{doc.elements[meta.originId]?.name ?? t('missing origin')}</b>
       </p>

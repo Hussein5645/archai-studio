@@ -100,6 +100,8 @@ float lit(int i, vec3 p, vec3 n) {
 
 #if defined(NOISE)
 uniform vec4 uEmitters[${MAX_EMITTERS}];
+uniform vec2 uAreaU[${MAX_EMITTERS}];
+uniform vec2 uAreaV[${MAX_EMITTERS}];
 uniform int uEmitterCount;
 uniform float uMin;
 uniform float uMax;
@@ -154,14 +156,24 @@ void main() {
     float energy = 0.0;
     for (int i = 0; i < ${MAX_EMITTERS}; i++) {
       if (i >= uEmitterCount) break;
-      vec3 e = uEmitters[i].xyz;
-      float r = max(distance(p, e) / 1000.0, 1.0);
-      float level = uEmitters[i].w - 20.0 * log(r) / log(10.0);
-      for (int s = 1; s < 24; s++) {
-        vec3 q = mix(e, p, float(s) / 24.0);
-        if (heightAt(q.xz) > q.y + 250.0) { level -= uBarrier; break; }
+      bool area = length(uAreaU[i]) + length(uAreaV[i]) > 0.0;
+      float count = area ? 9.0 : 1.0;
+      // Equal-energy 3x3 quadrature: enlarging an area spreads its total
+      // reference level rather than multiplying the source's sound energy.
+      for (int j = 0; j < 9; j++) {
+        if (!area && j > 0) break;
+        float u = (float(j - (j / 3) * 3) - 1.0) * (2.0 / 3.0);
+        float v = (float(j / 3) - 1.0) * (2.0 / 3.0);
+        vec2 offset = uAreaU[i] * u + uAreaV[i] * v;
+        vec3 e = uEmitters[i].xyz + vec3(offset.x, 0.0, offset.y);
+        float r = max(distance(p, e) / 1000.0, 1.0);
+        float level = uEmitters[i].w - 20.0 * log(r) / log(10.0);
+        for (int k = 1; k < 24; k++) {
+          vec3 q = mix(e, p, float(k) / 24.0);
+          if (heightAt(q.xz) > q.y + 250.0) { level -= uBarrier; break; }
+        }
+        energy += pow(10.0, level / 10.0) / count;
       }
-      energy += pow(10.0, level / 10.0);
     }
     float db = 10.0 * log(max(energy, 1e-6)) / log(10.0);
     colour = ramp((db - uMin) / max(uMax - uMin, 1.0));
@@ -393,14 +405,15 @@ export class AnalysisLayer {
     }
     renderer.render(scene, camera);
     if (!this.contentMaterial) return;
-    // Keep the portal's graphic style while presenting the same computed values.
-    this.contentMaterial.polygonOffsetFactor = style === 'hidden-line' ? 1 : -1;
-    this.contentMaterial.polygonOffsetUnits = style === 'hidden-line' ? 1 : -1;
-    this.contentMaterial.wireframe = style === 'wireframe';
-    this.contentMaterial.transparent = style === 'realistic';
-    this.contentMaterial.depthWrite = style !== 'realistic';
-    this.contentMaterial.uniforms['uShading']!.value = style === 'consistent' || style === 'hidden-line' || style === 'wireframe' ? 0 : 1;
-    this.contentMaterial.uniforms['uOpacity']!.value = style === 'realistic' ? 0.6 : 1;
+    // Analysis is a quantitative layer: material colours, exposure, wireframe
+    // and hidden-line depth offsets must not obscure or tint the legend colours.
+    this.contentMaterial.polygonOffsetFactor = -1;
+    this.contentMaterial.polygonOffsetUnits = -1;
+    this.contentMaterial.wireframe = false;
+    this.contentMaterial.transparent = false;
+    this.contentMaterial.depthWrite = true;
+    this.contentMaterial.uniforms['uShading']!.value = 0;
+    this.contentMaterial.uniforms['uOpacity']!.value = 1;
     const hidden = this.hideFor([...this.host.helpers(), this.extras, ...this.lines]);
     const background = scene.background;
     const autoClear = renderer.autoClear;
@@ -511,6 +524,8 @@ export class AnalysisLayer {
         uOffset: { value: 60 },
         uDepthBias: { value: 0.0008 },
         uEmitters: { value: Array.from({ length: MAX_EMITTERS }, () => new THREE.Vector4()) },
+        uAreaU: { value: Array.from({ length: MAX_EMITTERS }, () => new THREE.Vector2()) },
+        uAreaV: { value: Array.from({ length: MAX_EMITTERS }, () => new THREE.Vector2()) },
         uEmitterCount: { value: 0 },
         uMin: { value: 35 },
         uMax: { value: 85 },
@@ -522,7 +537,7 @@ export class AnalysisLayer {
         uSpeed: { value: null },
         uWindHeights: { value: new THREE.Vector4() },
       };
-      this.contentMaterial = new THREE.ShaderMaterial({ defines, uniforms, vertexShader: VERTEX, fragmentShader: FRAGMENT, side: THREE.DoubleSide, clipping: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, depthFunc: THREE.LessEqualDepth });
+      this.contentMaterial = new THREE.ShaderMaterial({ defines, uniforms, vertexShader: VERTEX, fragmentShader: FRAGMENT, toneMapped: false, side: THREE.DoubleSide, clipping: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, depthFunc: THREE.LessEqualDepth });
       this.groundMaterial = this.contentMaterial.clone();
       // Clones copy uniform values; share the big ones and flag the receiver plane.
       for (const [name, uniform] of Object.entries(this.contentMaterial.uniforms)) if (name !== 'uGround') this.groundMaterial.uniforms[name] = uniform;
@@ -686,15 +701,25 @@ export class AnalysisLayer {
     this.height = this.renderHeight(HEIGHT_RES);
     uniforms['uHeight']!.value = this.height.texture;
     const emitters = uniforms['uEmitters']!.value as THREE.Vector4[];
-    spec.emitters.slice(0, MAX_EMITTERS).forEach((e, i) => emitters[i]!.set(e.x, e.y, e.z, e.level));
+    spec.emitters.slice(0, MAX_EMITTERS).forEach((e, i) => {
+      emitters[i]!.set(e.x, e.y, e.z, e.level);
+      (uniforms['uAreaU']!.value as THREE.Vector2[])[i]!.set(...(e.area?.u ?? [0, 0]));
+      (uniforms['uAreaV']!.value as THREE.Vector2[])[i]!.set(...(e.area?.v ?? [0, 0]));
+    });
     uniforms['uEmitterCount']!.value = Math.min(MAX_EMITTERS, spec.emitters.length);
     uniforms['uMin']!.value = spec.min;
     uniforms['uMax']!.value = spec.max;
     uniforms['uBarrier']!.value = spec.barrier;
     uniforms['uReceiver']!.value = spec.receiverHeight;
-    for (const child of [...this.extras.children]) if (child.name === 'emitter') this.extras.remove(child);
+    for (const child of [...this.extras.children]) if (child.name === 'emitter') {
+      this.extras.remove(child);
+      if (child instanceof THREE.Mesh) { child.geometry.dispose(); (child.material as THREE.Material).dispose(); }
+    }
     for (const e of spec.emitters) {
-      const marker = new THREE.Mesh(new THREE.SphereGeometry(250, 16, 12), new THREE.MeshBasicMaterial({ color: 0xdc2626 }));
+      const marker = new THREE.Mesh(e.area
+        ? new THREE.BoxGeometry(2 * Math.hypot(...e.area.u), 60, 2 * Math.hypot(...e.area.v))
+        : new THREE.SphereGeometry(250, 16, 12), new THREE.MeshBasicMaterial({ color: 0xdc2626, toneMapped: false, transparent: Boolean(e.area), opacity: e.area ? 0.45 : 1 }));
+      if (e.area) marker.rotation.y = -Math.atan2(e.area.u[1], e.area.u[0]);
       marker.name = 'emitter';
       marker.userData['emitterId'] = e.id;
       marker.position.set(e.x, e.y, e.z);

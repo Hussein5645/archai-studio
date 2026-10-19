@@ -12,7 +12,7 @@ export interface Viewport {
 
 export type ToolId =
   | 'select' | 'hand' | 'rect' | 'line' | 'point' | 'text' | 'image' | 'model' | 'measure' | 'catalog' | 'view3d' | 'section' | 'camera' | 'paper' | 'ai-portal' | 'parametric'
-  | 'analysis-sun' | 'analysis-wind' | 'analysis-noise' | 'analysis-location' | 'noise-emitter'
+  | 'analysis-sun' | 'analysis-wind' | 'analysis-noise' | 'analysis-location' | 'noise-emitter' | 'noise-area-emitter'
   | `arch:${string}`
   | `diagram:${string}`
   /** Drafting shapes: circle, arc, polygon, ellipse (src/drafting). */

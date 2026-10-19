@@ -9,7 +9,7 @@ import { activeGroup, inGroup, selectionScope } from '@/selection/groupScope';
 import { leaveGroup } from './groups';
 
 const ToolIdSchema = z.union([
-  z.enum(['select', 'hand', 'rect', 'line', 'point', 'text', 'image', 'measure', 'catalog', 'view3d', 'section', 'camera', 'paper', 'ai-portal', 'parametric', 'analysis-sun', 'analysis-wind', 'analysis-noise', 'analysis-location', 'noise-emitter']),
+  z.enum(['select', 'hand', 'rect', 'line', 'point', 'text', 'image', 'measure', 'catalog', 'view3d', 'section', 'camera', 'paper', 'ai-portal', 'parametric', 'analysis-sun', 'analysis-wind', 'analysis-noise', 'analysis-location', 'noise-emitter', 'noise-area-emitter']),
   z.string().regex(/^arch:[a-z0-9-]+$/),
   z.string().regex(/^diagram:[a-z-]+$/),
   z.string().regex(/^draw:[a-z-]+$/),

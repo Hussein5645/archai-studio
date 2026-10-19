@@ -58,3 +58,28 @@ describe('analysis per view', async () => {
     expect(viewAnalysis(app.store.getState().doc, view)).toEqual(before);
   });
 });
+
+it('keeps an area sound source footprint through rotation, resizing and save/load', async () => {
+  const app = createTestApp();
+  const view = run<string>(app, 'create-view3d');
+  const origin = run<string>(app, 'create-analysis-origin', { kind: 'noise' });
+  const id = run<string>(app, 'create-noise-emitter', { originId: origin, shape: 'area', x: 3000, y: 4000, width: 6000, depth: 2000, level: 90 });
+  run(app, 'link-analysis-view', { id: origin, viewId: view, linked: true });
+  run(app, 'run-analysis', { id: origin });
+  let spec = viewAnalysis(app.store.getState().doc, view);
+  expect(spec?.kind).toBe('noise');
+  if (spec?.kind !== 'noise') throw new Error('Missing noise');
+  expect(spec.emitters[0]).toMatchObject({ x: 3000, z: 4000, level: 90, area: { u: [3000, 0], v: [0, 1000] } });
+  run(app, 'set-transform', { id, rotation: 90, width: 8000 });
+  spec = viewAnalysis(app.store.getState().doc, view);
+  if (spec?.kind !== 'noise') throw new Error('Missing noise');
+  expect(spec.emitters[0]!.area!.u[0]).toBeCloseTo(0);
+  expect(spec.emitters[0]!.area!.u[1]).toBeCloseTo(4000);
+  expect(spec.emitters[0]!.area!.v[0]).toBeCloseTo(-1000);
+  const { parseDocument, serializeDocument } = await import('@/persistence/serialize');
+  const saved = parseDocument(serializeDocument(app.store.getState().doc));
+  expect(saved.ok).toBe(true);
+  if (saved.ok) expect(viewAnalysis(saved.document, view)).toEqual(spec);
+  run(app, 'tool-noise-emitter', { originId: origin, shape: 'area' });
+  expect(app.store.getState().ui.tool).toBe('noise-area-emitter');
+});

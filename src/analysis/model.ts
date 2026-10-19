@@ -117,6 +117,7 @@ export interface AnalysisMeta {
 }
 
 export interface NoiseEmitterMeta {
+  shape?: 'point' | 'area';
   originId: string;
   /** Sound pressure level measured 1 m from the source, dB(A). */
   level: number;
@@ -236,7 +237,7 @@ export function emittersOf(doc: ArchaiDocument, originId: string): Element[] {
 export type AnalysisSpec =
   | { kind: 'sun'; display: 'shadows' | 'sun-hours'; current: [number, number, number] | null; samples: { dir: [number, number, number]; hours: number }[]; title: string }
   | { kind: 'wind'; flow: [number, number]; speed: number; height: number; title: string }
-  | { kind: 'noise'; emitters: { id: string; x: number; y: number; z: number; level: number }[]; min: number; max: number; barrier: number; receiverHeight: number; title: string };
+  | { kind: 'noise'; emitters: { id: string; x: number; y: number; z: number; level: number; area?: { u: [number, number]; v: [number, number] } }[]; min: number; max: number; barrier: number; receiverHeight: number; title: string };
 
 /** The running analysis if `portalId` is one of its linked views. */
 export function viewAnalysis(doc: ArchaiDocument, portalId: string | null): AnalysisSpec | null {
@@ -270,7 +271,12 @@ export function specOf(doc: ArchaiDocument, element: Element, meta: AnalysisMeta
   const emitters = emittersOf(doc, element.id).filter((e) => e.visible).map((e) => {
     const emitter = noiseEmitterOf(e)!;
     const centre = applyToPoint(worldMatrix(doc.elements, e), { x: 'width' in e ? e.width / 2 : 0, y: 'height' in e ? e.height / 2 : 0 });
-    return { id: e.id, x: centre.x, y: instanceElevationOf(e, doc.elements) + emitter.height, z: centre.y, level: emitter.level };
+    const matrix = worldMatrix(doc.elements, e);
+    const area = emitter.shape === 'area' && 'width' in e && 'height' in e ? {
+      u: [matrix[0] * e.width / 2, matrix[1] * e.width / 2] as [number, number],
+      v: [matrix[2] * e.height / 2, matrix[3] * e.height / 2] as [number, number],
+    } : undefined;
+    return { id: e.id, x: centre.x, y: instanceElevationOf(e, doc.elements) + emitter.height, z: centre.y, level: emitter.level, ...(area ? { area } : {}) };
   });
   return { kind: 'noise', emitters, min: meta.min, max: meta.max, barrier: meta.barrier, receiverHeight: meta.receiverHeight, title: `Noise · ${emitters.length} source${emitters.length === 1 ? '' : 's'} · dB(A)` };
 }

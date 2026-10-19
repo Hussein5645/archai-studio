@@ -279,7 +279,7 @@ export function Shape({ element: source, context }: { element: Element; context:
       if (noiseEmitter && typeof noiseEmitter === 'object' && !Array.isArray(noiseEmitter)) {
         // Plan symbol like the camera marker: a speaker in a ring with sound waves and its level,
         // kept at a readable screen size when zoomed out.
-        const r = Math.min(element.width, element.height) / 2 || 450;
+        const r = noiseEmitter['shape'] === 'area' ? 450 : Math.min(element.width, element.height) / 2 || 450;
         const cx = element.width / 2;
         const cy = element.height / 2;
         const level = typeof noiseEmitter['level'] === 'number' ? noiseEmitter['level'] : 80;
@@ -287,6 +287,7 @@ export function Shape({ element: source, context }: { element: Element; context:
         const labelSize = r * 0.5;
         return (
           <g>
+            {noiseEmitter['shape'] === 'area' && <rect width={element.width} height={element.height} fill="#dc2626" fillOpacity={0.15} stroke={red} strokeWidth={30} strokeDasharray="120 80" />}
             <MinScale x={cx} y={cy} size={r * 2} px={26}>
               <circle cx={cx} cy={cy} r={r} fill="#ffffff" fillOpacity={0.92} stroke={red} strokeWidth={r * 0.1} />
               <rect x={cx - r * 0.5} y={cy - r * 0.17} width={r * 0.2} height={r * 0.34} fill={red} />

@@ -79,7 +79,7 @@ const TOUCH_TAP_SLOP_PX = 10;
 const PEN_TAP_SLOP_PX = 6;
 
 /** Tools that draw by dragging a rectangle; every other drawing tool places by tapping. */
-const RECT_DRAG_TOOLS: ReadonlySet<string> = new Set(['rect', 'view3d', 'paper', 'ai-portal', 'arch:level', 'parametric', 'diagram:zone', 'analysis-location', 'analysis-sun', 'analysis-wind', 'analysis-noise']);
+const RECT_DRAG_TOOLS: ReadonlySet<string> = new Set(['rect', 'view3d', 'paper', 'ai-portal', 'arch:level', 'parametric', 'diagram:zone', 'analysis-location', 'analysis-sun', 'analysis-wind', 'analysis-noise', 'noise-area-emitter']);
 
 /** Diagram tools drawn click by click (see src/diagrams); the rest finish after two points. */
 const DIAGRAM_LINE_TOOLS: ReadonlySet<string> = new Set(['diagram:arrow', 'diagram:connector', 'diagram:callout', 'diagram:dimension', 'diagram:adjacency']);
@@ -1050,7 +1050,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
         return;
       }
 
-      if (tool === 'rect' || tool === 'view3d' || tool === 'paper' || tool === 'ai-portal' || tool === 'arch:level' || tool === 'parametric' || tool === 'analysis-location' || tool === 'analysis-sun' || tool === 'analysis-wind' || tool === 'analysis-noise' || tool === 'diagram:zone') {
+      if (tool === 'rect' || tool === 'view3d' || tool === 'paper' || tool === 'ai-portal' || tool === 'arch:level' || tool === 'parametric' || tool === 'analysis-location' || tool === 'analysis-sun' || tool === 'analysis-wind' || tool === 'analysis-noise' || tool === 'diagram:zone' || tool === 'noise-area-emitter') {
         container.setPointerCapture(e.pointerId);
         session.current = { type: 'draw-rect', startWorld: drafting.snap(world, pointerInfo(mods)).point };
         return;
@@ -1719,6 +1719,13 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
             return;
           }
           const analysisTool = store.getState().ui.tool;
+          if (analysisTool === 'noise-area-emitter') {
+            const rect = rectFromPoints(s.startWorld, end);
+            const originId = store.getState().ui.analysisTargetId;
+            if (originId && dragged > DRAG_THRESHOLD_PX && rect.width >= 100 && rect.height >= 100)
+              dispatch('create-noise-emitter', { originId, shape: 'area', x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, width: rect.width, depth: rect.height });
+            return;
+          }
           if (analysisTool === 'analysis-sun' || analysisTool === 'analysis-wind' || analysisTool === 'analysis-noise') {
             if (dragged > DRAG_THRESHOLD_PX) {
               const rect = rectFromPoints(s.startWorld, end);

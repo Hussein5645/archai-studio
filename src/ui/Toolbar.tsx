@@ -113,7 +113,7 @@ export function Toolbar() {
     })),
   ]);
 
-  const analyzeActive = ANALYZE_TOOLS.find((t) => t.tool === tool || (tool === 'noise-emitter' && t.tool === 'analysis-noise'));
+  const analyzeActive = ANALYZE_TOOLS.find((t) => t.tool === tool || ((tool === 'noise-emitter' || tool === 'noise-area-emitter') && t.tool === 'analysis-noise'));
   const analyzeEntries: MenuContent = [
     ...ANALYZE_TOOLS.map((t) => ({ id: t.tool, label: t.label, icon: t.icon, onSelect: () => void dispatch(t.command) })),
     ...(running ? [{ separator: true as const }, { id: 'stop-analysis', label: 'Stop running analysis', onSelect: () => void dispatch('stop-analysis') }] : []),
@@ -275,6 +275,7 @@ function ToolHint() {
   else if (tool === 'analysis-wind') text = 'Draw a rectangle for a wind analysis origin · fetch real wind data or type speed and direction, link 3D views and Run';
   else if (tool === 'analysis-noise') text = 'Draw a rectangle for a noise analysis origin · then add emitters, link 3D views and Run';
   else if (tool === 'analysis-location') text = 'Drag to draw the project location map · one per project · search an address in the Inspector';
+  else if (tool === 'noise-area-emitter') text = 'Drag a rectangle for an area sound emitter · Esc when done';
   else if (tool === 'noise-emitter') text = 'Click to add noise emitters to the selected noise origin · Esc when done';
   else if (tool.startsWith('diagram:')) text = diagramToolHint(tool);
   else if (tool.startsWith('arch:')) {
