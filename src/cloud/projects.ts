@@ -356,6 +356,11 @@ export class CloudProjects {
 
   private startLive(id: string, cloud: CloudInfo): void {
     const live = new LiveSession(id, cloud.version, cloud.role, this.account, this.executor, this.store, {
+      preserve: async (document) => {
+        const copy: ArchaiDocument = { ...document, id: randomIds.next('doc'), meta: { ...document.meta, name: `${document.meta.name} (recovered edits)` } };
+        await this.persistence.storeDocument(copy);
+        this.toasts.push({ kind: 'info', message: `Your local model and edits were saved as "${copy.meta.name}" before reloading the cloud project.` });
+      },
       notice: (message, kind) => this.toasts.push({ kind, message }),
       progress: (version, pending) => this.saveProgress(id, { version, role: live.snapshot().role, pending }),
       role: (role) => {

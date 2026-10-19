@@ -43,6 +43,8 @@ export interface LiveState {
 }
 
 export interface LiveEvents {
+  /** Save the local document before a rejected edit can reload an older cloud copy. */
+  preserve?(document: ArchaiDocument): Promise<void>;
   /** Something the user should hear about ("Ana changed what you were editing"). */
   notice(message: string, kind: 'info' | 'error'): void;
   /** Version or pending changed: persist `{ version, pending }` for this project. */
@@ -215,21 +217,21 @@ export class LiveSession {
     if (this.state.status === 'live') this.flush();
   }
 
-  /** Sends the batches not sent on this connection yet, in order. */
+  /** One batch at a time: an HTTP model upload must be acknowledged before
+   * later socket edits that depend on its new elements can reach the board. */
   private flush(): void {
-    for (const batch of this.pending) {
-      if (batch.sent) continue;
-      const message = { t: 'ops', clientId: this.clientId, seq: batch.seq, patches: batch.patches };
-      const text = JSON.stringify(message);
-      if (text.length > SOCKET_LIMIT) {
-        batch.sent = true;
-        void this.postLarge(batch);
-        continue;
-      }
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-      this.ws.send(text);
+    const batch = this.pending[0];
+    if (!batch || batch.sent) return;
+    const message = { t: 'ops', clientId: this.clientId, seq: batch.seq, patches: batch.patches };
+    const text = JSON.stringify(message);
+    if (text.length > SOCKET_LIMIT) {
       batch.sent = true;
+      void this.postLarge(batch);
+      return;
     }
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    this.ws.send(text);
+    batch.sent = true;
   }
 
   private async postLarge(batch: Batch): Promise<void> {
@@ -283,10 +285,21 @@ export class LiveSession {
           // Already in the board's copy (reloaded after it was applied): drop the local repeat.
           this.rebase(false);
         }
+        this.flush();
         return;
       }
       case 'reject': {
         if (!this.pending.some((batch) => batch.seq === message.seq)) return;
+        if (this.events.preserve) {
+          this.executor.setReadOnly(true);
+          try {
+            await this.events.preserve(this.store.getState().doc);
+          } catch {
+            this.end('Cloud sync was paused because the edit was rejected and a recovery copy could not be saved. Your local model remains open.');
+            return;
+          }
+          this.executor.setReadOnly(this.state.role === 'viewer');
+        }
         this.events.notice(`Someone else changed what you were editing, so your last change was undone (${message.reason}).`, 'info');
         this.pending = [];
         this.set({ pending: 0 });
