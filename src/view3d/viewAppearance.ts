@@ -7,4 +7,4 @@ export const VIEW_STYLE_OPTIONS = [
   { value: 'consistent', label: 'Material colors' },
 ];
 
-export const NATURAL_LIGHT = { sky: 0xfff7ed, ground: 0xb6c2bd, ambient: 1.5, sun: 1.65, exposure: 1, environment: 0.7 };
+export const NATURAL_LIGHT = { sky: 0xfff7ed, ground: 0xb6c2bd, ambient: 0.65, sun: 2.1, exposure: 0.95, environment: 0.25 };

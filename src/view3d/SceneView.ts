@@ -26,6 +26,7 @@ import { meshOf, meshStore } from './meshes';
 import { ModelGeometry } from './modelGeometry';
 import { sceneTriangles } from './largeScene';
 import { NATURAL_LIGHT } from './viewAppearance';
+import { presentationMaterial, featureEdgeObject, FEATURE_EDGE_ANGLE, FEATURE_EDGE_LOOK } from './displayMaterials';
 import type { NormalMode } from './meshNormals';
 import { inGroup } from '@/selection/groupScope';
 import { AnalysisLayer, type AnalysisSample } from '@/analysis/layer3d';
@@ -527,34 +528,20 @@ export class SceneView {
       if (oldEdges) {
         child.remove(oldEdges);
         (oldEdges.material as THREE.Material).dispose();
+        if (oldEdges.userData['ownsEdgeGeometry']) oldEdges.geometry.dispose();
         delete child.userData['hiddenLineEdges'];
+      }
+      const edgeLook = this.viewStyle === 'section' ? null : FEATURE_EDGE_LOOK[this.viewStyle];
+      if (edgeLook) {
+        const edges = featureEdgeObject(child, edgesOf(child.geometry, FEATURE_EDGE_ANGLE), edgeLook);
+        child.add(edges);
+        child.userData['hiddenLineEdges'] = edges;
       }
       if (this.viewStyle === 'realistic') {
         child.material = baseMaterials;
         return;
       }
-      if (this.viewStyle === 'hidden-line') {
-        // White faces that hide what is behind them, feature edges drawn on top.
-        const white = new THREE.MeshBasicMaterial({ color: 0xfaf9f5, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, side: THREE.DoubleSide });
-        const edges = new THREE.LineSegments(edgesOf(child.geometry, 25), new THREE.LineBasicMaterial({ color: 0x424744, transparent: true, opacity: 0.72 }));
-        child.add(edges);
-        child.userData['hiddenLineEdges'] = edges;
-        child.userData['viewStyleMaterial'] = white;
-        child.material = white;
-        return;
-      }
-      const styled = (base: THREE.Material): THREE.Material => {
-        const standard = base as THREE.MeshStandardMaterial;
-        // Consistent colours: a textured material shows its average (base) colour, not white.
-        const baseColor = standard.map && base.userData['materialColor'] ? new THREE.Color(base.userData['materialColor'] as string) : 'color' in base && standard.color ? standard.color.clone() : new THREE.Color(0xbfc3ca);
-        return this.viewStyle === 'wireframe'
-          ? new THREE.MeshBasicMaterial({ color: 0x343840, wireframe: true, transparent: false })
-          : this.viewStyle === 'consistent'
-            ? new THREE.MeshBasicMaterial({ color: baseColor, side: THREE.DoubleSide, transparent: base.transparent, opacity: base.opacity })
-            : this.viewStyle === 'section'
-              ? new THREE.MeshBasicMaterial({ color: 0xf2f2f0, side: THREE.DoubleSide })
-              : new THREE.MeshStandardMaterial({ color: 0xd8cbb8, roughness: 0.96, metalness: 0, side: THREE.DoubleSide });
-      };
+      const styled = (base: THREE.Material) => presentationMaterial(base, this.viewStyle);
       const material = Array.isArray(baseMaterials) ? baseMaterials.map(styled) : styled(baseMaterials);
       child.userData['viewStyleMaterial'] = material;
       child.material = material;
@@ -1071,7 +1058,7 @@ export class SceneView {
       let slice = performance.now();
       for (const mesh of meshes) {
         check();
-        await prepareEdges(mesh.geometry, [...(this.viewStyle === 'hidden-line' ? [25] : []), ...(this.section ? [28] : [])]);
+        await prepareEdges(mesh.geometry, [...(this.viewStyle !== 'section' ? [FEATURE_EDGE_ANGLE] : []), ...(this.section ? [28] : [])]);
         check();
         this.applyViewStyle(mesh, false);
         this.addSectionEdges(mesh, false, doc);
