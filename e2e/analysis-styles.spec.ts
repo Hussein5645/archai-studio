@@ -96,3 +96,26 @@ test('draws and edits an area emitter without replacing point emitters', async (
   await expect(page.getByLabel('Emitter area width', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Emitter area depth', { exact: true })).toBeVisible();
 });
+
+test('sun edges have fractional display coverage while exported hours stay sampled', async ({ page }) => {
+  await page.goto('/');
+  const result=await page.evaluate(async()=>{
+    const t='/node_modules/.vite/deps/three.js',a='/src/analysis/layer3d.ts';const T=await import(t),{AnalysisLayer}=await import(a);
+    const renderer=new T.WebGLRenderer();renderer.setSize(256,256);renderer.capabilities.maxTextureSize=128;
+    const scene=new T.Scene(),content=new T.Group();scene.add(content);
+    const mesh=new T.Mesh(new T.BoxGeometry(2000,1000,2000),new T.MeshBasicMaterial());mesh.position.y=500;content.add(mesh);
+    const container=document.createElement('div');document.body.append(container);
+    const layer=new AnalysisLayer({renderer,scene,content,container,helpers:()=>[]});
+    layer.set({kind:'sun',display:'sun-hours',current:[.7,1,.3],samples:[{dir:[.7,1,.3],hours:6}],title:'Sun'});layer.ensureReady();
+    const camera=new T.OrthographicCamera(-1600,1600,1600,-1600,1,20000);camera.position.set(0,10000,0);camera.up.set(0,0,-1);camera.lookAt(0,0,0);camera.updateMatrixWorld();
+    const target=new T.WebGLRenderTarget(256,256);renderer.setRenderTarget(target);layer.render(camera,'realistic');
+    const pixels=new Uint8Array(256*256*4);renderer.readRenderTargetPixels(target,0,0,256,256,pixels);
+    let intermediate=0;for(let i=0;i<pixels.length;i+=4){const r=pixels[i]!,g=pixels[i+1]!,b=pixels[i+2]!;if(g>90&&g>r&&g>b)intermediate++;}
+    const values=layer.sampleValues(100,null).map((s:{value:number})=>s.value);
+    layer.dispose();target.dispose();mesh.geometry.dispose();mesh.material.dispose();renderer.dispose();container.remove();return{intermediate,values};
+  });
+  expect(result.intermediate).toBeGreaterThan(10);
+  expect(result.values.length).toBeGreaterThan(20);
+  expect(result.values.every((value:number)=>value===0||value===6)).toBe(true);
+  expect(result.values).toContain(0);expect(result.values).toContain(6);
+});

@@ -81,6 +81,7 @@ uniform vec3 uSunDirs[${MAX_SUN}];
 uniform float uHours[${MAX_SUN}];
 uniform int uCount;
 uniform float uGrid;
+uniform float uSunTileSize;
 uniform float uMaxHours;
 uniform float uOffset;
 uniform float uDepthBias;
@@ -93,8 +94,27 @@ float lit(int i, vec3 p, vec3 n) {
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 1.0;
   float tile = float(i);
   vec2 cell = vec2(mod(tile, uGrid), floor(tile / uGrid));
-  float stored = texture2D(uAtlas, (cell + uv) / uGrid).r;
-  return (ndc.z * 0.5 + 0.5) - uDepthBias > stored ? 0.0 : 1.0;
+  float depth = (ndc.z * 0.5 + 0.5) - uDepthBias;
+  #if defined(OUTPUT_VALUE)
+    // Keep exported hours based on the original sampled visibility.
+    float stored = texture2D(uAtlas, (cell + uv) / uGrid).r;
+    return step(depth, stored);
+  #else
+    // Bilinear percentage-closer filtering smooths visibility, never depth.
+    // Clamp each tap to this sun's tile so adjacent times cannot bleed together.
+    vec2 pixel = uv * uSunTileSize - 0.5;
+    vec2 base = floor(pixel);
+    vec2 weight = fract(pixel);
+    vec2 lo = vec2(0.5 / uSunTileSize);
+    vec2 hi = vec2(1.0) - lo;
+    vec2 a = clamp((base + vec2(0.5)) / uSunTileSize, lo, hi);
+    vec2 b = clamp((base + vec2(1.5)) / uSunTileSize, lo, hi);
+    float s00 = step(depth, texture2D(uAtlas, (cell + a) / uGrid).r);
+    float s10 = step(depth, texture2D(uAtlas, (cell + vec2(b.x, a.y)) / uGrid).r);
+    float s01 = step(depth, texture2D(uAtlas, (cell + vec2(a.x, b.y)) / uGrid).r);
+    float s11 = step(depth, texture2D(uAtlas, (cell + b) / uGrid).r);
+    return mix(mix(s00, s10, weight.x), mix(s01, s11, weight.x), weight.y);
+  #endif
 }
 #endif
 
@@ -520,6 +540,7 @@ export class AnalysisLayer {
         uHours: { value: new Array<number>(MAX_SUN).fill(0) },
         uCount: { value: 0 },
         uGrid: { value: 1 },
+        uSunTileSize: { value: 1 },
         uMaxHours: { value: 1 },
         uOffset: { value: 60 },
         uDepthBias: { value: 0.0008 },
@@ -606,6 +627,7 @@ export class AnalysisLayer {
     this.atlas.depthTexture.type = THREE.UnsignedIntType;
     uniforms['uAtlas']!.value = this.atlas.depthTexture;
     uniforms['uGrid']!.value = grid;
+    uniforms['uSunTileSize']!.value = tile;
     // Shadow receivers: the analysis box. Casters just outside it (neighbouring context) still
     // shade it, so the volume each sun view covers reaches a little further out.
     const top = Math.max(this.box.top, 3000);
