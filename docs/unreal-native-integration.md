@@ -1,0 +1,33 @@
+# Native Unreal integration — Windows release 0.3.0.11
+
+As of 0.3.0.12 Unreal is an account-gated optional download, separate from setup. See [release-0.3.0.12.md](release-0.3.0.12.md) for current packaging and distribution. The bundled packaging command below describes historical releases through 0.3.0.11.
+
+The Windows release hosts Unreal Engine as a DLL inside Archai's desktop process. A native host module creates the viewport and runs Unreal's library initialization, window-message handling and ticks on a dedicated native thread. Archai keeps its interface and document commands. Scene updates enter a C API in memory; this path does not launch an Unreal player process or export live geometry through glTF.
+
+The release automatically loads the bundled DLL and native host with their cooked content. Development overrides are `ARCHAI_UNREAL_LIBRARY`, `ARCHAI_UNREAL_NATIVE_HOST` and `ARCHAI_NATIVE_RUNTIME_ROOT`. The DLL must sit in that runtime's `ArchaiRender/Binaries/Win64` directory: Unreal resolves its base directory from the loaded module before parsing the library command line. Passing `-basedir` to the library alone does not relocate its content. Actual DLL hosting, rendering, input, images, scene reuse, exports and shutdown passed integration checks. The executable runtime remains the delivery format for portable Unreal desktop/PC VR experiences.
+
+Epic's installed engine at `F:/ur5.5/new/UE_5.8` rejects the DLL target because it uses a unique build environment. The authenticated source checkout is `E:/Archai-UnrealSource/UE_5.8.1`, pinned to Epic's `5.8.1-release` tag. Dependencies, temporary files and source-build output stay on E:. Existing dependencies were reused only when their SHA-1 matched Epic's dependency manifest. The matching installed .NET SDK and build-tool binaries can drive the full C++ source-engine build without rebuilding those tools through an unavailable package feed.
+
+Build command:
+
+```powershell
+node scripts/build-unreal-library.mjs --engine E:\Archai-UnrealSource\UE_5.8.1 --workspace E:\Archai-UnrealSource\ArchaiEmbedded --installed-tools F:\ur5.5\new\UE_5.8 --dotnet F:\ur5.5\new\UE_5.8\Engine\Binaries\ThirdParty\DotNet\10.0\win-x64
+```
+
+`scripts/stage-unreal-native.mjs --runtime <cooked-Windows-root> --library <built-DLL> --output <empty-staging-folder>` stages the DLL beside the cooked binaries, the project descriptor and the native host addon. It writes `environment.json` for isolated development verification. Staging does not establish shader/content compatibility. `scripts/unreal-native-smoke.mjs` requires the actual Unreal library, checks it is loaded in Archai's main process, and exercises real scene rendering, image output, exposure, retained reopening, a fresh session and shutdown. The separate host-plumbing test uses a small test DLL and is not evidence of actual Unreal rendering.
+
+The library build script applies a guarded Slate activation fix to the source engine, scoped to `UE_LIBRARY_ENABLED`. The hosted game mode also runs Windows post-pump input processing, synchronizes Unreal's cached hit-test region after HWND resizing, configures desktop capture after controller possession and projects the hosted surface's current pointer coordinates. Show/hide operations update Unreal's own visibility state so retained hidden views stop drawing. The engine log lives outside ephemeral scene directories because its handle remains open across sessions.
+
+Packaging a native release uses the staged `unreal` directory with `scripts/package-render-release.mjs --runtime <staged-unreal> --native-host <staged-addon> --output <release-directory>`. Both the DLL and addon are required. The source checkout and installed editor are not distributed to ordinary users.
+
+Scene retention and caching are independent improvements: closing a viewport hides it and retains the native scene for five minutes; a prepared scene snapshot and content-addressed mesh/texture cache avoid repeating geometry preparation after reopening/restarting. Native meshes still need their GPU resources reconstructed after an application restart. Cache corruption or eviction triggers source reconstruction, never changes the user's model, and the host limits retained disk assets to 4 GiB at shutdown. One CPU preparation cache is retained in memory. Cache data is a disposable derivative, not the project source.
+
+Large mesh preparation yields between chunks and uses compact remapping buffers. Host-side validation yields to the event loop and reads vertex buffers without copying the entire mesh. Unreal baking starts before optional browser preparation; very large browser derivatives are rejected before parsing if they would duplicate over 256 MiB of scene data in memory. Native baking continues independently. These measures improve responsiveness and memory use; they do not establish support for arbitrarily large scenes.
+
+`E:/Archai-UnrealSource/release-installer-million/verification.json` records the actual native DLL loaded from the extracted installer with a synthetic 1,046,528-triangle imported model: all triangles were preserved, 163,258,624 bytes were sent in bounded batches, and individual encoded assets were at most 10,223,632 bytes. First loading took 13,756 ms, retained reopening including image capture took 245 ms, and restoring a fresh viewer from disk took 7,609 ms with zero binary uploads from the renderer. Initial preparation still produced a 740 ms UI heartbeat gap. This is not a building-model benchmark, a large-scene Lightmass bake or a physical headset test.
+
+Direct 3D placement now ignores vertical faces when searching for a usable floor and disables the transform gizmo during creation. Light exports preserve area width/height and spotlight cones. View exposure supports Unreal histogram adaptation and fixed physical-camera exposure.
+
+Desktop/PC VR folder output uses Unreal's packaged runtime or saved Lightmass experience. Optimized WebXR links run in a headset browser with approximate lighting; they are not native Unreal or streamed Lumen. Physical headset behavior and large imported building benchmarks remain unverified. The verified Lightmass fixture contains three meshes with lightmaps.
+
+The installer is `F:/Archai-Releases/0.3.0.11/desktop/ArchAI-Setup-0.3.0.11.exe`. Its `verification.json` records 25 targeted unit tests, five browser tests, packaged native controls, renderer/style/image/export checks, portable WebXR and Unreal folder launches, cooked Lightmass output, and matching source/staged/installer-payload native hashes. Tests used isolated profiles and synthetic projects. Production uploads and physical headset operation were not tested.

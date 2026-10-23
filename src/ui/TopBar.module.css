@@ -102,6 +102,21 @@
   flex: 1;
 }
 
+.render {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  flex-shrink: 0;
+}
+.render:hover:not(:disabled) { background: var(--bg-hover); }
+.render:disabled { opacity: 0.45; }
+:global(html[data-touch='true']) .render { min-height: 40px; }
+
 .group {
   display: flex;
   align-items: center;

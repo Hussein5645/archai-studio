@@ -2,6 +2,7 @@
  * Pure SVG renderers for leaf elements. They know nothing about the store, so the same code
  * draws document elements and the contents of asset templates.
  */
+import { lightShape } from './lightShape';
 import type { CSSProperties, ReactNode } from 'react';
 import { slabOpenings } from '@/assets/slabOpenings';
 import type { ArchaiDocument, AssetDefinition, BlobRecord, Element, ElementTable, LineElement } from '@/document';
@@ -212,6 +213,7 @@ export function Shape({ element: source, context }: { element: Element; context:
   const { g, style: viewStyle } = boardGraphics(context);
   const typeId = graphicTypeOfElement(element) ?? (element.kind === 'rect' || element.kind === 'line' || element.kind === 'text' || element.kind === 'image' ? element.kind : null);
   const eg = typeId ? graphicsForElement(g, element, typeId, 'board', viewStyle) : null;
+  if (element.meta?.['renderLight']) return lightShape(element);
   switch (element.kind) {
     case 'rect': {
       // Mesh elements (from linked apps, imports): drawn as a CAD plan of the mesh, not its box.

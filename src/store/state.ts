@@ -1,3 +1,4 @@
+import { documentInContext } from '@/document/viewVisibility';
 import type { Patch } from 'immer';
 import type { CatalogAsset, SystemAssetType } from '@/catalog';
 import type { ArchaiDocument } from '@/document';
@@ -200,7 +201,7 @@ export interface AppState {
 
 /** The document as the board draws it: a gesture's live preview while one is in progress. */
 export function boardDoc(state: AppState): ArchaiDocument {
-  return state.preview ?? state.doc;
+  return documentInContext(state.preview ?? state.doc, 'board');
 }
 
 export const HISTORY_LIMIT = 200;

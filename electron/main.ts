@@ -1,7 +1,13 @@
+import { FeatureAccount } from './featureAccount.js';
+import { RuntimeDownload } from './runtimeDownload.js';
+import { guestFolderAllowed } from '../shared/runtimeDownload.js';
+import { UnrealBake } from './unrealBake.js';
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, Menu, nativeImage, session, shell } from 'electron';
 import { Blob } from 'node:buffer';
 import type { MenuItemConstructorOptions } from 'electron';
 import fs from 'node:fs/promises';
+import {existsSync} from 'node:fs';
+import {UnrealNativeHost} from './unrealNativeHost.js';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -33,6 +39,10 @@ import {
 import { liveReply, startLiveLink } from './liveLink.js';
 import { readD5Folder, readD5Files } from './d5Folder.js';
 import { SITE_CONTEXT_URLS, siteContextHeaders } from '../shared/siteContextNetwork.js';
+import { UnrealUpdateInput, UnrealExportInput, UnrealCommandInput, UnrealViewportInput, UnrealBakeStartInput, UnrealBakeStatusInput } from '../shared/unrealRuntime.js';
+import { UnrealLiveInput,UnrealAssetsInput } from '../shared/unrealLive.js';
+import { UnrealRuntime } from './unrealRuntime.js';
+import { exportUnrealExperience } from './unrealExperience.js';
 
 const DEV_URL = process.env['ARCHAI_DEV_URL'];
 /**
@@ -42,6 +52,23 @@ const DEV_URL = process.env['ARCHAI_DEV_URL'];
 const APP_ROOT = path.join(import.meta.dirname, '..', '..');
 const INDEX_HTML = path.join(APP_ROOT, 'dist', 'index.html');
 const STORAGE_DIR = path.join(app.getPath('userData'), 'storage');
+const features = new FeatureAccount(() => storageGet('account'));
+const runtimeDownload = new RuntimeDownload(path.join(app.getPath('userData'), 'runtimes'), () => features.require());
+const RUNTIME_ROOT = runtimeDownload.root;
+const RUNTIME_EXE = process.env['ARCHAI_RENDER_RUNTIME'] || path.join(RUNTIME_ROOT, 'unreal/ArchaiRender/Binaries/Win64/ArchaiRender-Win64-Shipping.exe');
+const BAKE_ENGINE = process.env['ARCHAI_UNREAL_ENGINE'] || 'F:\\ur5.5\\new\\UE_5.8';
+const BAKE_SOURCES = process.env['ARCHAI_UNREAL_SOURCES'] || (app.isPackaged ? path.join(RUNTIME_ROOT, 'unreal-worker') : path.join(APP_ROOT, 'unreal'));
+const BAKE_ROOT = process.env['ARCHAI_UNREAL_BAKES'] || (existsSync('F:/Archai-Releases/view-bakes') ? 'F:/Archai-Releases/view-bakes' : path.join(app.getPath('userData'), 'view-bakes'));
+const bakeWorker = new UnrealBake(BAKE_ENGINE, BAKE_SOURCES);
+let bakeJobId: string | null = null;
+function createUnrealRuntime() {
+  const library = process.env['ARCHAI_UNREAL_LIBRARY'] || path.join(RUNTIME_ROOT, 'unreal/ArchaiRender/Binaries/Win64/ArchaiEmbedded.dll');
+  const native = existsSync(library) ? new UnrealNativeHost(library,
+    process.env['ARCHAI_UNREAL_NATIVE_HOST'] || path.join(RUNTIME_ROOT, 'unreal-native/archai_unreal_host.node'),
+    process.env['ARCHAI_NATIVE_RUNTIME_ROOT'] || path.resolve(path.dirname(RUNTIME_EXE), '../../..')) : undefined;
+  return new UnrealRuntime(RUNTIME_EXE, process.env['ARCHAI_RENDER_CACHE'] || path.join(app.getPath('userData'), 'render-sessions'), undefined, native);
+}
+let unrealRuntime = createUnrealRuntime();
 
 const IMAGE_MIME: Record<string, string> = {
   png: 'image/png',
@@ -164,10 +191,11 @@ function createWindow(route: Route = ''): BrowserWindow {
   if (DEV_URL) void win.loadURL(route ? `${DEV_URL.replace(/\/$/, '')}/${route}` : DEV_URL);
   else void win.loadFile(INDEX_HTML, route ? { hash: `/${route}` } : undefined);
 
+  const runtimeOwner = win.webContents.id;
   win.on('closed', () => {
+    void unrealRuntime.stop(runtimeOwner);
     if (mainWindow === win) mainWindow = null;
     if (modelingWindow === win) modelingWindow = null;
-    if (renderWindow === win) renderWindow = null;
   });
   return win;
 }
@@ -186,18 +214,6 @@ function openModelingWindow(params: z.infer<typeof WindowOpenModelingInput>): vo
   modelingWindow = createWindow(route);
 }
 
-let renderWindow: BrowserWindow | null = null;
-
-/** The ArchAI Render studio: one window, live-linked to the board through IPC.studioSend. */
-function openRenderWindow(): void {
-  if (renderWindow && !renderWindow.isDestroyed()) {
-    if (renderWindow.isMinimized()) renderWindow.restore();
-    renderWindow.focus();
-    return;
-  }
-  renderWindow = createWindow('render');
-  renderWindow.maximize();
-}
 
 // ---- storage: one file per key under userData/storage, written atomically -----------------
 
@@ -417,10 +433,12 @@ function registerIpc(): void {
   ipcMain.handle(IPC.storageSet, async (_e, raw) => {
     const input = StorageSetInput.parse(raw);
     await writeAtomic(storageFile(input.key), JSON.stringify({ key: input.key, value: input.value }));
+    if (input.key === 'account') features.clear();
   });
   ipcMain.handle(IPC.storageDelete, async (_e, raw) => {
     const input = StorageKeyInput.parse(raw);
     await fs.rm(storageFile(input.key), { force: true });
+    if (input.key === 'account') { features.clear(); runtimeDownload.cancel(); await unrealRuntime.hideAll(); }
   });
   ipcMain.handle(IPC.storageKeys, (_e, raw) => storageKeys(StorageKeysInput.parse(raw).prefix));
 
@@ -453,7 +471,59 @@ function registerIpc(): void {
   });
 
   ipcMain.handle(IPC.windowOpenModeling, (_e, raw) => openModelingWindow(WindowOpenModelingInput.parse(raw)));
-  ipcMain.handle(IPC.windowOpenRender, () => openRenderWindow());
+  ipcMain.handle(IPC.unrealDownloadStatus, () => runtimeDownload.status());
+  ipcMain.handle(IPC.unrealDownloadCancel, () => runtimeDownload.cancel());
+  ipcMain.handle(IPC.unrealDownloadInstall, async () => {
+    await features.require();
+    const existed = await runtimeDownload.installed();
+    const status = await runtimeDownload.install();
+    if (!existed && status.state === 'ready') unrealRuntime = createUnrealRuntime();
+    return status;
+  });
+  ipcMain.handle(IPC.unrealStatus, async (event) => { await features.require(); return { ...await unrealRuntime.status(event.sender.id), bakeAvailable: await bakeWorker.available() }; });
+  ipcMain.handle(IPC.unrealBakeStart, async (_event, raw) => {
+    await features.require();
+    const { bytes } = UnrealBakeStartInput.parse(raw);
+    if (bakeWorker.status?.state === 'running') throw new Error('A local bake is already running. Wait for it to finish.');
+    const id = randomUUID();
+    await fs.mkdir(BAKE_ROOT, { recursive: true });
+    await bakeWorker.start(bytes, path.join(BAKE_ROOT, id));
+    bakeJobId = id;
+    return { id, ...bakeWorker.status };
+  });
+  ipcMain.handle(IPC.unrealBakeStatus, async (_event, raw) => {
+    await features.require();
+    const { id } = UnrealBakeStatusInput.parse(raw);
+    if (id === bakeJobId && bakeWorker.status) {
+      const status = { id, ...bakeWorker.status };
+      return status;
+    }
+    const saved = JSON.parse(await fs.readFile(path.join(BAKE_ROOT, id, 'job-status.json'), 'utf8'));
+    if (saved.state === 'running') return { id, state: 'error', stage: 'Bake interrupted', error: 'Archai closed before this bake completed. Bake this view again.' };
+    return { ...saved, id };
+  });
+  ipcMain.handle(IPC.unrealUpdate, async (event, raw) => { await features.require(); return unrealRuntime.update(event.sender.id, UnrealUpdateInput.parse(raw).bytes); });
+  ipcMain.handle(IPC.unrealLive, async (event, raw) => { await features.require(); return unrealRuntime.live(event.sender.id, UnrealLiveInput.parse(raw)); });
+  ipcMain.handle(IPC.unrealAssets,async (event,raw)=>{await features.require(); const input=UnrealAssetsInput.parse(raw);return unrealRuntime.assets(event.sender.id,input.projectId,input.assets);});
+  ipcMain.handle(IPC.unrealViewport, async (event, raw) => {
+    if (UnrealViewportInput.parse(raw).visible) await features.require();
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw new Error('The Archai host window is unavailable');
+    const handle = win.getNativeWindowHandle();
+    const parent = (handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE())).toString();
+    return unrealRuntime.viewport(event.sender.id, parent, UnrealViewportInput.parse(raw));
+  });
+  ipcMain.handle(IPC.unrealCommand, async (event, raw) => { await features.require(); const input = UnrealCommandInput.parse(raw); return unrealRuntime.command(event.sender.id, input.action, input.options); });
+  ipcMain.handle(IPC.unrealStop, (event) => unrealRuntime.stop(event.sender.id));
+  ipcMain.handle(IPC.unrealExport, async (_event, raw) => {
+    const { bytes, options } = UnrealExportInput.parse(raw);
+    let vrEnabled = false;
+    if (!guestFolderAllowed(options)) { await features.require(); vrEnabled = true; }
+    else { try { await features.require(); vrEnabled = true; } catch { /* Default folders work offline for guests. */ } }
+    const selected = await dialog.showOpenDialog({ title: 'Export interactive scene', properties: ['openDirectory', 'createDirectory'] });
+    if (selected.canceled || !selected.filePaths[0]) return null;
+    return exportUnrealExperience(RUNTIME_EXE, bytes, selected.filePaths[0], options, { bakeRoot: BAKE_ROOT, desktopRoot: path.dirname(process.execPath), viewerRoot: path.join(APP_ROOT, 'dist'), vrEnabled });
+  });
   // Live Bridge with the modelling-app plugins: the board's answers.
   ipcMain.handle(IPC.liveReply, (_e, raw) => liveReply(raw));
   // Long tasks (exports, imports, live-link syncs) on the taskbar button of the window doing them.
@@ -519,4 +589,13 @@ void app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+let runtimeShutdownComplete = false;
+app.on('before-quit', (event) => {
+  if (runtimeShutdownComplete) return;
+  event.preventDefault();
+  runtimeDownload.cancel();
+  bakeWorker.cancel();
+  void unrealRuntime.stopAll().finally(() => { runtimeShutdownComplete = true; app.quit(); });
 });

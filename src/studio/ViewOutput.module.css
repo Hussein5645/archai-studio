@@ -1,0 +1,15 @@
+.backdrop { position: fixed; inset: 0; z-index: 12000; display: grid; place-items: center; background: #20263655; }
+.dialog { width: min(440px, calc(100vw - 48px)); max-height: 80vh; overflow: auto; background: var(--bg-panel); color: var(--text); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 14px 60px #0003; display: flex; flex-direction: column; gap: 14px; font: 12px var(--font-ui, system-ui); }
+.dialog header { display: flex; align-items: center; justify-content: space-between; font-size: 15px; }
+.dialog label { display: flex; flex-direction: column; gap: 6px; }
+.dialog input, .dialog select, .dialog button { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-input); color: var(--text); padding: 7px 9px; font: inherit; box-sizing: border-box; min-width: 0; }
+.dialog button { cursor: pointer; }
+.dialog button:disabled { opacity: .5; cursor: default; }
+.dialog p { margin: 0; line-height: 1.5; color: var(--text-muted); }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.objects { max-height: 240px; overflow: auto; display: grid; gap: 8px; }
+.objects label { flex-direction: row; align-items: center; }
+.progress { height: 6px; overflow: hidden; border-radius: 9px; background: var(--border); }
+.progress span { display: block; height: 100%; width: 35%; background: var(--accent, #316bff); animation: output-loading 1.6s ease-in-out infinite; }
+@keyframes output-loading { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+@media (prefers-reduced-motion: reduce) { .progress span { animation: none; width: 100%; opacity: .6; } }

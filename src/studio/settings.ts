@@ -4,6 +4,7 @@
  * describe how to render it, the way D5 or Twinmotion keep their own scene files.
  */
 import { z } from 'zod';
+import { RenderLightsSchema } from '@shared/renderLights';
 
 export const EntourageItemSchema = z.object({
   id: z.string().min(1).max(40),
@@ -20,6 +21,7 @@ export const GROUNDS = { grass: '#5d7a3e', concrete: '#a9a8a3', asphalt: '#3d3f4
 export type Ground = keyof typeof GROUNDS;
 
 export const RenderSettingsSchema = z.object({
+  lights: RenderLightsSchema,
   sky: z.enum(['sun', 'hdri']).default('sun'),
   hdri: z.string().max(80).default('kloofendal_48d_partly_cloudy_puresky'),
   /** Degrees. */
@@ -43,8 +45,11 @@ export const RenderSettingsSchema = z.object({
   ground: z.enum(Object.keys(GROUNDS) as [Ground, ...Ground[]]).default('grass'),
   toneMapping: z.enum(['agx', 'aces', 'neutral']).default('agx'),
   exposure: z.number().min(-4).max(4).default(0),
+  exposureMode: z.enum(['auto', 'manual']).default('auto'),
   ambientOcclusion: z.number().min(0).max(2).default(1),
   bloom: z.number().min(0).max(2).default(0.1),
+  /** Vertex-lit preview assets already contain illumination. */
+  bakedPreview: z.boolean().default(false),
   /** Degrees, vertical. */
   fov: z.number().min(10).max(120).default(55),
   depthOfField: z.boolean().default(false),

@@ -10,6 +10,12 @@ const midpoint = (a: Vertex, b: Vertex): Vertex => ({
   c: a.c.clone().lerp(b.c, 0.5),
 });
 
+export function checkBrowserBakeMemory(outputTriangles: number): void {
+  // Includes detached attributes, worker buffers, BVH and temporary conversion arrays.
+  if (outputTriangles * 3 * 48 * 6 > 1_500_000_000)
+    throw new Error('The optimized browser bake would exceed its memory budget. Unreal baking can continue; publish a real-time WebXR version or select a smaller area for browser baking.');
+}
+
 /** Detached, world-space meshes: preserves source UVs, material groups and vertex colours. */
 export function prepareBakeGeometry(
   root: THREE.Object3D,
@@ -17,14 +23,12 @@ export function prepareBakeGeometry(
   triangleBudget: number,
 ): THREE.Group {
   root.updateWorldMatrix(true, true);
-  const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
-  let originalTriangles = 0;
+  const buckets = new Map<string, { material: THREE.Material; pieces: THREE.BufferGeometry[]; identity: Record<string, unknown>; name: string }>();
   let outputTriangles = 0;
   root.traverseVisible((object) => {
     if (object instanceof THREE.Mesh) {
       const count =
         (object.geometry.index?.count ?? object.geometry.getAttribute('position').count) / 3;
-      originalTriangles += count;
       outputTriangles +=
         count *
         ((Array.isArray(object.material) ? object.material : [object.material]).some(
@@ -34,10 +38,9 @@ export function prepareBakeGeometry(
           : 1);
     }
   });
-  if (originalTriangles > 1_000_000)
-    throw new Error(
-      'This scene still exceeds one million triangles after safe reduction. Split the project into smaller VR areas or use a panorama tour.',
-    );
+  // Budget memory rather than rejecting every model above an arbitrary triangle count.
+  // Unreal Lightmass runs independently when a browser derivative cannot fit in memory.
+  checkBrowserBakeMemory(outputTriangles);
   let remaining = Math.max(0, triangleBudget - outputTriangles);
   root.traverseVisible((object) => {
     if (!(object instanceof THREE.Mesh)) return;
@@ -63,6 +66,9 @@ export function prepareBakeGeometry(
           ? new THREE.Color(color.getX(i), color.getY(i), color.getZ(i))
           : new THREE.Color(1, 1, 1),
     });
+    let owner: THREE.Object3D | null = object;
+    while (owner && !owner.userData['archai']) owner = owner.parent;
+    const identity = owner?.userData['archai'] as Record<string, unknown> | undefined;
     for (const group of groups) {
       const material = materials[group.materialIndex ?? 0];
       if (!material) continue;
@@ -131,12 +137,15 @@ export function prepareBakeGeometry(
       piece.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3));
       piece.setAttribute('uv', new THREE.Float32BufferAttribute(u, 2));
       piece.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
-      buckets.set(material, [...(buckets.get(material) ?? []), piece]);
+      const key = String(identity?.['id'] ?? object.uuid) + ':' + material.uuid;
+      const bucket = buckets.get(key) ?? { material, pieces: [] as THREE.BufferGeometry[], identity: identity ?? { id: object.uuid }, name: owner?.name || object.name || 'Element' };
+      bucket.pieces.push(piece);
+      buckets.set(key, bucket);
     }
     geometry.dispose();
   });
   const output = new THREE.Group();
-  for (const [material, pieces] of buckets) {
+  for (const { material, pieces, identity, name } of buckets.values()) {
     const merged = mergeGeometries(pieces, false)!;
     const geometry = mergeVertices(merged, 0.00001);
     merged.dispose();
@@ -158,7 +167,7 @@ export function prepareBakeGeometry(
     geometry.setIndex(unique);
     for (const piece of pieces) piece.dispose();
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = material.name || 'Baked surface';
+    mesh.name = name; mesh.userData['archai'] = { ...identity };
     output.add(mesh);
   }
   return output;

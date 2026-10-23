@@ -23,6 +23,8 @@ import type { CameraState, SurfaceTarget } from '@/view3d/SceneView';
 import type { PaintScope } from '@/materials/uiStore';
 import { paintTarget } from '@/materials/paint';
 import { libraryMaterialToProject, loadMaterialLibrary } from '@/materials/library';
+import { SceneSender } from './sceneSync';
+import type { AssetCatalog } from '@/catalog/types';
 
 export interface SceneMessage {
   type: 'scene';
@@ -49,26 +51,32 @@ export interface PaintMessage {
 const DEBOUNCE_MS = 400;
 
 let studioOpen = false;
+let revisioned = false;
+const sceneSender = new SceneSender();
 let pending: { camera?: CameraState; viewName?: string; prepare?: 'bake' } | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
-let started: { platform: Platform; store: AppStore; services: Pick<AppServices, 'executor' | 'toasts'> | null } | null = null;
+let started: { platform: Platform; store: AppStore; services: Pick<AppServices, 'executor' | 'toasts'> | null; catalog?: AssetCatalog } | null = null;
 
-function sendScene(): void {
+function sendScene(snapshot = false): void {
   if (!started?.platform.studio) return;
   const { doc } = started.store.getState();
   const message: SceneMessage = { type: 'scene', docId: doc.id, name: doc.meta.name || 'Untitled', doc, ...(pending ?? {}) };
   pending = null;
-  started.platform.studio.send(message as unknown as { type: string } & Record<string, unknown>);
+  if (revisioned) {
+    const { doc: document, ...context } = message;
+    started.platform.studio.send({ ...context, type: 'render-scene', frame: sceneSender.next(document, snapshot) });
+  } else started.platform.studio.send(message as unknown as { type: string } & Record<string, unknown>);
 }
 
 /** Board side, once at boot: answers the studio and streams document edits to it while it is open. */
-export function startBoardLink(platform: Platform, store: AppStore, services: Pick<AppServices, 'executor' | 'toasts'> | null = null): void {
+export function startBoardLink(platform: Platform, store: AppStore, services: Pick<AppServices, 'executor' | 'toasts'> | null = null, catalog?: AssetCatalog): void {
   if (!platform.studio || started) return;
-  started = { platform, store, services };
+  started = { platform, store, services, catalog };
   platform.studio.subscribe((message) => {
     if (message.type === 'hello') {
       studioOpen = true;
-      sendScene();
+      revisioned = message['sceneProtocol'] === 1;
+      sendScene(true);
     } else if (message.type === 'bye') {
       studioOpen = false;
     } else if (message.type === 'paint' && services) {
@@ -84,8 +92,9 @@ export function startBoardLink(platform: Platform, store: AppStore, services: Pi
   });
   let lastDoc = store.getState().doc;
   store.subscribe((state) => {
-    if (!studioOpen || state.doc === lastDoc) return;
+    if (state.doc === lastDoc) return;
     lastDoc = state.doc;
+    if (!studioOpen) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(sendScene, DEBOUNCE_MS);
   });
@@ -139,14 +148,14 @@ async function makeUnique(message: UniqueMessage, store: AppStore, services: Pic
 
 /** Whether this host can run ArchAI Render. */
 export function canRender(platform: Platform): boolean {
-  return Boolean(platform.window.openRender && platform.studio);
+  return Boolean(platform.unreal?.update);
 }
 
 /** Opens ArchAI Render on the document, looking through `camera` when given (a 3D view's camera). */
-export function openRenderStudio(platform: Platform, camera?: CameraState, viewName?: string, bake = false): void {
-  if (!platform.window.openRender) return;
-  pending = { ...(camera ? { camera } : {}), ...(viewName ? { viewName } : {}), ...(bake ? { prepare: 'bake' } : {}) };
-  platform.window.openRender();
-  // Already open: it will not say hello again, so send the view now.
-  if (studioOpen) sendScene();
+export function openRenderStudio(platform: Platform, camera?: CameraState, _viewName?: string, _bake = false): void {
+  if (!canRender(platform) || !started?.services) return;
+  void started.services.executor.dispatch('open-render-studio').then(async (result) => {
+    const id = started?.store.getState().ui.view3d.portalId;
+    if (result.ok && id && camera) await started?.services?.executor.dispatch('set-view3d-camera', { id, camera });
+  });
 }

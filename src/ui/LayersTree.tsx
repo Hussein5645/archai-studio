@@ -1,4 +1,5 @@
-import { AppWindow, SquareDashed, Box, Camera, ChevronDown, Crosshair, ChevronRight, Eye, EyeOff, Folder, FolderCog, Image as ImageIcon, Layers, Pin, PinOff, Scissors, Slash, Square, Type, Workflow } from 'lucide-react';
+import { visibleInContext, viewContext } from '@/document/viewVisibility';
+import { Flashlight, RectangleHorizontal, Sun, AppWindow, SquareDashed, Box, Camera, ChevronDown, Crosshair, ChevronRight, Eye, EyeOff, Folder, FolderCog, Image as ImageIcon, Layers, Pin, PinOff, Scissors, Slash, Square, Type, Workflow } from 'lucide-react';
 import { createContext, memo, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useApp, useAppState, useAppStateShallow, useDispatch } from '@/app/context';
 import { type ArchaiDocument, type Element } from '@/document';
@@ -19,6 +20,7 @@ const TreeContext = createContext<TreeContextValue>({ onRowSelect: () => {} });
 
 export function elementLabel(element: Element, doc: ArchaiDocument): string {
   if (element.name) return element.name;
+  if (element.meta?.['renderLight']) return 'Light';
   if (element.meta?.['cameraMarker']) {
     return 'Camera';
   }
@@ -58,6 +60,7 @@ export function elementLabel(element: Element, doc: ArchaiDocument): string {
 
 function KindIcon({ element }: { element: Element }): ReactNode {
   const size = 14;
+  if (element.meta?.['renderLight']) { const kind = (element.meta['renderLight'] as { kind: string }).kind; return kind === 'spot' ? <Flashlight size={size} /> : kind === 'area' ? <RectangleHorizontal size={size} /> : <Sun size={size} />; }
   if (element.meta?.['parametricGraph']) return <FolderCog size={size} />;
   if (element.meta?.['parametricMarker']) return <Workflow size={size} />;
   // A camera/section: the origin, the view it shows, and the marker it looks from.
@@ -93,6 +96,8 @@ const LayerRow = memo(function LayerRow({ id, depth, parentId }: { id: string; d
   const dispatch = useDispatch();
   const { onRowSelect } = useContext(TreeContext);
   const element = useAppState((s) => s.doc.elements[id]);
+  const visible = useAppState((s) => { const e = s.doc.elements[id]; return e ? visibleInContext(e, s.ui.view3d.open && !s.ui.view3d.editingBoard ? viewContext(s.ui.view3d.portalId) : 'board') : false; });
+  const [eyeMenu, setEyeMenu] = useState(false);
   const graphComponent = useAppState((s) => { const item = s.doc.elements[id]; return item?.meta?.['parametricGraph'] ? item : item?.meta?.['parametricMarker'] && item.parentId ? s.doc.elements[item.parentId] : undefined; });
   const label = useAppState((s) => (s.doc.elements[id] ? elementLabel(s.doc.elements[id]!, s.doc) : ''));
   const selected = useAppState((s) => s.ui.selection.includes(id));
@@ -129,8 +134,8 @@ const LayerRow = memo(function LayerRow({ id, depth, parentId }: { id: string; d
         title={element.meta?.['parametricGraph'] ? 'Parametric component folder · drag elements inside' : element.meta?.['parametricMarker'] ? 'Graph origin · double-click to open graph' : editableGroup(element) ? 'Double-click to edit group · F2 to rename' : undefined}
         data-selected={selected || undefined}
         data-graph={!!graphComponent || undefined}
-        data-hidden={!element.visible || undefined}
-        data-flagged={!element.visible || element.locked || undefined}
+        data-hidden={!visible || undefined}
+        data-flagged={!visible || element.locked || undefined}
         data-drop-position={dropPosition ?? undefined}
         style={{ paddingLeft: 4 + depth * 14 }}
         onDragStart={(e) => {
@@ -221,16 +226,21 @@ const LayerRow = memo(function LayerRow({ id, depth, parentId }: { id: string; d
           <button
             type="button"
             className={styles.miniButton}
-            data-on={!element.visible || undefined}
-            aria-label={t(element.visible ? 'Hide' : 'Show')}
-            title={t(element.visible ? 'Hide' : 'Show')}
+            data-on={!visible || undefined}
+            aria-label={t(visible ? 'Hide' : 'Show')}
+            title={t(visible ? 'Hide in this view · Right-click for everywhere' : 'Show in this view · Right-click for everywhere')}
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setEyeMenu(true); }}
             onClick={(e) => {
               e.stopPropagation();
-              void dispatch('set-property', { ids: [id], key: 'visible', value: !element.visible });
+              void dispatch('set-context-visibility', { ids: [id], visible: !visible });
             }}
           >
-            {element.visible ? <Eye size={13} /> : <EyeOff size={13} />}
+            {visible ? <Eye size={13} /> : <EyeOff size={13} />}
           </button>
+          {eyeMenu && <div role="menu" aria-label="Visibility" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setEyeMenu(false)} style={{ position: 'absolute', right: 8, zIndex: 30, background: 'var(--panel, white)', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}>
+            <button role="menuitem" onClick={() => { void dispatch('set-context-visibility', { ids: [id], visible: false, everywhere: true }); setEyeMenu(false); }}>Hide everywhere</button>
+            <button role="menuitem" onClick={() => { void dispatch('set-context-visibility', { ids: [id], visible: true, everywhere: true }); setEyeMenu(false); }}>Show everywhere</button>
+          </div>}
           <button
             type="button"
             className={styles.miniButton}

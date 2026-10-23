@@ -682,7 +682,7 @@ export const matchProperties = defineMutation({
 
 /** A plain drawn line (not a wall, railing, measure or marker): its vertices are free to edit. */
 export function isPlainLine(element: Element | undefined): element is LineElement {
-  return element?.kind === 'line' && !element.meta?.['arch'] && !element.meta?.['measure'] && !element.meta?.['cameraMarker'] && !element.meta?.['sectionLine'] && !element.meta?.['diagram'];
+  return element?.kind === 'line' && !element.meta?.['arch'] && !element.meta?.['renderLight'] && !element.meta?.['measure'] && !element.meta?.['cameraMarker'] && !element.meta?.['sectionLine'] && !element.meta?.['diagram'];
 }
 
 /** Moves the ends of other plain lines lying on `from` to `to` (connected lines stay connected). */

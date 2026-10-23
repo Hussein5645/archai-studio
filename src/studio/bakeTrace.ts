@@ -1,3 +1,4 @@
+import type { RenderLight } from '@shared/renderLights';
 import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
@@ -12,6 +13,7 @@ export interface BakeInput {
   sunIntensity: number;
   skyIntensity: number;
   environment: { data: Float32Array; width: number; height: number; rotation: number } | null;
+  lights?: RenderLight[];
   samples: number;
   bounces: number;
 }
@@ -63,9 +65,27 @@ export function traceBake(input: BakeInput, progress?: (fraction: number) => voi
   const direct = (origin: THREE.Vector3, normal: THREE.Vector3) => {
     const intensity = (Math.max(0, normal.dot(sun)) * input.sunIntensity) / Math.PI;
     ray.set(origin, sun);
-    return intensity > 0 && !bvh?.raycastFirst(ray, THREE.DoubleSide, 0.0001)
-      ? new THREE.Color(intensity, intensity, intensity)
-      : new THREE.Color(0, 0, 0);
+    const result = intensity > 0 && !bvh?.raycastFirst(ray, THREE.DoubleSide, 0.0001)
+      ? new THREE.Color(intensity, intensity, intensity) : new THREE.Color(0, 0, 0);
+    for (const light of input.lights ?? []) {
+      if (!light.enabled || light.intensity <= 0) continue;
+      const delta = new THREE.Vector3(...light.position).sub(origin);
+      const distance = delta.length();
+      if (distance > light.radius || distance < 0.001) continue;
+      delta.divideScalar(distance);
+      let cosine = Math.max(0, normal.dot(delta));
+      if (!cosine) continue;
+      if (light.kind !== 'point') {
+        const yaw = light.yaw * Math.PI / 180, tilt = light.tilt * Math.PI / 180;
+        const direction = new THREE.Vector3(Math.cos(tilt) * Math.cos(yaw), Math.sin(tilt), Math.cos(tilt) * Math.sin(yaw));
+        const facing = -direction.dot(delta);
+        cosine *= light.kind === 'spot' ? THREE.MathUtils.smoothstep(facing, Math.cos(Math.PI / 4), Math.cos(Math.PI / 6)) : Math.max(0, facing);
+      }
+      ray.set(origin, delta);
+      const hit = bvh?.raycastFirst(ray, THREE.DoubleSide, 0.0001, distance - 0.002);
+      if (!hit && cosine) result.add(new THREE.Color(light.color).multiplyScalar(cosine * light.intensity / (4 * Math.PI * Math.max(0.01, distance * distance) * 100) * Math.pow(1 - distance / light.radius, 2)));
+    }
+    return result;
   };
   const colors = new Float32Array(input.positions.length);
   const cache = new Map<string, THREE.Color>();

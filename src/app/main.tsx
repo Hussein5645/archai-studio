@@ -1,6 +1,4 @@
 import { StrictMode } from 'react';
-import { LiveLog } from '@/ui/LiveLog';
-import { installDiagnostics } from '@/diagnostics';
 import { createRoot } from 'react-dom/client';
 import { CaiCatalog, createLocalCaiStore, HybridCaiCatalog } from '@/catalog';
 import { account as currentAccount, initAccount, type AccountState } from '@/cloud/account';
@@ -79,27 +77,8 @@ function createCatalog(platform: ReturnType<typeof createPlatform>): HybridCaiCa
   return catalog;
 }
 
-/** `/render` (`#/render` from file://) is ArchAI Render, the studio window live-linked to the board. */
-function isRenderRoute(): boolean {
-  return getCurrentRoute().replace(/^\/+|\/+$/g, '').toLowerCase() === 'render';
-}
-
-async function bootRender(): Promise<void> {
-  installDiagnostics();
-  const platform = createPlatform();
-  const { RenderStudio } = await import('@/studio/RenderStudio');
-  document.title = 'ArchAI Render';
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <RenderStudio platform={platform} catalog={createCatalog(platform)} />
-      <LiveLog />
-    </StrictMode>,
-  );
-}
-
 async function boot(): Promise<void> {
   if (isModelingRoute()) return bootModeling();
-  if (isRenderRoute()) return bootRender();
   const platform = createPlatform();
   const catalog = createCatalog(platform);
   const store = createAppStore();
@@ -113,7 +92,7 @@ async function boot(): Promise<void> {
     devChecks: import.meta.env.DEV,
   });
   const toasts = createToastStore();
-  startBoardLink(platform, store, { executor, toasts });
+  startBoardLink(platform, store, { executor, toasts }, catalog);
   const persistence = new PersistenceService(store, executor, platform);
   // An app's geometry is edited in that app: changes made here are put back (docs/live-bridge.md).
   startBridgeGuard(executor, store, (app) => toasts.push({ kind: 'info', message: `${app} decides this element, so your change was put back. Convert it to an ArchAI element (Inspector, Live Bridge) to edit it here.` }));

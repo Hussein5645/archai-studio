@@ -1,3 +1,6 @@
+import { documentInContext, viewContext } from '@/document/viewVisibility';
+import { renderOf, viewBakeSignature } from '@/studio/viewRender';
+import { loadPreparation } from '@/studio/preparationCache';
 /**
  * VR tours (see docs/vr-tours.md): place stops (reference points with a facing, see
  * src/document/vrStop.ts) and publish the 3D model with its stops as a link a VR headset opens.
@@ -73,7 +76,10 @@ export const publishVrTour = defineEffect({
   description: 'Uploads the 3D model and its VR stops and returns a link that opens the tour in a VR headset (Meta Quest Browser) or any browser. Republishing a document keeps its link.',
   aliases: ['vr', 'virtual reality', 'quest', 'headset', 'share 3d'],
   group: 'document',
-  input: z.object({ newLink: z.boolean().default(false) }).prefault({}),
+  input: z.object({ newLink: z.boolean().default(false), portalId: IdSchema.optional(), baked: z.boolean().optional(),
+    elementIds: z.array(IdSchema).max(200_000).optional(),
+    interactive: z.object({ renderer: z.enum(['default','unreal','baked']), style: z.string().max(80), signature: z.string().max(256), lighting: z.enum(['realtime','baked']) }).optional(),
+  }).prefault({}),
   run: async (ctx, input) => {
     // Loaded on demand: the exporter and three.js stay out of the command registry's import graph.
     const [{ vrStopsOf, vrTourJson }, { exportVrModel }, { uploadVrTour, vrShareConfig, VR_SIGN_IN_MESSAGE }] = await Promise.all([
@@ -81,20 +87,40 @@ export const publishVrTour = defineEffect({
       import('@/view3d/vrExport'),
       import('@/view3d/vrShare'),
     ]);
-    const doc = ctx.getState().doc;
+    const state = ctx.getState();
+    const portalId = input.portalId ?? (state.ui.view3d.open ? state.ui.view3d.portalId : null);
+    const doc = portalId ? documentInContext(state.doc, viewContext(portalId)) : state.doc;
+    const render = renderOf(doc, portalId);
+    const baked = input.interactive ? input.interactive.lighting === 'baked' : input.baked ?? render.renderer !== 'default';
+    if (baked && (!render.bake || render.bake.signature !== viewBakeSignature(doc, render.settings)))
+      throw new CommandError('rejected', 'Bake this view before exporting its VR link. Geometry or lighting changes require a new bake.');
+    const linkKey = tourKey(doc.id) + (portalId ? ':' + portalId : '') + (baked ? ':baked' : '');
+    const prepared = baked && render.bake && !input.interactive ? await loadPreparation(ctx.platform.storage, render.bake.cacheId, 'baked') : null;
+    if (baked && !prepared && !input.interactive) throw new CommandError('rejected', 'Saved bake data is missing on this computer. Bake this view again.');
     const stops = vrStopsOf(doc);
     const config = vrShareConfig();
     if (!config) throw new CommandError('rejected', VR_SIGN_IN_MESSAGE);
-    const previousId = input.newLink ? null : await ctx.platform.storage.get(tourKey(doc.id)).catch(() => null);
+    const previousId = input.newLink || input.elementIds ? null : await ctx.platform.storage.get(linkKey).catch(() => null);
     const task = startProgress('Publishing the VR link', 'Building the 3D model (high detail)', null);
     let model: ArrayBuffer;
     let published;
     try {
       await task.paint();
-      model = await exportVrModel(doc, ctx.catalog);
+      if (input.interactive) {
+        const { interactiveModel, interactiveSource } = await import('@/studio/interactiveExport');
+        const source = interactiveSource(doc, portalId);
+        if (source.style !== input.interactive.style) throw new Error('The view style changed. Reopen export settings.');
+        model = (await interactiveModel(ctx.platform, ctx.catalog, doc, portalId, input.elementIds ?? null,
+          { ...input.interactive, style: source.style, destination: 'link' })).model;
+      } else model = prepared ? prepared.bytes : await exportVrModel(doc, ctx.catalog);
       task.update(`Uploading ${megabytes(model.byteLength)}`, 0.25);
       // The version query lets headsets cache the model yet pick up a republished one.
-      published = await uploadVrTour(config, { previousId, model, tour: vrTourJson(doc, stops, `model.glb?v=${Date.now().toString(36)}`) }, (fraction, loaded, total) =>
+      const tour = vrTourJson(doc, stops, `model.glb?v=${Date.now().toString(36)}`);
+      if (input.interactive) Object.assign(tour, { sourceRenderer: input.interactive.renderer, sourceStyle: input.interactive.style,
+        sourceBakeStatus: render.bake?.signature === viewBakeSignature(doc, render.settings) ? 'current' : render.bake ? 'outdated' : 'none',
+        exportLighting: input.interactive.lighting, selectedElements: input.elementIds ?? null });
+      if (prepared || baked && input.interactive) { tour.lighting = 'baked'; tour.mode = 'baked'; tour.bake = 'vertex'; tour.bakeScale = prepared?.metadata.lightScale ?? render.bake?.lightScale ?? 1; tour.exposure = Math.pow(2, render.settings.exposure); tour.toneMapping = render.settings.toneMapping; }
+      published = await uploadVrTour(config, { previousId, model, tour }, (fraction, loaded, total) =>
         task.update(`Uploading ${megabytes(loaded)} of ${megabytes(total)}`, 0.25 + fraction * 0.7),
       );
       task.done();
@@ -102,7 +128,7 @@ export const publishVrTour = defineEffect({
       task.failed();
       throw new CommandError('failed', error instanceof Error ? error.message : 'Upload failed');
     }
-    await ctx.platform.storage.set(tourKey(doc.id), published.id).catch(() => undefined);
+    if (!input.elementIds) await ctx.platform.storage.set(linkKey, published.id).catch(() => undefined);
     return { ...published, stops: stops.length, bytes: model.byteLength };
   },
 });

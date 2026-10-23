@@ -2,6 +2,7 @@ import { IPC, type ArchaiBridge, type OpenDocumentResult, type OpenImageResult, 
 import { base64ToBytes, bytesToBase64 } from '@/persistence/base64';
 import type { Platform } from './types';
 import { electronStorage } from './electronStorage';
+import {liveAssetBatches} from '@shared/unrealLive';
 import { electronStudio } from './electronStudio';
 
 declare global {
@@ -63,10 +64,29 @@ export function createElectronPlatform(bridge: ArchaiBridge): Platform {
     window: {
       setTitle: (title) => void bridge.invoke(IPC.windowSetTitle, { title }),
       openModeling: (params) => void bridge.invoke(IPC.windowOpenModeling, params),
-      openRender: () => void bridge.invoke(IPC.windowOpenRender),
+      openRender: null,
       setProgress: (progress) => void bridge.invoke(IPC.windowSetProgress, { progress }),
     },
     studio: electronStudio(bridge, storage),
+    unreal: {
+      downloadStatus: () => bridge.invoke(IPC.unrealDownloadStatus),
+      downloadInstall: () => bridge.invoke(IPC.unrealDownloadInstall),
+      downloadCancel: () => bridge.invoke(IPC.unrealDownloadCancel),
+      status: () => bridge.invoke(IPC.unrealStatus),
+      update: (bytes) => bridge.invoke(IPC.unrealUpdate, { bytes }),
+      live: async (scene) => {
+        if(scene.assets.reduce((sum,asset)=>sum+asset.bytes.byteLength,0)<=128*1024*1024)return bridge.invoke(IPC.unrealLive,scene);
+        for(const batch of liveAssetBatches(scene.assets))await bridge.invoke(IPC.unrealAssets,{projectId:scene.projectId,assets:batch});
+        return bridge.invoke(IPC.unrealLive,{...scene,assets:[]});
+      },
+      viewport: (layout) => bridge.invoke(IPC.unrealViewport, layout),
+      command: (action) => bridge.invoke(IPC.unrealCommand, { action }),
+      image: (options) => bridge.invoke(IPC.unrealCommand, { action: 'image', options }),
+      exportScene: (bytes, options) => bridge.invoke(IPC.unrealExport, { bytes, options }),
+      bakeStart: (bytes) => bridge.invoke(IPC.unrealBakeStart, { bytes }),
+      bakeStatus: (id) => bridge.invoke(IPC.unrealBakeStatus, { id }),
+      stop: () => bridge.invoke(IPC.unrealStop),
+    },
     links: bridge.onLink
       ? {
           subscribe: (listener) => {

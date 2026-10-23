@@ -1,3 +1,4 @@
+import { documentInContext } from '@/document/viewVisibility';
 /**
  * Pointer/keyboard state machine for the workboard. Gestures never edit the document directly:
  * drags preview a command against a captured base document (into `state.preview`, which only the
@@ -83,7 +84,7 @@ const RECT_DRAG_TOOLS: ReadonlySet<string> = new Set(['rect', 'view3d', 'paper',
 
 /** Diagram tools drawn click by click (see src/diagrams); the rest finish after two points. */
 const DIAGRAM_LINE_TOOLS: ReadonlySet<string> = new Set(['diagram:arrow', 'diagram:connector', 'diagram:callout', 'diagram:dimension', 'diagram:adjacency']);
-const TWO_POINT_TOOLS: ReadonlySet<string> = new Set(['measure', 'section', 'camera', 'diagram:connector', 'diagram:callout', 'diagram:adjacency']);
+const TWO_POINT_TOOLS: ReadonlySet<string> = new Set(['measure', 'section', 'camera', 'arch:light-spot', 'diagram:connector', 'diagram:callout', 'diagram:adjacency']);
 
 /** Tools where a touch aims first (live preview and snaps follow the finger) and places on lift. */
 function placesOnLift(tool: ToolId): boolean {
@@ -226,7 +227,7 @@ function setViewportDirect(store: AppStore, viewport: Viewport): void {
 }
 
 function isPolylineTool(tool: ToolId): boolean {
-  if (tool === 'line' || tool === 'measure' || tool === 'section' || tool === 'camera' || tool === 'arch:floor' || tool === 'arch:ceiling') return true;
+  if (tool === 'arch:light-spot' || tool === 'line' || tool === 'measure' || tool === 'section' || tool === 'camera' || tool === 'arch:floor' || tool === 'arch:ceiling') return true;
   if (DIAGRAM_LINE_TOOLS.has(tool)) return true;
   if (tool.startsWith('arch:')) return getArchTool(tool.slice(5))?.mode.kind === 'polyline';
   return false;
@@ -366,7 +367,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
   const [drafting] = useState(() => {
     const pickAt = (world: Vec2, leaf: boolean) => {
       const state = store.getState();
-      const hit = hitTest(state.doc, world, { tolerance: 8 / state.ui.viewport.zoom, scopeId: selectionScope(state.ui) });
+      const hit = hitTest(documentInContext(state.doc, 'board'), world, { tolerance: 8 / state.ui.viewport.zoom, scopeId: selectionScope(state.ui) });
       if (!hit) return null;
       return leaf ? hit : selectableTarget(state.doc.elements, hit, false, selectionScope(state.ui));
     };
@@ -419,6 +420,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
       }
       else if (current.toolId.startsWith('diagram:')) dispatch('create-diagram', { kind: current.toolId.slice('diagram:'.length), points: tuples });
       else if (current.toolId === 'section') dispatch('create-section-view', { a: tuples[0], b: tuples.at(-1), ...linkedViewSize(store.getState().ui, 6000 / 3500) });
+      else if (current.toolId === 'arch:light-spot') dispatch('create-light', { kind: 'spot', x: tuples[0]![0], y: tuples[0]![1], target: tuples.at(-1) });
       else if (current.toolId === 'camera') dispatch('create-camera-view', { a: tuples[0], b: tuples.at(-1), ...linkedViewSize(store.getState().ui, 6000 / 4000) });
       else if ((current.toolId === 'arch:floor' || current.toolId === 'arch:ceiling') && tuples.length >= 3) {
         // In the profile mode the outline is a sketch loop; Finish makes the slab.
@@ -916,7 +918,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
           cancelSession();
           if (navigator.vibrate) navigator.vibrate(40);
           const worldPoint = toWorld(touchStartScreen);
-          const hit = hitTest(store.getState().doc, worldPoint, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(store.getState().ui) });
+          const hit = hitTest(documentInContext(store.getState().doc, 'board'), worldPoint, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(store.getState().ui) });
           if (hit) {
             const target = selectableTarget(store.getState().doc.elements, hit, false, selectionScope(store.getState().ui));
             if (!store.getState().ui.selection.includes(target.id)) {
@@ -1015,7 +1017,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
         }
         if (!polyline.current) {
           const hit = tool === 'measure'
-            ? hitTest(state.doc, point, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) })
+            ? hitTest(documentInContext(state.doc, 'board'), point, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) })
             : null;
           polyline.current = {
             toolId: tool,
@@ -1030,6 +1032,11 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
         return;
       }
 
+      if (tool.startsWith('arch:light-')) {
+        const p = maybeSnap(world, mods.alt);
+        dispatch('create-light', { x: p.x, y: p.y, kind: tool.slice(11) });
+        return;
+      }
       if (tool === 'point') {
         const p = maybeSnap(world, mods.alt);
         dispatch('create-point', { x: p.x, y: p.y });
@@ -1220,7 +1227,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
 
       // A camera/section origin handle sits over its marker: it wins, so the rig can be grabbed.
       const rigHit = state.ui.sheet || state.ui.groupEditId ? null : rigHandleAt(state.doc.elements, state.ui.viewport, screen, (isTouchPointer ? RIG_HANDLE_RADIUS_TOUCH : RIG_HANDLE_RADIUS) + 3);
-      const hit = rigHit ?? hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
+      const hit = rigHit ?? hitTest(documentInContext(state.doc, 'board'), world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
       if (hit) {
         const target = selectableTarget(state.doc.elements, hit, false, selectionScope(state.ui));
         const selected = state.ui.selection.includes(target.id);
@@ -1475,7 +1482,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
           setOverlay({ cursor: handle.cursor, hoverId: null });
           return;
         }
-        const hit = hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
+        const hit = hitTest(documentInContext(state.doc, 'board'), world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
         const target = hit ? selectableTarget(state.doc.elements, hit, false, selectionScope(state.ui)) : null;
         setOverlay({
           hoverId: target?.id ?? null,
@@ -1817,7 +1824,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
       const isTouch = typeof document !== 'undefined' && document.documentElement.getAttribute('data-touch') === 'true';
       const hitTolerance = (isTouch ? 14 : 6) / state.ui.viewport.zoom;
       const world = toWorld(screenPoint(e));
-      const hit = hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
+      const hit = hitTest(documentInContext(state.doc, 'board'), world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
       if (!hit) {
         if (state.ui.groupEditId) dispatch('exit-group');
         return;
@@ -1882,7 +1889,7 @@ export function useInteractions(containerRef: RefObject<HTMLDivElement | null>, 
       const hitTolerance = (isTouch ? 14 : 6) / state.ui.viewport.zoom;
       const screen = screenPoint(e);
       const world = toWorld(screen);
-      const hit = hitTest(state.doc, world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
+      const hit = hitTest(documentInContext(state.doc, 'board'), world, { tolerance: hitTolerance, includeLocked: true, scopeId: selectionScope(state.ui) });
       if (hit) {
         const target = selectableTarget(state.doc.elements, hit, false, selectionScope(state.ui));
         if (!state.ui.selection.includes(target.id)) dispatch('select', { ids: [target.id] });

@@ -1,3 +1,6 @@
+import { documentInContext, viewContext } from '@/document/viewVisibility';
+import { saveViewPreview } from './viewPreview';
+import { scenePlacement } from './placement';
 import { noiseEmitterOf } from '@/analysis/model';
 import { isPoint } from '@/document/point';
 /**
@@ -8,7 +11,7 @@ import { isPoint } from '@/document/point';
 import { useEffect, useRef, type RefObject } from 'react';
 import { useApp } from '@/app/context';
 import type { ArchaiDocument } from '@/document';
-import { boardDoc, type AppState } from '@/store';
+import type { AppState } from '@/store';
 import { applyToPoint, worldMatrix } from '@/geometry';
 import { selectableTarget } from '@/selection';
 import { editableGroup, selectionScope } from '@/selection/groupScope';
@@ -103,13 +106,13 @@ function sameCamera(a: CameraState, b: CameraState): boolean {
 
 export type SceneLoading = { detail: string; error?: boolean; updating?: boolean } | null;
 
-export function useSceneView(containerRef: RefObject<HTMLElement | null>, portalId: string | null, onOpen?: () => void, onLoading?: (state: SceneLoading) => void) {
-  const { store, executor, catalog, toasts } = useApp();
+export function useSceneView(containerRef: RefObject<HTMLElement | null>, portalId: string | null, onOpen?: () => void, onLoading?: (state: SceneLoading) => void, enabled = true) {
+  const { store, executor, catalog, toasts, platform } = useApp();
   const viewRef = useRef<SceneView | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || !enabled) return;
     let stopped = false;
     let cleanup = () => {};
     onLoading?.({ detail: 'Preparing 3D view' });
@@ -125,9 +128,17 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
     const initial = view3dMeta?.camera ?? undefined;
     const isCameraMode = Boolean(view3dMeta?.cameraMode || view3dMeta?.cameraId);
     const section = sectionOf(store.getState().doc, portalId);
+    const placement = scenePlacement({ store, executor, toasts });
+    const placementKey = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+      if (event.key === 'Enter') placement.finish();
+      if (event.key === 'Escape') placement.cancel();
+    };
+    container.addEventListener('keydown', placementKey);
     const view = new SceneView(
       container,
       {
+        onPlaceElement: onOpen ? undefined : placement.place,
         onSelect: (id, additive) => {
           const state = store.getState();
           if (!id) {
@@ -215,6 +226,8 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
       view.setAnalysis(viewAnalysis(doc, portalId));
     };
     applySettings(store.getState().doc);
+    const placing = () => !onOpen && !['select', 'hand'].includes(store.getState().ui.tool);
+    view.setPlacementMode(placing());
     view.setSelection(store.getState().ui.selection);
     view.setGroupScope(store.getState().ui.groupEditId);
     // Rebuilding the scene costs O(document), and a drag streams a new document every
@@ -260,8 +273,9 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
     observer?.observe(container);
     // The full-screen view follows gesture previews (its own gizmo drags included); thumbnails
     // only show committed documents.
-    const shown = (state: AppState) => (thumbnail ? state.doc : boardDoc(state));
+    const shown = (state: AppState) => documentInContext(thumbnail ? state.doc : state.preview ?? state.doc, viewContext(portalId));
     const unsubscribe = store.subscribe((state, previous) => {
+      if (state.ui.tool !== previous.ui.tool) view.setPlacementMode(placing());
       if (shown(state) !== shown(previous)) {
         pending = shown(state);
         schedule();
@@ -271,6 +285,10 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
     });
     cleanup = () => {
       unsubscribe();
+      container.removeEventListener('keydown', placementKey);
+      if (!initialising && portalId) {
+        try { void saveViewPreview(platform, store.getState().doc.id, portalId, view.renderImage(960, 600).toDataURL('image/jpeg', 0.8)).catch(() => undefined); } catch { /* Keep the last completed preview. */ }
+      }
       observer?.disconnect();
       cancelAnimationFrame(frame);
       clearTimeout(timer);
@@ -281,7 +299,7 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
       view.dispose();
       viewRef.current = null;
     };
-    await view.initialise(store.getState().doc, (detail) => { if (!stopped) onLoading?.({ detail }); });
+    await view.initialise(documentInContext(store.getState().doc, viewContext(portalId)), (detail) => { if (!stopped) onLoading?.({ detail }); });
     if (stopped) return;
     initialising = false;
     if (pending) applyPending();
@@ -297,7 +315,7 @@ export function useSceneView(containerRef: RefObject<HTMLElement | null>, portal
       if (!stopped) onLoading?.({ detail: error instanceof Error ? error.message : 'Could not open 3D view', error: true });
     });
     return () => { stopped = true; cleanup(); };
-  }, [catalog, containerRef, executor, onOpen, onLoading, portalId, store, toasts]);
+  }, [catalog, containerRef, executor, onOpen, onLoading, portalId, store, toasts, platform, enabled]);
 
   return viewRef;
 }

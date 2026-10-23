@@ -1,4 +1,11 @@
-import { Brush, Glasses, MapPin, Pipette, X } from 'lucide-react';
+import { UnrealAccess } from '@/studio/UnrealAccess';
+import { UnrealViewport } from '@/studio/RenderWorkspace';
+import { renderOf } from '@/studio/viewRender';
+import { ViewOutputDialog, viewActionEvent, encodeImage, type ImageOutput, type ViewAction } from '@/studio/ViewOutput';
+import { exportInteractiveFolder, type InteractiveOutput } from '@/studio/interactiveExport';
+import { documentInContext, viewContext } from '@/document/viewVisibility';
+import { useViewPreview } from './viewPreview';
+import { Brush, MapPin, Pipette, X } from 'lucide-react';
 import { SceneMaterialTools } from '@/ui/SceneMaterialTools';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useApp, useAppState, useDispatch } from '@/app/context';
@@ -9,9 +16,6 @@ import { LIBRARY_DRAG_TYPE, MATERIAL_DRAG_TYPE, materialUi, useMaterialUi } from
 import { droppedMaterial } from '@/materials/library';
 import { Swatch } from '@/ui/MaterialsLibrary';
 import { useI18n } from '@/ui/i18n';
-import { canRender, openRenderStudio } from '@/studio/link';
-import { openAccountDialog } from '@/ui/account-dialog';
-import { VR_SIGN_IN_MESSAGE } from './vrShare';
 import { cameraNavigationLocked } from '@/document/viewCamera';
 import type { SceneLoading } from './useSceneView';
 
@@ -28,7 +32,7 @@ type VrState = { kind: 'busy' } | { kind: 'done'; link: string; stops: number; m
 
 function Workspace({ portalId, onClose }: { portalId: string | null; onClose: () => void }) {
   const { t } = useI18n();
-  const { executor, platform, toasts, store } = useApp();
+  const { executor, platform, toasts, store, catalog } = useApp();
   const containerRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -42,8 +46,10 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
     return () => { observer.disconnect(); main.style.removeProperty('--scene-toolbar-offset'); };
   }, []);
   const [loading, setLoading] = useState<SceneLoading>({ detail: 'Preparing 3D view' });
-  const view = useSceneView(containerRef, portalId, undefined, setLoading);
+  const renderer = useAppState((s) => renderOf(s.doc, portalId).renderer);
+  const view = useSceneView(containerRef, portalId, undefined, setLoading, renderer === 'default');
   const doc = useAppState((s) => s.doc);
+  const preview = useViewPreview(doc.id, portalId);
   const editingBoard = useAppState((s) => Boolean(s.ui.view3d.editingBoard));
   const portal = portalId ? doc.elements[portalId] : null;
   const pinned = cameraNavigationLocked(doc, portalId);
@@ -51,12 +57,17 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
   const isSection = Boolean(cut);
   const isCamera = Boolean((portal?.meta?.['view3d'] as { cameraMode?: boolean } | undefined)?.cameraMode);
   const [placing, setPlacing] = useState(false);
+  const [outputMode, setOutputMode] = useState<'render' | 'interactive' | null>(null);
+  const [exportDestination, setExportDestination] = useState<'folder' | 'link'>('folder');
+  const [outputBusy, setOutputBusy] = useState(false);
+  const [outputError, setOutputError] = useState('');
+  const [outputResult, setOutputResult] = useState('');
   const [vr, setVr] = useState<VrState | null>(null);
   const { active, painting, scope, picking, adjusting } = useMaterialUi();
   const activeMaterial = active ? materialById(doc, active) : null;
   const dispatch = useDispatch();
   // The desktop app's studio window (in the browser only for development).
-  const renderAvailable = canRender(platform) && (platform.kind === 'electron' || import.meta.env.DEV);
+
 
   useEffect(() => {
     view.current?.setPainting(painting && !isSection);
@@ -112,7 +123,7 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
       if (adjusting) materialUi.set({ adjusting: null });
       else if (painting || picking) materialUi.set({ painting: false, picking: false });
       else if (placing) setPlacing(false);
-      else if (editingBoard && store.getState().ui.tool !== 'select') void dispatch('set-tool', { tool: 'select' });
+      else if (store.getState().ui.tool !== 'select') void dispatch('set-tool', { tool: 'select' });
       else if (editingBoard) void dispatch('toggle-view-board');
       else if (vr && vr.kind !== 'busy') setVr(null);
       else onClose();
@@ -120,19 +131,6 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   });
-
-  const publish = async () => {
-    setPlacing(false);
-    setVr({ kind: 'busy' });
-    const result = await executor.dispatch('publish-vr-tour', {});
-    if (result.ok) {
-      const value = result.value as { link: string; stops: number; bytes: number };
-      setVr({ kind: 'done', link: value.link, stops: value.stops, megabytes: value.bytes / 1_048_576 });
-    } else {
-      setVr({ kind: 'error', message: result.error.message });
-      if (result.error.message === VR_SIGN_IN_MESSAGE) openAccountDialog('sign-in', VR_SIGN_IN_MESSAGE);
-    }
-  };
 
   const copy = async (link: string) => {
     try {
@@ -143,6 +141,45 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
     }
   };
 
+  const outputHandlers = useRef<(action: ViewAction) => void>(() => {});
+  useEffect(() => { outputHandlers.current = (action) => {
+    if (action === 'render' || action === 'interactive') { setOutputError(''); setExportDestination('folder'); setOutputMode(action); }
+    else if (action === 'vr') { setOutputError(''); setExportDestination('link'); setOutputMode('interactive'); }
+  }; });
+  useEffect(() => {
+    if (renderer !== 'default') return;
+    const handler = (event: Event) => { const detail = (event as CustomEvent<{ portalId: string; action: ViewAction }>).detail; if (detail.portalId === portalId) outputHandlers.current(detail.action); };
+    window.addEventListener(viewActionEvent, handler);
+    return () => window.removeEventListener(viewActionEvent, handler);
+  }, [renderer, portalId]);
+  const renderImage = async (options: ImageOutput) => {
+    setOutputBusy(true); setOutputError('');
+    try {
+      if (!view.current) throw new Error('Wait for the 3D view to finish loading');
+      const scale = options.quality === 'high' ? Math.min(2, 8192 / Math.max(options.width, options.height)) : 1;
+      const rendered = view.current.renderImage(Math.round(options.width * scale), Math.round(options.height * scale), { grid: false });
+      const canvas = document.createElement('canvas'); canvas.width = options.width; canvas.height = options.height;
+      const context = canvas.getContext('2d')!; context.imageSmoothingQuality = 'high'; context.drawImage(rendered, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error('Could not render image')), 'image/png'));
+      const bytes = await encodeImage(new Uint8Array(await blob.arrayBuffer()), options.format);
+      await platform.files.saveBinary(bytes, 'Archai render.' + (options.format === 'png' ? 'png' : 'jpg'), 'image/' + options.format);
+    } catch (reason) { setOutputError(String(reason)); } finally { setOutputBusy(false); }
+  };
+  const exportInteractive = async (ids: string[] | null, output: InteractiveOutput) => {
+    setOutputBusy(true); setOutputError(''); setOutputResult('');
+    try {
+      const scene = portalId ? documentInContext(store.getState().doc, viewContext(portalId)) : store.getState().doc;
+      if (output.destination === 'link') {
+        const result = await executor.dispatch('publish-vr-tour', { portalId: portalId ?? undefined, elementIds: ids ?? undefined, interactive: output });
+        if (!result.ok) throw new Error(result.error.message);
+        setOutputResult((result.value as {link:string}).link);
+      } else {
+        const saved = await exportInteractiveFolder(platform, catalog, scene, portalId, ids, output, view.current?.getCamera());
+        if (saved) setOutputResult('Interactive scene saved: ' + saved);
+      }
+    } catch (reason) { setOutputError(String(reason)); } finally { setOutputBusy(false); }
+  };
+  if (renderer !== 'default' && portalId) return <UnrealAccess onClose={onClose}><UnrealViewport key={portalId} portalId={portalId} onClose={onClose} /></UnrealAccess>;
   return (
     <div className={styles.workspace} data-editing-board={editingBoard || undefined} data-testid="view3d-workspace" aria-busy={loading !== null}>
       <div
@@ -174,12 +211,15 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
           else void droppedMaterial(fromLibrary, (id, input) => executor.dispatch(id, input), store.getState().doc, platform).then(paint, (error: unknown) => toasts.push({ kind: 'error', message: error instanceof Error ? error.message : String(error) }));
         }}
       />
+      {loading && !loading.updating && preview && <img src={preview} alt="Saved view preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />}
       {loading && <div className={loading.updating ? styles.sceneUpdating : styles.sceneLoading} data-testid={loading.updating ? "view3d-updating" : "view3d-loading"} role="status">
         <strong>{t(loading.error ? 'Could not update 3D view' : loading.updating ? 'Updating model' : 'Opening 3D view')}</strong>
         <span>{t(loading.detail)}</span>
+        {preview && !loading.updating && <img src={preview} alt="Previous view" style={{ maxWidth: '70%', maxHeight: '60%' }} />}
         {loading.error && <button type="button" onClick={onClose}>{t('Close')}</button>}
       </div>}
       {!isSection && (!loading || loading.updating) && <SceneMaterialTools view={view.current} onTogglePaint={togglePaint} />}
+      {outputMode && <ViewOutputDialog key={outputMode+exportDestination} initialDestination={exportDestination} portalId={portalId} result={outputResult} mode={outputMode} busy={outputBusy} error={outputError} onClose={() => setOutputMode(null)} onImage={renderImage} onInteractive={exportInteractive} />}
       <div ref={toolbarRef} className={styles.workspaceBar} data-testid="view3d-toolbar">
         <strong>{t(cut?.plan ? 'Plan (Level)' : isSection ? 'Section' : isCamera ? 'Camera (Perspective)' : '3D (Orthographic)')}</strong>
         <button type="button" data-active={editingBoard} onClick={() => void dispatch('toggle-view-board')}>{t(editingBoard ? 'Hide board editor' : 'Edit board')}</button>
@@ -191,13 +231,7 @@ function Workspace({ portalId, onClose }: { portalId: string | null; onClose: ()
               <MapPin size={13} />
               {t('VR stop')}
             </button>
-            <details className={styles.vrMenu}>
-              <summary><Glasses size={13} /> {t('VR')}</summary>
-              <div role="group" aria-label={t('VR publishing')}>
-                <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); void publish(); }} disabled={vr?.kind === 'busy'}>{t('Export Raw VR Link')}</button>
-                <button type="button" disabled={!renderAvailable || vr?.kind === 'busy'} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); openRenderStudio(platform, view.current?.getCamera(), portal?.name); }} data-testid="open-render-studio" title={renderAvailable ? t('Prepare, bake and publish the project scene') : t('VR preparation requires the ArchAI desktop app')}>{t('Prepare VR Scene')}</button>
-              </div>
-            </details>
+
           </>
         )}
         {!isSection && (!loading || loading.updating) && (

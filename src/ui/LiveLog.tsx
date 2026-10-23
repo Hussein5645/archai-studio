@@ -7,6 +7,7 @@ export function LiveLog() {
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [paused, setPaused] = useState(false);
+  useEffect(() => { const show = () => { setMinimized(false); setOpen(true); }; window.addEventListener('archai:open-log', show); return () => window.removeEventListener('archai:open-log', show); }, []);
   const entries = useSyncExternalStore(subscribeLog, logEntries);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { if (open && !paused) end.current?.scrollIntoView({ block: 'nearest' }); }, [entries, open, paused]);
@@ -17,7 +18,6 @@ export function LiveLog() {
     return () => window.removeEventListener('keydown', close, true);
   }, [open]);
   return <>
-    <button className={styles.launch} type="button" onClick={() => { setMinimized(false); setOpen(true); }} data-testid="open-live-log">Log</button>
     {minimized && createPortal(<section className={`${styles.window} ${styles.compact}`} aria-label="Compact live log" data-testid="compact-live-log">
       <header><strong>Live log</strong><button type="button" aria-label="Expand live log" onClick={() => { setMinimized(false); setOpen(true); }}>Expand</button>
         <button type="button" aria-label="Close compact live log" onClick={() => setMinimized(false)}>Close</button></header>

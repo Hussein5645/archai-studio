@@ -23,6 +23,7 @@ import { cachedMassing, formsOf, geometryFromPositions, isConceptGroup, prismGeo
 import { graphicsResolver, type GraphicsOverrides } from '@/graphics';
 import { isPoint } from '@/document/point';
 import { pointMarker } from './pointMarker';
+import { lightMarker } from './lightMarker';
 import { vrStopOf } from '@/document/vrStop';
 import type { SurfacePaint } from '@/document';
 import { instanceMaterialsOf, materialById, paintedMaterialId, surfacePaintOf, typeMaterialsOf, ZONED_SURFACES, type SurfaceKey } from '@/materials/slots';
@@ -1066,6 +1067,13 @@ export function* buildSceneSteps(doc: ArchaiDocument, options: BuildOptions, pre
       const material = look.slot('floor', 'default:room-floor');
       const mesh = extrudePolygon(points, -20, 0, material, [], options.extrusions);
       object = mesh ? surfaceMesh(mesh, look, 'floor', material, look.slotId('floor', 'default:room-floor')) : null;
+    } else if (element.meta?.['renderLight'] && (element.kind === 'rect' || element.kind === 'line')) {
+      const data = element.meta['renderLight'] as { kind: string; targetElevation?: number; size?: number };
+      const p = element.kind === 'line' ? element.points[0]! : [element.width / 2, element.height / 2];
+      const source = applyToPoint(matrix, { x: p[0]!, y: p[1]! });
+      const height = instanceElevationOf(element, elements);
+      const aim = element.kind === 'line' ? applyToPoint(matrix, { x: element.points.at(-1)![0], y: element.points.at(-1)![1] }) : null;
+      object = lightMarker(toScene(source), height, data.kind, element.kind === 'rect' && data.kind === 'area' ? element.width / 1000 : data.size ?? 1, aim ? new THREE.Vector3(aim.x - source.x, (data.targetElevation ?? 0) - height, aim.y - source.y) : undefined);
     } else if (type === 'room-label' || type === 'room-divider' || element.meta?.['view3d'] || element.meta?.['sectionLine'] || element.meta?.['planRegion'] || element.meta?.['cameraMarker'] || element.meta?.['analysis'] || element.meta?.['location'] || element.meta?.['noiseEmitter']) {
       object = null;
     } else if (isPoint(element) && element.kind === 'rect') {

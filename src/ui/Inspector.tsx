@@ -1,3 +1,8 @@
+import { LightProperties } from './LightProperties';
+import { showRenderControlsEvent } from '@/studio/renderControls';
+import { requestViewAction } from '@/studio/ViewOutput';
+import { renderOf } from '@/studio/viewRender';
+import { lightingPresetOf, lightingPresets } from '@/studio/lightingPresets';
 import { AlignCenter, AlignLeft, AlignRight, Link2, Unlink2 } from 'lucide-react';
 import { BridgeInspector } from '@/bridge/BridgeInspector';
 import { useEffect, useState } from 'react';
@@ -145,6 +150,9 @@ function ViewSettings({ portalId }: { portalId: string }) {
             ariaLabel="View style"
           />
         </Field>
+        {!isSectionPortal && <Field label="Render"><SelectField ariaLabel="View renderer" value={renderOf(doc, portalId).renderer}
+          options={[{ value: 'default', label: 'Default' }, { value: 'unreal', label: 'Unreal Engine' }, ...(renderOf(doc, portalId).bake?.cacheId && !renderOf(doc, portalId).bake?.webError ? [{ value: 'baked', label: 'Baked scene' }] : [])]}
+          onChange={(renderer) => void dispatch('set-view3d-settings', { id: portalId, renderer })} /></Field>}
         <Field label="Level of detail">
           <SelectField
             value={settings.lod ?? 'default'}
@@ -158,6 +166,31 @@ function ViewSettings({ portalId }: { portalId: string }) {
           />
         </Field>
       </FieldRow>
+      {!isSectionPortal && renderOf(doc, portalId).renderer === 'unreal' && <FieldRow single><Field label="Lighting preset">
+        <SelectField ariaLabel="Lighting preset" value={lightingPresetOf(renderOf(doc, portalId).settings)}
+          options={[{ value: 'custom', label: 'Custom' }, ...Object.entries(lightingPresets).map(([value, preset]) => ({ value, label: preset.label }))]}
+          onChange={(key) => { const preset = lightingPresets[key]; if (preset) void dispatch('set-view3d-settings', { id: portalId, renderSettings: { ...renderOf(doc, portalId).settings, ...preset.settings } }); }} />
+      </Field></FieldRow>}
+      {!isSectionPortal && renderOf(doc, portalId).renderer === 'unreal' && <FieldRow single><Field label="Exposure mode">
+        <SelectField ariaLabel="Exposure mode" value={renderOf(doc, portalId).settings.exposureMode} options={[{ value: 'auto', label: 'Automatic · interior / exterior' }, { value: 'manual', label: 'Manual · fixed camera' }]}
+          onChange={(exposureMode) => void dispatch('set-view3d-settings', { id: portalId, renderSettings: { ...renderOf(doc, portalId).settings, exposureMode } })} />
+      </Field></FieldRow>}
+      {!isSectionPortal && renderOf(doc, portalId).renderer !== 'default' && <FieldRow single>
+        <Field label={`Exposure · ${renderOf(doc, portalId).settings.exposure.toFixed(1)} EV`}>
+          <input aria-label="View exposure" type="range" min="-4" max="4" step="0.1"
+            value={renderOf(doc, portalId).settings.exposure}
+            style={{ width: '100%', accentColor: 'var(--accent)' }}
+            onChange={(event) => void dispatch('set-view3d-settings', { id: portalId,
+              renderSettings: { ...renderOf(doc, portalId).settings, exposure: Number(event.target.value) } })} />
+        </Field>
+      </FieldRow>}
+      {!isSectionPortal && renderOf(doc, portalId).renderer === 'unreal' && <>
+        {(['sunIntensity', 'skyIntensity', 'bloom'] as const).map((key) => <FieldRow single key={key}><Field label={key === 'sunIntensity' ? 'Sun strength' : key === 'skyIntensity' ? 'Sky brightness' : 'Bloom'}>
+          <input aria-label={key === 'sunIntensity' ? 'View sun strength' : key === 'skyIntensity' ? 'View sky brightness' : 'View bloom'} type="range" min="0" max={key === 'sunIntensity' ? 10 : key === 'skyIntensity' ? 5 : 2} step="0.05"
+            style={{ width: '100%', accentColor: 'var(--accent)' }} value={renderOf(doc, portalId).settings[key]}
+            onChange={(event) => void dispatch('set-view3d-settings', { id: portalId, renderSettings: { ...renderOf(doc, portalId).settings, [key]: Number(event.target.value) } })} />
+        </Field></FieldRow>)}
+      </>}
       {cut?.plan && (
         <FieldRow single>
           <Field label="Cut height above level">
@@ -194,6 +227,12 @@ function OpenViewInspector({ portalId }: { portalId: string }) {
         <span className={styles.subtitle}>{portal.name}</span>
       </div>
       <ViewSettings portalId={portalId} />
+      {!isSection && <div className={styles.actions} data-testid="view-output-actions">
+        <TextButton onClick={() => requestViewAction(portalId, 'render')}>Render image</TextButton>
+        <TextButton disabled={renderOf(doc, portalId).renderer === 'default'} onClick={() => requestViewAction(portalId, 'bake')}>{renderOf(doc, portalId).bake ? 'Rebake scene' : 'Bake scene'}</TextButton>
+        <TextButton onClick={() => requestViewAction(portalId, 'interactive')}>Export interactive</TextButton>
+        <TextButton onClick={() => requestViewAction(portalId, 'vr')}>Export to VR</TextButton>
+      </div>}
       <Divider />
       <div className={styles.actions}>
         {isSection && <TextButton onClick={() => void dispatch('flip-section-view', { id: portalId })}>Flip direction</TextButton>}
@@ -215,12 +254,18 @@ export function Inspector() {
   const inView = useAppState((s) => s.ui.view3d.open);
   const openView = useAppState((s) => (s.ui.view3d.open ? s.ui.view3d.portalId : null));
   const [viewTab, setViewTab] = useState<'view' | 'properties' | 'board'>('properties');
+  useEffect(() => {
+    const show = () => setViewTab('view');
+    window.addEventListener(showRenderControlsEvent, show);
+    return () => window.removeEventListener(showRenderControlsEvent, show);
+  }, []);
+  const activeTab = viewTab;
   if (!open) return null;
   return (
     <aside className={`${styles.panel} u-panel`} aria-label={t('Inspector')} data-ui-scale data-testid="inspector">
       <div className={styles.scroll}>
-        {inView && <div className={styles.section}><Segmented value={viewTab} onChange={setViewTab} ariaLabel="Inspector tabs" options={[{ value: 'view', label: 'View' }, { value: 'properties', label: 'Properties' }, { value: 'board', label: 'Board' }]} /></div>}
-        {openView && viewTab === 'view' ? <OpenViewInspector portalId={openView} /> : inView && viewTab === 'board' ? <WorkspaceInspector /> : selection.length === 0 ? <WorkspaceInspector /> : <SelectionInspector ids={selection} />}
+        {inView && <div className={styles.section}><Segmented value={activeTab} onChange={setViewTab} ariaLabel="Inspector tabs" options={[{ value: 'view', label: 'View' }, { value: 'properties', label: 'Properties' }, { value: 'board', label: 'Board' }]} /></div>}
+        {openView && activeTab === 'view' ? <OpenViewInspector portalId={openView} /> : inView && activeTab === 'board' ? <WorkspaceInspector /> : selection.length === 0 ? <WorkspaceInspector /> : <SelectionInspector ids={selection} />}
       </div>
     </aside>
   );
@@ -397,6 +442,7 @@ function SelectionInspector({ ids }: { ids: string[] }) {
         {single?.kind === 'instance' && <span className={styles.subtitle}>{doc.definitions[single.definitionId]?.name}</span>}
       </div>
 
+      {single?.meta?.['renderLight'] && <LightProperties id={single.id} />}
       {single?.kind === 'instance' && instanceDefinition && !isDoor && (
         <>
           <Divider />
@@ -1041,6 +1087,7 @@ function SelectionInspector({ ids }: { ids: string[] }) {
 
 
 function kindTitle(element: Element): string {
+  if (element.meta?.['renderLight']) return 'Light';
   if (element.meta?.['cameraMarker']) {
     return 'Camera';
   }

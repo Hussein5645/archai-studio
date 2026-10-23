@@ -77,7 +77,7 @@ export function isCameraMarker(element: Element | undefined | null): element is 
 
 /** Walls and railings are edited through their endpoints; a camera through its eye and aim point. */
 export function hasEndpointHandles(element: Element | undefined | null): element is Element & { kind: 'line' } {
-  return element?.kind === 'line' && (isArchType(element, 'wall', 'railing', 'room-divider', 'curtain-wall') || isCameraMarker(element) || isMeasure(element));
+  return element?.kind === 'line' && (Boolean(element.meta?.['renderLight']) || isArchType(element, 'wall', 'railing', 'room-divider', 'curtain-wall') || isCameraMarker(element) || isMeasure(element));
 }
 
 /** A measuring line (two points with a live distance label). */

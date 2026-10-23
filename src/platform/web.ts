@@ -133,9 +133,7 @@ export function createWebPlatform(): Platform {
         if (projectId) params.set('project', projectId);
         window.open(`/modeling?${params.toString()}`, '_blank', 'noopener');
       },
-      openRender: () => {
-        window.open('/render', 'archai-render');
-      },
+      openRender: null,
     },
     studio: browserStudioChannel(),
   };

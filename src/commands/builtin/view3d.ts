@@ -1,3 +1,5 @@
+import { RenderSettingsSchema } from '@/studio/settings';
+import { ViewBakeSchema } from '@/studio/viewRender';
 /**
  * 3D view portals and the full-screen 3D workspace. A portal is a plain rect with
  * `meta.view3d` (its camera); the board renders a live three.js viewport inside it.
@@ -133,12 +135,22 @@ export const setView3dSettings = defineMutation({
     style: z.enum(['realistic', 'wireframe', 'shaded', 'consistent', 'hidden-line']).nullable().optional(),
     lod: z.enum(['high', 'low']).nullable().optional(),
     depth: z.number().min(0).optional(),
+    renderer: z.enum(['default', 'unreal', 'baked']).optional(),
+    renderSettings: RenderSettingsSchema.optional(),
+    bake: ViewBakeSchema.optional(),
   }),
   run: (ctx, input) => {
     const element = ctx.doc.elements[input.id];
     if (!element || !element.meta?.['view3d']) throw new CommandError('rejected', 'Not a 3D view');
     const current = element.meta['view3d'];
     const view = current && typeof current === 'object' && !Array.isArray(current) ? { ...(current as Record<string, JsonValue>) } : {};
+    if (input.renderer !== undefined) {
+      if (input.renderer === 'baked' && !view['bake']) throw new CommandError('rejected', 'Bake this view first');
+      if (input.renderer === 'baked' && (view['bake'] as Record<string, JsonValue>)?.['webError']) throw new CommandError('rejected', 'The browser bake is unavailable. The Unreal bake can still be exported as a folder.');
+      view['renderer'] = input.renderer;
+    }
+    if (input.renderSettings) view['renderSettings'] = input.renderSettings as unknown as JsonValue;
+    if (input.bake) view['bake'] = input.bake as unknown as JsonValue;
     if (input.style !== undefined) {
       if (input.style === null) delete view['style'];
       else view['style'] = input.style;
@@ -164,7 +176,8 @@ export const openView3d = defineMutation({
   history: 'none',
   input: z.object({ id: IdSchema.optional() }).prefault({}),
   run: (ctx, input) => {
-    const id = input.id ?? ctx.ui.selection.find((candidate) => ctx.doc.elements[candidate]?.meta?.['view3d']) ?? null;
+    const id = input.id ?? ctx.ui.selection.find((candidate) => ctx.doc.elements[candidate]?.meta?.['view3d']) ?? createView3d.run(ctx, { width: 6000, height: 4000 });
+    if (!ctx.doc.elements[id]?.meta?.['view3d']) throw new CommandError('rejected', 'Not a 3D view');
     ctx.ui.view3d = { open: true, portalId: id };
     ctx.ui.editingTextId = null;
   },

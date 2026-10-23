@@ -44,3 +44,7 @@
 
 .workspace[data-editing-board='true'] { left: 55%; }
 .workspace[data-editing-board='true'] .workspaceBar { left: 12px; right: 12px; max-width: none; transform: none; justify-content: flex-start; }
+
+.portalPreview { position:absolute; inset:22px 0 0; width:100%; height:calc(100% - 22px); object-fit:contain; pointer-events:none; }
+.portalLoading { background:#f3f4f644; z-index:2; }
+.workspaceBar select { max-width:125px; font:inherit; border:1px solid var(--border); border-radius:5px; padding:4px; background:var(--bg-panel); color:var(--text); }

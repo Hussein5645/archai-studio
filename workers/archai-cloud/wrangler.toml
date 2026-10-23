@@ -32,3 +32,8 @@ new_sqlite_classes = ["Board"]
 [vars]
 CONTACT_EMAIL = "mklkoklpp@gmail.com"
 WEB_APP_URL = "https://archai-studio-six.vercel.app"
+
+# Private optional Unreal packs; served only after session verification.
+[[r2_buckets]]
+binding = "RUNTIMES"
+bucket_name = "archai-unreal"

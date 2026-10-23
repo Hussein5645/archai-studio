@@ -505,6 +505,16 @@ async function route(request, env) {
     }
   }
 
+  if (parts[0] === 'runtime' && parts.length === 3 && parts[1] === '0.3.0.12' && ['GET', 'HEAD'].includes(method)) {
+    await requireUser(request, env);
+    const name = parts[2] === 'manifest' ? 'manifest.json' : parts[2] === 'package' ? 'runtime.zip' : null;
+    if (!name) return fail(404, 'Not found');
+    const object = await env.RUNTIMES.get(`unreal/${parts[1]}/${name}`);
+    if (!object) return fail(503, 'Unreal download is being prepared. Try again later.');
+    return reply(method === 'HEAD' ? null : object.body, 200, { 'Content-Type': name.endsWith('.json') ? 'application/json' : 'application/zip',
+      'Content-Length': String(object.size), 'Cache-Control': 'private, no-store', 'Vary': 'Authorization' });
+  }
+
   if (parts[0] === 'me' && parts.length === 1 && method === 'GET') {
     const { user } = await requireUser(request, env);
     return json({ user, libraryToken: await libraryToken(env, user.id) });

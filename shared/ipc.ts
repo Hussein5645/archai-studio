@@ -30,6 +30,19 @@ export const IPC = {
   windowOpenModeling: 'archai:window:openModeling',
   /** Opens (or focuses) the ArchAI Render studio window. */
   windowOpenRender: 'archai:window:openRender',
+  unrealDownloadStatus: 'archai:unreal:downloadStatus',
+  unrealDownloadInstall: 'archai:unreal:downloadInstall',
+  unrealDownloadCancel: 'archai:unreal:downloadCancel',
+  unrealStatus: 'archai:unreal:status',
+  unrealUpdate: 'archai:unreal:update',
+  unrealLive: 'archai:unreal:live',
+  unrealAssets: 'archai:unreal:assets',
+  unrealViewport: 'archai:unreal:viewport',
+  unrealCommand: 'archai:unreal:command',
+  unrealExport: 'archai:unreal:export',
+  unrealBakeStart: 'archai:unreal:bakeStart',
+  unrealBakeStatus: 'archai:unreal:bakeStatus',
+  unrealStop: 'archai:unreal:stop',
   /** renderer → main: taskbar progress of long tasks (a fraction, 'indeterminate' or null). */
   windowSetProgress: 'archai:window:setProgress',
   /** renderer → main: a message for the other windows (board ↔ Render studio Live Bridge). */

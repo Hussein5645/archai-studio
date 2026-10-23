@@ -22,7 +22,7 @@ export default defineConfig({
   },
   // The bake worker and preparation route load these on demand. Prebundle them
   // together so the first bake cannot restart the board/studio during preparation.
-  optimizeDeps: { include: ['three', 'three-mesh-bvh', 'three-mesh-bvh/worker', 'three-gpu-pathtracer'] },
+  optimizeDeps: { include: ['three', 'three-mesh-bvh', 'three-mesh-bvh/worker'] },
   server: {
     port: 5173,
     strictPort: true,
@@ -38,7 +38,7 @@ export default defineConfig({
       ...(process.env['ARCHAI_LOCAL_VR'] ? { '/__vr': { target: process.env['ARCHAI_LOCAL_VR'], changeOrigin: true, rewrite: (path: string) => path.replace(/^\/__vr/, '') } } : {}),
     },
   },
-  build: { outDir: 'dist', sourcemap: true, target: 'es2022' },
+  build: { outDir: 'dist', sourcemap: true, target: 'es2022', rolldownOptions: { input: { main: fileURLToPath(new URL('./index.html', import.meta.url)), interactive: fileURLToPath(new URL('./interactive.html', import.meta.url)) } } },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts', 'shared/**/*.test.ts'],

@@ -1,3 +1,5 @@
+import { createLight, updateLight, migrateRenderLights } from './lights';
+import { setContextVisibility } from './visibility';
 import type { AnyCommand } from '../contract';
 import { arrangeCommands } from './arrange';
 import { assetCommands } from './assets';
@@ -41,6 +43,7 @@ import { sheetLayoutCommands } from './sheetLayout';
 import { profileEditCommands } from './profileEdit';
 
 export const builtinCommands: AnyCommand[] = [
+  createLight, updateLight, migrateRenderLights,
   createRect,
   createLine,
   createText,
@@ -52,6 +55,7 @@ export const builtinCommands: AnyCommand[] = [
   ...transformCommands,
   ...editCommands,
   ...arrangeCommands,
+  setContextVisibility,
   ...draftingCommands,
   ...sheetLayoutCommands,
   ...profileEditCommands,

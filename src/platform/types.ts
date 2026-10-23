@@ -3,6 +3,8 @@
  * plain browser each implement it; nothing else in `src/` may import Electron.
  */
 import type { LiveRequestKind, MenuItemTemplateT } from '@shared/ipc';
+import type { UnrealStatus, UnrealViewport, UnrealBakeJob, UnrealImageOptions, ExperienceOptions } from '@shared/unrealRuntime';
+import type { UnrealLiveScene } from '@shared/unrealLive';
 
 export interface ImageFile {
   name: string;
@@ -19,6 +21,21 @@ export interface OpenedDocumentFile {
 
 export interface Platform {
   kind: 'electron' | 'native' | 'web';
+  unreal?: {
+    downloadStatus?(): Promise<import('@shared/runtimeDownload').RuntimeDownloadState>;
+    downloadInstall?(): Promise<import('@shared/runtimeDownload').RuntimeDownloadState>;
+    downloadCancel?(): Promise<void>;
+    status(): Promise<UnrealStatus>;
+    update(bytes: Uint8Array): Promise<UnrealStatus>;
+    live?(scene: UnrealLiveScene): Promise<UnrealStatus>;
+    viewport(layout: UnrealViewport): Promise<void>;
+    command(action: 'frame'): Promise<void>;
+    image(options?: UnrealImageOptions): Promise<Uint8Array>;
+    exportScene(bytes: Uint8Array, options?: ExperienceOptions): Promise<string | null>;
+    bakeStart?(bytes: Uint8Array): Promise<UnrealBakeJob>;
+    bakeStatus?(id: string): Promise<UnrealBakeJob>;
+    stop(): Promise<void>;
+  };
   files: {
     openDocument(): Promise<OpenedDocumentFile | null>;
     /** Returns null when the user cancels. `path` is null on hosts that download instead. */
@@ -52,7 +69,7 @@ export interface Platform {
     setTitle(title: string): void;
     /** Opens the modeling workspace (`/modeling?asset=…&name=…`) in a new tab or desktop window. */
     openModeling(params: { assetId: string; name: string; projectId?: string }): void;
-    /** Opens the ArchAI Render studio (`/render`); null on hosts without it (the tablet app). */
+    /** Retired Render window entry point. New workflows use unreal.openEditor. */
     openRender: (() => void) | null;
     /**
      * Progress of long tasks on the host's own indicator (the desktop taskbar button): a fraction,

@@ -1,0 +1,219 @@
+.workspace {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  background: #f3f4f6;
+  color: var(--text);
+  font: 12px var(--font-ui, system-ui, sans-serif);
+  pointer-events: none;
+}
+.header {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  box-shadow: 0 6px 20px rgba(20, 22, 30, 0.12);
+  z-index: 9;
+  pointer-events: auto;
+}
+.header strong {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.header label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.header select {
+  max-width: 130px;
+  padding: 4px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-input);
+  color: var(--text);
+}
+.header button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.header button:hover {
+  background: var(--bg-hover);
+}
+.header button[data-active='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.header button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.body {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-height: 0;
+}
+.viewport {
+  position: absolute;
+  inset: 0;
+  background: #f3f4f6;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  pointer-events: auto;
+}
+.panel {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text);
+  font: 12px var(--font-ui, system-ui, sans-serif);
+}
+.panel strong {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+.panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.panel select,
+.panel input:not([type='range']) {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+}
+.panel input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.panel button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.panel button:hover {
+  background: var(--bg-hover);
+}
+.panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.panel p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.error {
+  color: var(--danger, #c0392b) !important;
+}
+.footer {
+  position: absolute;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  max-width: 75%;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  pointer-events: none;
+}
+.footer[data-ready='true'] {
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.bakeProgress {
+  width: 360px;
+  max-width: 100%;
+  margin-top: 10px;
+}
+.bakeProgress strong {
+  color: var(--text);
+}
+.bakeProgress p {
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+.bakeTrack {
+  height: 6px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+.bakeFill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #316bff);
+  transition: width 200ms ease;
+}
+.bakeTrack[data-indeterminate='true'] .bakeFill {
+  width: 35%;
+  animation: baking 1.6s ease-in-out infinite;
+}
+@keyframes baking {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(290%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bakeFill { transition: none; }
+  .bakeTrack[data-indeterminate='true'] .bakeFill {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+}

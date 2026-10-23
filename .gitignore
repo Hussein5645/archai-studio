@@ -19,3 +19,13 @@ release-*/
 # Local wrangler state and secrets
 .wrangler/
 .dev.vars
+
+# Unreal companion build output (canonical source stays in unreal/ArchaiRender).
+unreal/**/Binaries/
+unreal/**/Intermediate/
+unreal/**/Saved/
+unreal/**/DerivedDataCache/
+unreal/**/.vs/
+unreal/**/*.sln
+unreal/**/__pycache__/
+native/**/build/

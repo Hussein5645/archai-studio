@@ -1,3 +1,5 @@
+import { renderOf } from '@/studio/viewRender';
+import { useViewPreview } from './viewPreview';
 import { Camera, FlipHorizontal2, Maximize2 } from 'lucide-react';
 import { memo, useCallback, useRef, useState } from 'react';
 import { useAppState, useAppStateShallow, useDispatch } from '@/app/context';
@@ -20,7 +22,9 @@ export const View3DPortal = memo(function View3DPortal({ id }: { id: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const open = useCallback(() => void dispatch('open-view3d', { id }), [dispatch, id]);
   const [loading, setLoading] = useState<SceneLoading>({ detail: 'Preparing 3D view' });
-  useSceneView(containerRef, id, open, setLoading);
+  const renderer = renderOf(doc, id).renderer;
+  const preview = useViewPreview(doc.id, id);
+  useSceneView(containerRef, id, open, setLoading, renderer === 'default');
   if (!element || element.kind !== 'rect' || !element.visible) return null;
   const matrix = worldMatrix(doc.elements, element);
   const left = matrix[4] * viewport.zoom + viewport.x;
@@ -56,8 +60,10 @@ export const View3DPortal = memo(function View3DPortal({ id }: { id: string }) {
           </button>
         </span>
       </div>
-      <div ref={containerRef} className={styles.portalCanvas} data-tiny={tiny || undefined} onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()} />
-      {loading && !loading.updating && <div className={styles.portalLoading} role="status">{t(loading.error ? 'Could not open 3D view' : 'Loading 3D view…')}</div>}
+      <div ref={containerRef} className={styles.portalCanvas} data-tiny={tiny || undefined} onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => { e.stopPropagation(); if (renderer !== 'default') open(); }} onContextMenu={(e) => e.stopPropagation()} />
+      {preview && (renderer !== 'default' || loading && !loading.updating) && <img src={preview} alt="Saved view preview" className={styles.portalPreview} />}
+      {renderer !== 'default' && !preview && <div className={styles.portalLoading}>Open view to generate a preview</div>}
+      {renderer === 'default' && loading && !loading.updating && <div className={styles.portalLoading} role="status">{t(loading.error ? 'Could not open 3D view' : 'Loading 3D view…')}</div>}
     </div>
   );
 });

@@ -179,7 +179,7 @@ export function App() {
         <View3DWorkspace />
         {sheetOpen ? <SheetPanel /> : <LeftPanel />}
         <Inspector />
-        {(!view3dOpen || editingViewBoard) && (sheetOpen ? <SheetToolbar /> : <Toolbar />)}
+        {sheetOpen ? <SheetToolbar /> : <Toolbar />}
         {sheetOpen && <SheetBar />}
         {!view3dOpen && <StatusBar />}
         <GroupEditBar />

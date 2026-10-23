@@ -1,0 +1,15 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.8",
+  "Category": "Archai",
+  "Description": "Standalone Archai rendering companion",
+  "DisableEnginePluginsByDefault": true,
+  "Modules": [{ "Name": "ArchaiRender", "Type": "Runtime", "LoadingPhase": "Default" }],
+  "Plugins": [
+    { "Name": "Interchange", "Enabled": true },
+    { "Name": "InterchangeAssets", "Enabled": true },
+    { "Name": "OpenXR", "Enabled": true },
+    { "Name": "PythonScriptPlugin", "Enabled": true, "TargetAllowList": ["Editor"] },
+    { "Name": "EditorScriptingUtilities", "Enabled": true, "TargetAllowList": ["Editor"] }
+  ]
+}

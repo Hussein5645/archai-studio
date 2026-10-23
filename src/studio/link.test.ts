@@ -51,15 +51,13 @@ describe('board link', () => {
     expect(sent.filter((m) => m.type === 'scene')).toHaveLength(2);
     expect(sent.at(-1)).toMatchObject({ name: 'C' });
 
-    // Sending a view while open carries its camera once.
+    // The retired Render window must never be reopened, even for legacy view actions.
     const camera = { position: [1, 2, 3] as [number, number, number], target: [0, 0, 0] as [number, number, number], fov: 50 };
     openRenderStudio(platform, camera, 'Entrance');
-    expect(platform.window.openRender).toHaveBeenCalled();
-    expect(sent.at(-1)).toMatchObject({ type: 'scene', camera, viewName: 'Entrance' });
+    expect(platform.window.openRender).not.toHaveBeenCalled();
 
-    // D5 import requests one bake. Later scene updates must not restart it.
     openRenderStudio(platform, undefined, undefined, true);
-    expect(sent.at(-1)).toMatchObject({ prepare: 'bake' });
+    expect(platform.window.openRender).not.toHaveBeenCalled();
     store.setState({ doc: { ...store.getState().doc, meta: { ...store.getState().doc.meta, name: 'C' } } });
     vi.advanceTimersByTime(1000);
     expect(sent.at(-1)?.['prepare']).toBeUndefined();

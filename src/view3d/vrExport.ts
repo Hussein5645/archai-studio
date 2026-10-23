@@ -1,3 +1,5 @@
+import { exportAppearance } from './exportAppearance';
+import type { ViewStyle } from './SceneView';
 /**
  * The model of a VR tour (and the 3D snapshot saved in .AIR files): the document's 3D scene (as the 3D view builds it, at high detail)
  * exported as one binary glTF in metres, plus a ground disc so visitors never look into a void.
@@ -68,7 +70,7 @@ export async function buildSurfaces(doc: ArchaiDocument, catalog: AssetCatalog, 
 export async function exportSceneSnapshot(
   doc: ArchaiDocument,
   catalog: AssetCatalog,
-  options: { include?: (id: string) => boolean; extras?: (id: string) => Record<string, unknown> | undefined; root?: Record<string, unknown>;
+  options: { include?: (id: string) => boolean; extras?: (id: string) => Record<string, unknown> | undefined; root?: Record<string, unknown>; maxTextureSize?: number; stableMeshNames?: boolean; style?: ViewStyle;
   } = {},
 ): Promise<ArrayBuffer> {
   const root = await buildSurfaces(doc, catalog, (item) => {
@@ -80,25 +82,36 @@ export async function exportSceneSnapshot(
     node.name = element?.name?.trim() || archTypeOf(element) || element?.kind || 'Element';
     node.userData = { archai: { id: item.id, kind: element?.kind ?? '', type: archTypeOf(element) ?? '', level: level?.name?.trim() || null, ...options.extras?.(item.id) } };
     node.add(item.object);
+    if (options.stableMeshNames) {
+      let part = 0;
+      item.object.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+        child.name = `archai_${item.id}_${part++}`;
+        child.userData = { ...child.userData, archai: { id: item.id, parentId: element?.parentId ?? null } };
+      });
+    }
     return node;
   },
     options.include,
   );
+  const disposeAppearance = options.style ? exportAppearance(root, options.style) : () => {};
   if (options.root) root.userData = { ...root.userData, ...options.root };
   root.updateMatrixWorld(true);
-  const exported = await new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: true, maxTextureSize: 1024 });
+  let exported: ArrayBuffer | object;
+  try { exported = await new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: true, maxTextureSize: options.maxTextureSize ?? 1024 }); }
+  finally { disposeAppearance(); }
   if (!(exported instanceof ArrayBuffer)) throw new Error('The 3D snapshot could not be exported');
   return exported;
 }
 
-export async function exportVrModel(doc: ArchaiDocument, catalog: AssetCatalog): Promise<ArrayBuffer> {
+export async function exportVrModel(doc: ArchaiDocument, catalog: AssetCatalog, options: { include?: (id: string) => boolean; style?: ViewStyle } = {}): Promise<ArrayBuffer> {
   const root = await buildSurfaces(doc, catalog, (item) => {
     const node = new THREE.Group();
     node.name = doc.elements[item.id]?.name || item.id;
     node.userData.archai = { id: item.id };
     node.add(item.object);
     return node;
-  });
+  }, options.include);
 
   const { centre, radius } = sceneCentre(doc);
   const ground = new THREE.Mesh(new THREE.CircleGeometry(Math.max(radius * 4, 60_000), 64), new THREE.MeshStandardMaterial({ name: 'Ground', color: 0xd9dbd5, roughness: 1 }));
@@ -109,13 +122,15 @@ export async function exportVrModel(doc: ArchaiDocument, catalog: AssetCatalog):
   root.add(ground);
   root.updateMatrixWorld(true);
 
-  const reduced = await reduceLargeScene(root, 350_000, 0.02, undefined, false);
+  const reduced = await reduceLargeScene(root, 350_000, 0.02, undefined, false, true);
+  const restore = options.style ? exportAppearance(reduced, options.style, 'm') : () => {};
   try {
     // Preserve element boundaries so the headset can move one element independently.
     const exported = await new GLTFExporter().parseAsync(reduced, { binary: true, onlyVisible: true, maxTextureSize: 2048 });
     if (!(exported instanceof ArrayBuffer)) throw new Error('The model could not be exported');
     return exported;
   } finally {
+    restore();
     disposeReducedScene(reduced, root);
     ground.geometry.dispose();
     ground.material.dispose();

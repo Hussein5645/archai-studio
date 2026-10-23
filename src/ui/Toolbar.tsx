@@ -83,7 +83,7 @@ const ANALYZE_TOOLS: ToolButton[] = [
   { tool: 'analysis-noise', command: 'tool-analysis-noise', label: 'Noise analysis', icon: <Volume2 size={16} /> },
 ];
 
-type MenuKind = 'build' | 'analyze' | 'diagram' | 'overflow' | 'modify' | 'annotate';
+type MenuKind = 'lighting' | 'build' | 'analyze' | 'diagram' | 'overflow' | 'modify' | 'annotate';
 type OpenMenu = { kind: MenuKind; x: number; y: number; entries: MenuContent } | null;
 
 export function Toolbar() {
@@ -101,7 +101,7 @@ export function Toolbar() {
     setMenu({ kind, x: rect.left, y: rect.top - 8, entries });
   };
 
-  const archActive = tool.startsWith('arch:');
+  const archActive = tool.startsWith('arch:') && !tool.startsWith('arch:light-');
   const archLabel = archActive ? (getArchTool(tool.slice(5))?.label ?? 'Build') : 'Build';
   const buildEntries: MenuContent = archToolsByCategory().flatMap(({ category, tools }) => [
     { title: category },
@@ -214,6 +214,11 @@ export function Toolbar() {
           <div className={styles.separator} />
           {menuButton('modify', modifyActive?.label ?? 'Modify', modifyActive ? modifyActive.icon : <Wrench size={ICON} />, Boolean(modifyActive), modifyEntries, 'tool-modify')}
           {menuButton('build', archLabel, <LayoutTemplate size={ICON} />, archActive, buildEntries, 'tool-build')}
+          {menuButton('lighting', 'Lighting', <Sun size={ICON} />, tool.startsWith('arch:light-'), [
+            { id: 'point', label: 'Point light', onSelect: () => void dispatch('set-tool', { tool: 'arch:light-point' }) },
+            { id: 'spot', label: 'Spot light', onSelect: () => void dispatch('set-tool', { tool: 'arch:light-spot' }) },
+            { id: 'area', label: 'Area light', onSelect: () => void dispatch('set-tool', { tool: 'arch:light-area' }) },
+          ], 'tool-render-light')}
           {menuButton('analyze', analyzeActive?.label ?? 'Analyze', analyzeActive ? analyzeActive.icon : <Activity size={ICON} />, Boolean(analyzeActive), analyzeEntries, 'tool-analyze', { 'data-running': running || undefined })}
           {menuButton('diagram', diagramActive?.label ?? 'Diagram', diagramActive ? diagramActive.icon(ICON) : <Shapes size={ICON} />, Boolean(diagramActive), diagramEntries, 'tool-diagram')}
           {menuButton('annotate', annotateActive?.label ?? 'Annotate', annotateActive ? annotateActive.icon(ICON) : <PenLine size={ICON} />, Boolean(annotateActive), annotateEntries, 'tool-annotate')}
@@ -238,7 +243,7 @@ export function Toolbar() {
           </IconButton>
         </div>
       </div>
-      {menu && <UpMenu position={menu} entries={menu.entries} onClose={() => setMenu(null)} ariaLabel={menu.kind === 'build' ? 'Architecture tools' : menu.kind === 'analyze' ? 'Analysis tools' : menu.kind === 'diagram' ? 'Diagram tools' : menu.kind === 'modify' ? 'Modify tools' : menu.kind === 'annotate' ? 'Annotation tools' : 'More tools'} />}
+      {menu && <UpMenu position={menu} entries={menu.entries} onClose={() => setMenu(null)} ariaLabel={menu.kind === 'lighting' ? 'Lighting types' : menu.kind === 'build' ? 'Architecture tools' : menu.kind === 'analyze' ? 'Analysis tools' : menu.kind === 'diagram' ? 'Diagram tools' : menu.kind === 'modify' ? 'Modify tools' : menu.kind === 'annotate' ? 'Annotation tools' : 'More tools'} />}
       <DraftingBar />
       <AnnotationBar />
       <ToolHint />

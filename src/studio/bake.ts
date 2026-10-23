@@ -49,7 +49,7 @@ export function disposeBake(bake: BakedScene): void {
 
 export async function bakeScene(
   source: THREE.Object3D,
-  lighting: Pick<BakeInput, 'environment' | 'sun' | 'sunIntensity' | 'skyIntensity'>,
+  lighting: Pick<BakeInput, 'environment' | 'sun' | 'sunIntensity' | 'skyIntensity' | 'lights'>,
   quality: VrQuality,
   signal: AbortSignal,
   onProgress: (fraction: number) => void,
@@ -58,7 +58,7 @@ export async function bakeScene(
   throwIfCancelled(signal);
   const preset = VR_QUALITY[quality];
   // Reserve room for independently lit back faces of double-sided imports.
-  const reduced = await reduceLargeScene(source, Math.floor(preset.triangles / 2), 0.02, signal, false);
+  const reduced = await reduceLargeScene(source, Math.floor(preset.triangles / 2), 0.02, signal, false, true);
   let root: THREE.Group;
   try {
     throwIfCancelled(signal);
@@ -122,7 +122,8 @@ export async function bakeScene(
       albedos: new Float32Array(albedos),
       emission: new Float32Array(emission),
       ...lighting,
-      samples: preset.samples,
+      // Bound work for seam-heavy imports which cannot safely reach the target size.
+      samples: Math.max(2, Math.min(preset.samples, Math.floor(12_000_000 / vertices))),
       bounces: preset.bounces,
     };
     const colors = await new Promise<Float32Array>((resolve, reject) => {
@@ -226,6 +227,9 @@ export async function bakeScene(
       sky.userData['vrBackground'] = true;
       root.add(sky);
     }
+    root.children.forEach((child, index) => {
+      if (!child.userData['archai']) { child.name = 'archai_baked_' + index; child.userData['archai'] = { id: 'baked_' + index }; }
+    });
     onProgress(0.92);
     const model = await new GLTFExporter().parseAsync(root, {
       binary: true,

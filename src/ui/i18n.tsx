@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 export type Locale = 'en' | 'ar';
 
 const AR: Record<string, string> = {
+  Render: 'التصيير',
   'Opening 3D view': 'جارٍ فتح العرض ثلاثي الأبعاد', 'Preparing 3D view': 'جارٍ تجهيز العرض ثلاثي الأبعاد',
   'Loading 3D resources': 'جارٍ تحميل موارد العرض ثلاثي الأبعاد', 'Building 3D scene': 'جارٍ بناء المشهد ثلاثي الأبعاد',
   'Preparing 3D display': 'جارٍ تجهيز العرض', 'Preparing first frame': 'جارٍ تجهيز الإطار الأول',

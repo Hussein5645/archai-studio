@@ -410,6 +410,7 @@ export function TopBar() {
         {stateText}
       </button>
       <CloudSyncState />
+      <button type="button" className={styles.render} onClick={() => window.dispatchEvent(new Event('archai:open-log'))} data-testid="open-live-log">Log</button>
       <div className={styles.spacer} />
       <div className={styles.group}>
         <CommandIconButton command="undo" label={`${t('Undo')} (${shortcut('Mod+Z')})`}>

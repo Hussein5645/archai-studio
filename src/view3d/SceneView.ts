@@ -252,6 +252,7 @@ export interface SceneViewEvents {
   onOpen?: () => void;
   onEnterGroup?: (id: string | null) => void;
   /** VR stop placement (see setPlacingStop): a click landed on a floor, or on nothing usable. */
+  onPlaceElement?: (point: { x: number; y: number; elevation: number; heading: number } | null) => boolean;
   onPlaceStop?: (stop: { x: number; y: number; elevation: number; heading: number }) => void;
   onPlaceMiss?: () => void;
   /** Paint mode (see setPainting): a surface was clicked (`slot` mode with Shift), or Alt-clicked to pick its material. */
@@ -1098,6 +1099,13 @@ export class SceneView {
     this.requestRender();
   }
 
+  private placingElement = false;
+  setPlacementMode(enabled: boolean): void {
+    this.placingElement = enabled;
+    this.controls.mouseButtons.LEFT = enabled ? null : THREE.MOUSE.ROTATE;
+    this.updateGizmo(); this.requestRender();
+  }
+
   /**
    * Brings the scene up to date with the document. Elements whose inputs did not change keep
    * their objects (see buildScene), so an edit only styles, adds and disposes what it replaced;
@@ -1263,7 +1271,7 @@ export class SceneView {
         this.selectionOutlines.add(outline);
       }
     }
-    if (!bounds) {
+    if (!bounds || this.placingElement) {
       this.gizmoHelper.visible = false;
       this.gizmo.enabled = false;
       return;
@@ -1449,7 +1457,7 @@ export class SceneView {
       const object = hit.object;
       if (!(object instanceof THREE.Mesh) || !hit.face || object.userData['capHelper'] || !object.visible) continue;
       const normal = hit.face.normal.clone().transformDirection(object.matrixWorld);
-      if (Math.abs(normal.y) < FLOOR_NORMAL_Y || ray.direction.y >= 0) return null;
+      if (Math.abs(normal.y) < FLOOR_NORMAL_Y || ray.direction.y >= 0) continue;
       point = hit.point;
       break;
     }
@@ -1564,6 +1572,7 @@ export class SceneView {
       else this.events.onPlaceMiss?.();
       return;
     }
+    if (this.events.onPlaceElement?.(this.floorAt(event.clientX, event.clientY))) return;
     const id = this.pick(event.clientX, event.clientY);
     this.events.onSelect(id, event.shiftKey);
   };

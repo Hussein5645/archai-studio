@@ -145,9 +145,10 @@ export class AccountService {
   }
 
   private async save(stored: Stored | null): Promise<void> {
-    this.set(stored);
     if (stored) await this.platform.storage.set(ACCOUNT_KEY, JSON.stringify(stored));
     else await this.platform.storage.delete(ACCOUNT_KEY);
+    // Native feature checks read host storage: publish the UI state after it is durable.
+    this.set(stored);
   }
 
   private set(stored: Stored | null): void {
